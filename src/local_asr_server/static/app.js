@@ -76,6 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Initialize components
         CollapsiblePanel.init();
         FileDropzone.init({ onFileSelected: handleFileSelected });
+        Tour.init();
 
         // Bind event handlers
         bindEvents();
@@ -113,6 +114,10 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.tabs__btn').forEach(btn => {
             btn.addEventListener('click', () => switchTab(btn));
         });
+
+        // Guided Tour and Showcase triggers
+        document.getElementById('start-tour-btn')?.addEventListener('click', () => Tour.start());
+        document.getElementById('start-showcase-btn')?.addEventListener('click', () => Showcase.start());
     }
 
 

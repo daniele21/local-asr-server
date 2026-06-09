@@ -172,6 +172,10 @@ def create_app(default_model: str = "mlx-community/whisper-large-v3-turbo") -> F
     static_dir.mkdir(exist_ok=True)
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
+    public_dir = Path(__file__).parents[2] / "public"
+    if public_dir.exists():
+        app.mount("/public", StaticFiles(directory=str(public_dir)), name="public")
+
     @app.get("/")
     def read_index() -> FileResponse:
         return FileResponse(

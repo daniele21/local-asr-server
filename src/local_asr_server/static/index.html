@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ASR Whisper Studio</title>
     <meta name="description" content="Local ASR transcription studio powered by MLX Whisper on Apple Silicon">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -34,11 +35,8 @@
         <header class="header" id="app-header">
             <div class="header__brand">
                 <div class="header__logo">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
-                        <path d="M19 10v1a7 7 0 0 1-14 0v-1"/>
-                        <line x1="12" x2="12" y1="19" y2="22"/>
-                    </svg>
+                    <img src="/static/logo-dark.svg" alt="ASR Whisper Studio Logo" class="logo-img logo-img--dark">
+                    <img src="/static/logo-light.svg" alt="ASR Whisper Studio Logo" class="logo-img logo-img--light">
                 </div>
                 <div class="header__text">
                     <h1 id="app-title">ASR Whisper Studio</h1>
@@ -272,9 +270,26 @@
     <!-- Toast notification container -->
     <div class="toast-container" id="toast-container"></div>
 
+    <!-- Guided Tour & Showcase floating triggers -->
+    <div class="tour-floating-triggers" id="tour-triggers">
+        <button class="tour-btn" id="start-tour-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            Tour Guidato
+        </button>
+        <button class="tour-btn tour-btn--primary" id="start-showcase-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            Showcase Automatico
+        </button>
+    </div>
+
     <!-- Scripts: config → components → app (dependency order) -->
     <script src="/static/config.js?v=1.0.2"></script>
     <script src="/static/components.js?v=1.0.2"></script>
+    <script src="/static/tour.js?v=1.0.2"></script>
     <script src="/static/app.js?v=1.0.2"></script>
 </body>
 </html>
