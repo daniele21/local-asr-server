@@ -181,18 +181,55 @@ body {
 }
 
 .header__logo {
-    width: 48px;
-    height: 48px;
+    width: 56px;
+    height: 56px;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 8px;
+    box-shadow: var(--shadow-sm), 0 0 15px var(--accent-glow);
+    transition: all var(--dur) var(--ease);
+    position: relative;
+    overflow: hidden;
 }
 
-.logo-img {
+.header__logo::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent);
+    opacity: 0;
+    transition: opacity var(--dur) var(--ease);
+}
+
+[data-theme="light"] .header__logo {
+    background: #ffffff;
+    box-shadow: var(--shadow-sm), 0 4px 12px rgba(0, 0, 0, 0.03);
+}
+
+.header__logo:hover {
+    transform: translateY(-2px) scale(1.05);
+    border-color: var(--accent-hover);
+    box-shadow: var(--shadow-md), 0 0 25px var(--accent-glow);
+}
+
+.header__logo:hover::before {
+    opacity: 1;
+}
+
+.logo-img {     
     width: 100%;
     height: 100%;
     object-fit: contain;
+    transition: transform var(--dur) var(--ease);
+}
+
+.header__logo:hover .logo-img {
+    transform: scale(1.1);
 }
 
 [data-theme="dark"] .logo-img--light { display: none; }
@@ -1395,6 +1432,21 @@ input[type="number"]:focus {
     transition: box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 
+.tour-spotlight-outline {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9993;
+    border: 2px solid var(--accent);
+    box-shadow: 0 0 12px var(--accent-glow), inset 0 0 4px var(--accent-glow);
+    border-radius: var(--radius-sm, 8px);
+    transition: opacity 0.3s var(--ease);
+    opacity: 0;
+}
+
+.tour-spotlight-outline--visible {
+    opacity: 1;
+}
+
 .tour-popover {
     position: absolute;
     z-index: 10000;
@@ -1406,7 +1458,7 @@ input[type="number"]:focus {
     box-shadow: var(--shadow-xl);
     opacity: 0;
     transform: scale(0.95);
-    transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease), top var(--dur) var(--ease), left var(--dur) var(--ease);
+    transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
     pointer-events: none;
 }
 
@@ -1537,6 +1589,13 @@ input[type="number"]:focus {
 .tour-btn--primary:hover {
     background: var(--accent-hover) !important;
     color: white !important;
+}
+
+.tour-btn--active {
+    background: var(--accent-hover) !important;
+    color: white !important;
+    transform: scale(0.95);
+    transition: transform 0.1s ease;
 }
 
 /* Showcase Banner status */

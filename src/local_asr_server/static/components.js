@@ -165,9 +165,19 @@ const CollapsiblePanel = (() => {
             body.classList.remove('collapsible--collapsed');
             body.style.maxHeight = body.scrollHeight + 'px';
             trigger.classList.add('collapsible-trigger--open');
+
+            const onTransitionEnd = (e) => {
+                if (e.propertyName === 'max-height') {
+                    body.style.maxHeight = 'none';
+                    body.removeEventListener('transitionend', onTransitionEnd);
+                }
+            };
+            body.addEventListener('transitionend', onTransitionEnd);
         } else {
+            // Reset to scrollHeight first so transition to 0px works from a numeric value
             body.style.maxHeight = body.scrollHeight + 'px';
-            // Force reflow, then collapse
+            // Force reflow
+            body.offsetHeight;
             requestAnimationFrame(() => {
                 body.style.maxHeight = '0px';
                 body.classList.add('collapsible--collapsed');

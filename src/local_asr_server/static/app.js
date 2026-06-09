@@ -116,8 +116,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Guided Tour and Showcase triggers
-        document.getElementById('start-tour-btn')?.addEventListener('click', () => Tour.start());
+        document.getElementById('start-tour-btn')?.addEventListener('click', () => Tour.startInteractive());
         document.getElementById('start-showcase-btn')?.addEventListener('click', () => Showcase.start());
+        document.getElementById('start-recording-btn')?.addEventListener('click', () => Tour.startRecordingShowcase());
     }
 
 
