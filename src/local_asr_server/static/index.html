@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASR Whisper Studio</title>
+    <meta name="description" content="Local ASR transcription studio powered by MLX Whisper on Apple Silicon">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css?v=1.0.2">
+    <script>
+        window.addEventListener('error', function(e) {
+            console.error('[ASR Global Error]', e);
+            if (window.Toast && typeof window.Toast.show === 'function') {
+                window.Toast.show('Errore Applicazione: ' + e.message, 'error');
+            }
+        });
+        window.addEventListener('unhandledrejection', function(e) {
+            console.error('[ASR Unhandled Promise]', e);
+            if (window.Toast && typeof window.Toast.show === 'function') {
+                window.Toast.show('Errore di caricamento: ' + e.reason, 'error');
+            }
+        });
+    </script>
+</head>
+<body>
+    <!-- Background glow decorations -->
+    <div class="glow-bg glow-bg--1"></div>
+    <div class="glow-bg glow-bg--2"></div>
+
+    <div class="app-shell">
+        <!-- ─── Header ──────────────────────────────────────────────────── -->
+        <header class="header" id="app-header">
+            <div class="header__brand">
+                <div class="header__logo">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                        <path d="M19 10v1a7 7 0 0 1-14 0v-1"/>
+                        <line x1="12" x2="12" y1="19" y2="22"/>
+                    </svg>
+                </div>
+                <div class="header__text">
+                    <h1 id="app-title">ASR Whisper Studio</h1>
+                    <p id="app-subtitle">Trascrizione audio locale e ultrarapida</p>
+                </div>
+            </div>
+            <div class="header__actions">
+                <div class="status-badge" id="server-status">
+                    <span class="status-badge__dot status-badge__dot--offline"></span>
+                    <span class="status-badge__text">Connessione...</span>
+                </div>
+                <button id="theme-toggle" class="icon-btn" aria-label="Cambia tema">
+                    <svg class="icon--sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+                    <svg class="icon--moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- ─── Step Indicator ──────────────────────────────────────────── -->
+        <nav class="stepper" id="stepper" aria-label="Progresso trascrizione">
+            <div class="stepper__step step--active" id="step-upload">
+                <div class="stepper__circle">1</div>
+                <span class="stepper__label">Carica Audio</span>
+            </div>
+            <div class="stepper__connector"></div>
+            <div class="stepper__step step--pending" id="step-transcribe">
+                <div class="stepper__circle">2</div>
+                <span class="stepper__label">Trascrivi</span>
+            </div>
+            <div class="stepper__connector"></div>
+            <div class="stepper__step step--pending" id="step-results">
+                <div class="stepper__circle">3</div>
+                <span class="stepper__label">Risultati</span>
+            </div>
+        </nav>
+
+        <!-- ─── Main Content ────────────────────────────────────────────── -->
+        <main class="main">
+
+            <!-- ═══ STEP 1: Upload ═══════════════════════════════════════ -->
+            <section class="section section--active" data-step="upload" id="section-upload">
+                <div class="card dropzone" id="dropzone">
+                    <input type="file" id="file-input" accept="audio/*" class="sr-only">
+                    <div class="dropzone__content" id="dropzone-content">
+                        <div class="dropzone__icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="17 8 12 3 7 8"/>
+                                <line x1="12" x2="12" y1="3" y2="15"/>
+                            </svg>
+                        </div>
+                        <h2 class="dropzone__title">Trascina qui il tuo file audio</h2>
+                        <p class="dropzone__hint">Supporta MP3, WAV, M4A, WEBM, FLAC e altri formati (Max 25MB)</p>
+                        <button type="button" class="btn btn--secondary" id="browse-btn">Seleziona File</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ═══ STEP 2: Transcribe ═══════════════════════════════════ -->
+            <section class="section section--hidden" data-step="transcribe" id="section-transcribe">
+
+                <!-- File Preview Card -->
+                <div class="card file-card" id="file-card">
+                    <div class="file-card__info">
+                        <div class="file-card__icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                        </div>
+                        <div class="file-card__details">
+                            <span class="file-card__name" id="preview-filename">file.mp3</span>
+                            <span class="file-card__size" id="preview-filesize">0 KB</span>
+                        </div>
+                        <button type="button" class="btn btn--ghost btn--sm" id="change-file-btn">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                            Cambia file
+                        </button>
+                    </div>
+                    <div class="file-card__player">
+                        <audio id="audio-element" controls></audio>
+                    </div>
+                </div>
+
+                <!-- CTA Button -->
+                <button type="button" class="btn btn--primary btn--lg btn--block" id="transcribe-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    <span id="transcribe-btn-text">Trascrivi Audio</span>
+                    <div class="btn__spinner" id="btn-spinner" style="display: none;"></div>
+                </button>
+
+                <!-- Advanced Settings (Collapsible) -->
+                <div class="collapsible">
+                    <button type="button" class="collapsible__trigger" data-collapsible-trigger="settings-body" id="settings-trigger">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                        <span>Impostazioni avanzate</span>
+                        <svg class="collapsible__chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
+                    </button>
+                    <div class="collapsible__body" id="settings-body">
+                        <form id="transcribe-form" class="settings-form">
+                            <div class="settings-form__grid">
+                                <div class="form-group">
+                                    <label for="model-select">Modello</label>
+                                    <select id="model-select" name="model"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="language-select">Lingua</label>
+                                    <select id="language-select" name="language"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="task-select">Operazione</label>
+                                    <select id="task-select" name="task"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="format-select">Formato Output</label>
+                                    <select id="format-select" name="response_format"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="temperature-input">Temperatura</label>
+                                    <input type="number" id="temperature-input" name="temperature" min="0" max="1" step="0.1" placeholder="Auto">
+                                </div>
+                            </div>
+                            <div class="settings-form__toggles">
+                                <label class="toggle">
+                                    <input type="checkbox" id="timestamps-check" name="word_timestamps">
+                                    <span class="toggle__slider"></span>
+                                    <span class="toggle__label">Timestamp per parola</span>
+                                </label>
+                                <label class="toggle">
+                                    <input type="checkbox" id="condition-check" name="condition_on_previous_text" checked>
+                                    <span class="toggle__slider"></span>
+                                    <span class="toggle__label">Condiziona su testo precedente</span>
+                                </label>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Processing Area (hidden until transcription starts) -->
+                <div class="card processing" id="processing-card" style="display: none;">
+                    <div class="processing__loader">
+                        <div class="pulse-dots"><div></div><div></div><div></div></div>
+                    </div>
+                    <h3 class="processing__title">Elaborazione in corso...</h3>
+                    <p class="processing__status" id="progress-status">Preparazione della trascrizione...</p>
+                    <div class="progress">
+                        <div class="progress__bar">
+                            <div class="progress__fill" id="progress-bar-fill"></div>
+                        </div>
+                        <span class="progress__label" id="progress-label">0%</span>
+                    </div>
+
+                    <!-- Live text preview -->
+                    <div class="live-preview" id="live-preview-container" style="display: none;">
+                        <div class="live-preview__header">ANTEPRIMA TESTO LIVE</div>
+                        <div class="live-preview__text" id="live-preview-text"></div>
+                    </div>
+
+                    <!-- Console log -->
+                    <div class="console">
+                        <div class="console__header">LOG DI TRASCRIZIONE LIVE</div>
+                        <div class="console__body" id="live-console">
+                            <div class="console__line console__line--placeholder">In attesa del backend...</div>
+                        </div>
+                    </div>
+
+                    <div class="processing__timer" id="process-timer">Tempo trascorso: 0.0s</div>
+                </div>
+            </section>
+
+            <!-- ═══ STEP 3: Results ══════════════════════════════════════ -->
+            <section class="section section--hidden" data-step="results" id="section-results">
+                <div class="card results" id="results-card">
+                    <!-- Results Header -->
+                    <div class="results__header">
+                        <h2>Risultato Trascrizione</h2>
+                        <div class="results__actions">
+                            <button class="btn btn--ghost btn--sm" id="copy-btn">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                                <span id="copy-btn-text">Copia</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Stats Grid -->
+                    <div class="stats" id="stats-grid">
+                        <div class="stats__card">
+                            <span class="stats__label">Tempo impiegato</span>
+                            <span class="stats__value" id="stat-time">-</span>
+                        </div>
+                        <div class="stats__card">
+                            <span class="stats__label">Lingua rilevata</span>
+                            <span class="stats__value" id="stat-lang">-</span>
+                        </div>
+                        <div class="stats__card">
+                            <span class="stats__label">Modello</span>
+                            <span class="stats__value" id="stat-model">-</span>
+                        </div>
+                    </div>
+
+                    <!-- Tabs -->
+                    <div class="tabs">
+                        <div class="tabs__nav" role="tablist">
+                            <button class="tabs__btn tabs__btn--active" data-tab="text-tab" role="tab" aria-selected="true">Testo Unito</button>
+                            <button class="tabs__btn" data-tab="segments-tab" role="tab" id="segments-tab-btn">Segmenti</button>
+                            <button class="tabs__btn" data-tab="raw-tab" role="tab">JSON Grezzo</button>
+                        </div>
+                        <div class="tabs__panel tabs__panel--active" id="text-tab" role="tabpanel">
+                            <div class="transcript-box" id="transcript-text">La trascrizione apparirà qui...</div>
+                        </div>
+                        <div class="tabs__panel" id="segments-tab" role="tabpanel">
+                            <div class="segments" id="segments-list"></div>
+                        </div>
+                        <div class="tabs__panel" id="raw-tab" role="tabpanel">
+                            <pre class="code-box"><code id="raw-json">{}</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- New Transcription CTA -->
+                <button type="button" class="btn btn--secondary btn--block" id="new-transcription-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Nuova Trascrizione
+                </button>
+            </section>
+        </main>
+
+        <!-- ─── Footer ──────────────────────────────────────────────────── -->
+        <footer class="footer">
+            <p>Powered by <strong>MLX Whisper</strong> & <strong>FastAPI</strong>. Eseguito in locale su Apple Silicon.</p>
+        </footer>
+    </div>
+
+    <!-- Toast notification container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Scripts: config → components → app (dependency order) -->
+    <script src="/static/config.js?v=1.0.2"></script>
+    <script src="/static/components.js?v=1.0.2"></script>
+    <script src="/static/app.js?v=1.0.2"></script>
+</body>
+</html>

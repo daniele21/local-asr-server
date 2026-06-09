@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "local-asr-server"
+version = "0.1.0"
+description = "Local ASR server with OpenAI-compatible transcription endpoint, powered by MLX Whisper."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "python-multipart>=0.0.9",
+    "mlx-whisper",
+]
+
+[project.scripts]
+local-asr = "local_asr_server.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
