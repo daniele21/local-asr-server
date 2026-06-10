@@ -48,6 +48,17 @@
                     <span class="status-badge__dot status-badge__dot--offline"></span>
                     <span class="status-badge__text">Connessione...</span>
                 </div>
+                <div class="help-menu">
+                    <button id="help-menu-toggle" class="icon-btn" aria-label="Apri aiuto" aria-expanded="false" aria-controls="help-menu-panel">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.8 1c0 2-3 2.5-3 4"/><path d="M12 18h.01"/></svg>
+                    </button>
+                    <div class="help-menu__panel" id="help-menu-panel" hidden>
+                        <strong>Aiuto e demo</strong>
+                        <button type="button" id="start-tour-btn">Tour guidato</button>
+                        <button type="button" id="start-showcase-btn">Showcase automatico</button>
+                        <button type="button" id="start-recording-btn">Registra demo</button>
+                    </div>
+                </div>
                 <button id="theme-toggle" class="icon-btn" aria-label="Cambia tema">
                     <svg class="icon--sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
                     <svg class="icon--moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
@@ -55,44 +66,186 @@
             </div>
         </header>
 
-        <!-- ─── Step Indicator ──────────────────────────────────────────── -->
+        <nav class="primary-nav" aria-label="Navigazione principale">
+            <button type="button" class="primary-nav__item primary-nav__item--active" data-page-target="home">Home</button>
+            <button type="button" class="primary-nav__item" data-page-target="recording">Registrazione</button>
+            <button type="button" class="primary-nav__item" data-page-target="transcription">Trascrizione</button>
+            <button type="button" class="primary-nav__item" data-page-target="analysis">Analisi</button>
+        </nav>
+
+        <div class="page-stack">
+            <section class="app-page app-page--active home-page" id="page-home" data-app-page="home">
+                <div class="home-hero">
+                    <span class="workspace-heading__eyebrow">AUDIO INTELLIGENCE LOCALE</span>
+                    <h2>Registra, trascrivi e analizza. Tutto sul tuo Mac.</h2>
+                    <p>Trasforma chiamate e file audio in testo senza inviare dati a servizi esterni.</p>
+                    <div class="home-hero__actions">
+                        <button type="button" class="btn btn--primary btn--lg" data-page-target="recording">Inizia una registrazione</button>
+                        <button type="button" class="btn btn--secondary btn--lg" data-page-target="transcription">Trascrivi un audio</button>
+                    </div>
+                </div>
+                <div class="feature-list">
+                    <article><span>01</span><h3>Registrazione locale</h3><p>Cattura microfono e audio del computer con salvataggio progressivo.</p></article>
+                    <article><span>02</span><h3>Trascrizione Whisper</h3><p>Usa registrazioni recenti o file audio e configura lingua e modello.</p></article>
+                    <article><span>03</span><h3>Analisi</h3><p>Esplora temi, riepiloghi e informazioni ricorrenti nelle trascrizioni.</p></article>
+                </div>
+            </section>
+
+            <section class="app-page recording-page" id="page-recording" data-app-page="recording">
+                <div class="workspace-heading">
+                    <div>
+                        <span class="workspace-heading__eyebrow">REGISTRAZIONE</span>
+                        <h2>Registra una nuova sorgente.</h2>
+                        <p>Cattura l’audio e salvalo nella libreria locale. La trascrizione è un passaggio separato.</p>
+                    </div>
+                </div>
+                <div id="recording-page-content"></div>
+            </section>
+
+            <section class="app-page" id="page-transcription" data-app-page="transcription">
+        <section class="workspace-view workspace-view--active" id="view-transcription" data-workspace-view="transcription">
         <nav class="stepper" id="stepper" aria-label="Progresso trascrizione">
             <div class="stepper__step step--active" id="step-upload">
                 <div class="stepper__circle">1</div>
-                <span class="stepper__label">Carica Audio</span>
+                <span class="stepper__label">Sorgente</span>
             </div>
             <div class="stepper__connector"></div>
             <div class="stepper__step step--pending" id="step-transcribe">
                 <div class="stepper__circle">2</div>
-                <span class="stepper__label">Trascrivi</span>
+                <span class="stepper__label">Configura</span>
             </div>
             <div class="stepper__connector"></div>
             <div class="stepper__step step--pending" id="step-results">
                 <div class="stepper__circle">3</div>
-                <span class="stepper__label">Risultati</span>
+                <span class="stepper__label">Risultato</span>
             </div>
         </nav>
 
-        <!-- ─── Main Content ────────────────────────────────────────────── -->
         <main class="main">
-
-            <!-- ═══ STEP 1: Upload ═══════════════════════════════════════ -->
             <section class="section section--active" data-step="upload" id="section-upload">
-                <div class="card dropzone" id="dropzone">
-                    <input type="file" id="file-input" accept="audio/*" class="sr-only">
-                    <div class="dropzone__content" id="dropzone-content">
-                        <div class="dropzone__icon">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                <polyline points="17 8 12 3 7 8"/>
-                                <line x1="12" x2="12" y1="3" y2="15"/>
-                            </svg>
-                        </div>
-                        <h2 class="dropzone__title">Trascina qui il tuo file audio</h2>
-                        <p class="dropzone__hint">Supporta MP3, WAV, M4A, WEBM, FLAC e altri formati (Max 25MB)</p>
-                        <button type="button" class="btn btn--secondary" id="browse-btn">Seleziona File</button>
+                <div class="workspace-heading workspace-heading--compact">
+                    <div>
+                        <span class="workspace-heading__eyebrow">SORGENTE AUDIO</span>
+                        <h2>Cosa vuoi trascrivere?</h2>
+                        <p>Scegli una registrazione recente oppure trascrivi un audio dal computer.</p>
                     </div>
                 </div>
+
+                <section class="recorder-panel" id="view-recording" aria-labelledby="recorder-title" hidden>
+                    <div class="recorder-panel__header">
+                        <div>
+                            <span class="workspace-heading__eyebrow">REGISTRAZIONE LOCALE</span>
+                            <h3 id="recorder-title">Registra una nuova sorgente</h3>
+                            <p>L’audio viene salvato progressivamente e sarà disponibile qui al termine.</p>
+                        </div>
+                        <span class="recorder__status" id="recording-status" role="status">Pronto</span>
+                    </div>
+
+            <div class="recording-stage">
+                <div class="signal-panel">
+                    <div class="signal-panel__header">
+                        <span>SEGNALE IN INGRESSO</span>
+                        <span id="signal-level-label">-∞ dB</span>
+                    </div>
+                    <canvas id="audio-level-canvas" class="signal-canvas" width="960" height="240" aria-label="Livello del segnale audio"></canvas>
+                    <div class="signal-scale" aria-hidden="true">
+                        <span>-48</span><span>-36</span><span>-24</span><span>-12</span><span>-6</span><span>0 dB</span>
+                    </div>
+                </div>
+
+                <div class="recorder-controls">
+                    <div class="recorder__form">
+                        <div class="form-group">
+                            <label for="recording-title">Titolo registrazione</label>
+                            <input id="recording-title" type="text" maxlength="200" placeholder="Riunione progetto">
+                        </div>
+                        <div class="form-group">
+                            <label for="recording-device">Ingresso audio</label>
+                            <select id="recording-device">
+                                <option value="">Predefinito di sistema</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="recording-source-mode">Cosa registrare</label>
+                            <select id="recording-source-mode">
+                                <option value="both">Entrambi (Voce + PC)</option>
+                                <option value="mic_only">Solo la mia voce (Microfono)</option>
+                                <option value="pc_only">Solo l'audio del PC (Interlocutore)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="recorder__meter">
+                        <span class="recorder__dot" id="recording-dot"></span>
+                        <strong id="recording-timer">00:00</strong>
+                        <span id="recording-progress">Nessun audio salvato</span>
+                    </div>
+
+                    <div class="recorder__actions">
+                        <button type="button" class="btn btn--primary btn--lg" id="recording-start">Avvia registrazione</button>
+                        <button type="button" class="btn btn--secondary btn--lg" id="recording-stop" disabled>Termina e salva</button>
+                    </div>
+                    <div class="collapsible recorder-details">
+                        <button type="button" class="collapsible__trigger" data-collapsible-trigger="recording-details-body" id="recording-details-trigger" aria-expanded="false" aria-controls="recording-details-body">
+                            <span>Configurazione audio avanzata</span>
+                            <svg class="collapsible__chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
+                        </button>
+                        <div class="collapsible__body" id="recording-details-body">
+                            <div class="recorder-details__content">
+                                <button type="button" class="btn btn--ghost btn--sm btn--block" id="test-audio-route">Testa routing audio</button>
+                                <p class="recorder__note">Per includere gli interlocutori usa BlackHole o un dispositivo aggregato.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+                </section>
+
+                <div class="source-grid">
+                    <section class="recordings-library" aria-labelledby="recordings-title">
+                        <div class="recordings-library__header">
+                            <div>
+                                <h3 id="recordings-title">Registrazioni recenti</h3>
+                                <span id="recordings-count">0 elementi</span>
+                            </div>
+                            <button type="button" class="btn btn--ghost btn--sm" id="refresh-recordings">Aggiorna</button>
+                        </div>
+                        <div class="recordings-list" id="recordings-list">
+                            <p class="recordings-list__empty">Caricamento registrazioni...</p>
+                        </div>
+                        <nav class="recordings-pagination" id="recordings-pagination" aria-label="Paginazione registrazioni" hidden>
+                            <button type="button" class="btn btn--ghost btn--sm" id="recordings-prev">Precedente</button>
+                            <span id="recordings-page-status" aria-live="polite">Pagina 1 di 1</span>
+                            <button type="button" class="btn btn--ghost btn--sm" id="recordings-next">Successiva</button>
+                        </nav>
+                    </section>
+
+                    <section class="audio-import" aria-labelledby="audio-import-title">
+                        <div class="audio-import__header">
+                            <span class="source-action__index">02</span>
+                            <div>
+                                <h3 id="audio-import-title">Trascrivi un audio</h3>
+                                <p>Seleziona o trascina un file dal computer.</p>
+                            </div>
+                        </div>
+                        <div class="dropzone dropzone--compact" id="dropzone">
+                            <input type="file" id="file-input" accept="audio/*" class="sr-only">
+                            <div class="dropzone__content" id="dropzone-content">
+                                <div class="dropzone__icon">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                        <polyline points="17 8 12 3 7 8"/>
+                                        <line x1="12" x2="12" y1="3" y2="15"/>
+                                    </svg>
+                                </div>
+                                <h2 class="dropzone__title">Trascina qui il file</h2>
+                                <p class="dropzone__hint">MP3, WAV, M4A, WEBM, FLAC · Max 25 MB</p>
+                                <button type="button" class="btn btn--secondary" id="browse-btn">Seleziona audio</button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
             </section>
 
             <!-- ═══ STEP 2: Transcribe ═══════════════════════════════════ -->
@@ -127,7 +280,7 @@
 
                 <!-- Advanced Settings (Collapsible) -->
                 <div class="collapsible" id="settings-collapsible">
-                    <button type="button" class="collapsible__trigger" data-collapsible-trigger="settings-body" id="settings-trigger">
+                    <button type="button" class="collapsible__trigger" data-collapsible-trigger="settings-body" id="settings-trigger" aria-expanded="false" aria-controls="settings-body">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
                         <span>Impostazioni avanzate</span>
                         <svg class="collapsible__chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
@@ -146,10 +299,6 @@
                                 <div class="form-group">
                                     <label for="task-select">Operazione</label>
                                     <select id="task-select" name="task"></select>
-                                </div>
-                                <div class="form-group">
-                                    <label for="format-select">Formato Output</label>
-                                    <select id="format-select" name="response_format"></select>
                                 </div>
                                 <div class="form-group">
                                     <label for="temperature-input">Temperatura</label>
@@ -178,7 +327,7 @@
                         <div class="pulse-dots"><div></div><div></div><div></div></div>
                     </div>
                     <h3 class="processing__title">Elaborazione in corso...</h3>
-                    <p class="processing__status" id="progress-status">Preparazione della trascrizione...</p>
+                    <p class="processing__status" id="progress-status" role="status" aria-live="polite">Preparazione della trascrizione...</p>
                     <div class="progress">
                         <div class="progress__bar">
                             <div class="progress__fill" id="progress-bar-fill"></div>
@@ -192,11 +341,18 @@
                         <div class="live-preview__text" id="live-preview-text"></div>
                     </div>
 
-                    <!-- Console log -->
-                    <div class="console">
-                        <div class="console__header">LOG DI TRASCRIZIONE LIVE</div>
-                        <div class="console__body" id="live-console">
-                            <div class="console__line console__line--placeholder">In attesa del backend...</div>
+                    <div class="collapsible processing-details">
+                        <button type="button" class="collapsible__trigger" data-collapsible-trigger="processing-details-body" id="processing-details-trigger" aria-expanded="false" aria-controls="processing-details-body">
+                            <span>Dettagli tecnici</span>
+                            <svg class="collapsible__chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
+                        </button>
+                        <div class="collapsible__body" id="processing-details-body">
+                            <div class="console">
+                                <div class="console__header">LOG DI TRASCRIZIONE</div>
+                                <div class="console__body" id="live-console">
+                                    <div class="console__line console__line--placeholder">In attesa del backend...</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -237,9 +393,9 @@
                     <!-- Tabs -->
                     <div class="tabs">
                         <div class="tabs__nav" role="tablist">
-                            <button class="tabs__btn tabs__btn--active" data-tab="text-tab" role="tab" aria-selected="true">Testo Unito</button>
-                            <button class="tabs__btn" data-tab="segments-tab" role="tab" id="segments-tab-btn">Segmenti</button>
-                            <button class="tabs__btn" data-tab="raw-tab" role="tab">JSON Grezzo</button>
+                            <button class="tabs__btn tabs__btn--active" data-tab="text-tab" role="tab" aria-selected="true" aria-controls="text-tab" tabindex="0">Testo Unito</button>
+                            <button class="tabs__btn" data-tab="segments-tab" role="tab" id="segments-tab-btn" aria-selected="false" aria-controls="segments-tab" tabindex="-1">Segmenti</button>
+                            <button class="tabs__btn" data-tab="raw-tab" role="tab" aria-selected="false" aria-controls="raw-tab" tabindex="-1">JSON Grezzo</button>
                         </div>
                         <div class="tabs__panel tabs__panel--active" id="text-tab" role="tabpanel">
                             <div class="transcript-box" id="transcript-text">La trascrizione apparirà qui...</div>
@@ -259,6 +415,18 @@
                     Nuova Trascrizione
                 </button>
             </section>
+        </div>
+        </section>
+            </section>
+
+            <section class="app-page analysis-page" id="page-analysis" data-app-page="analysis">
+                <div class="analysis-placeholder">
+                    <span class="workspace-heading__eyebrow">ANALISI</span>
+                    <h2>Comprendi le tue trascrizioni.</h2>
+                    <p>Questa sezione ospiterà ricerca, riepiloghi, temi ricorrenti e confronti.</p>
+                    <span class="analysis-placeholder__status">In progettazione</span>
+                </div>
+            </section>
         </main>
 
         <!-- ─── Footer ──────────────────────────────────────────────────── -->
@@ -270,32 +438,14 @@
     <!-- Toast notification container -->
     <div class="toast-container" id="toast-container"></div>
 
-    <!-- Guided Tour & Showcase floating triggers -->
-    <div class="tour-floating-triggers" id="tour-triggers">
-        <button class="tour-btn" id="start-tour-btn">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-            Tour Guidato
-        </button>
-        <button class="tour-btn tour-btn--primary" id="start-showcase-btn">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <polygon points="5 3 19 12 5 21 5 3"/>
-            </svg>
-            Showcase Automatico
-        </button>
-        <button class="tour-btn" id="start-recording-btn" style="border-color: rgba(239, 68, 68, 0.4); color: var(--danger);">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="color: var(--danger); margin-right: 2px;">
-                <circle cx="12" cy="12" r="10"/>
-            </svg>
-            Registra Demo
-        </button>
-    </div>
-
-    <!-- Scripts: config → components → app (dependency order) -->
+    <!-- Scripts: config → services → components → views → recorder → app -->
     <script src="/static/config.js?v=1.0.2"></script>
+    <script src="/static/api.js?v=1.0.0"></script>
+    <script src="/static/workflow.js?v=1.0.0"></script>
     <script src="/static/components.js?v=1.0.2"></script>
+    <script src="/static/recordings-view.js?v=1.0.0"></script>
     <script src="/static/tour.js?v=1.0.2"></script>
+    <script src="/static/recorder.js?v=1.0.0"></script>
     <script src="/static/app.js?v=1.0.2"></script>
 </body>
 </html>

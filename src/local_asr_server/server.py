@@ -13,6 +13,8 @@ import sys
 import asyncio
 import logging
 import hashlib
+import subprocess
+import shutil
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -21,6 +23,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+
+from local_asr_server.recordings import (
+    RecordingConflict,
+    RecordingNotFound,
+    RecordingStore,
+)
 
 
 class TranscribePathRequest(BaseModel):
@@ -34,6 +42,13 @@ class TranscribePathRequest(BaseModel):
     temperature: Optional[float] = None
     condition_on_previous_text: bool = True
     verbose: Optional[bool] = None
+
+
+class CreateRecordingRequest(BaseModel):
+    title: str = "Registrazione senza titolo"
+    mime_type: str = "audio/webm;codecs=opus"
+    model: Optional[str] = None
+    language: Optional[str] = "it"
 
 
 def _str_to_bool(value: str | bool | None, default: bool = False) -> bool:
@@ -110,6 +125,195 @@ def _is_model_cached(model_name: str) -> bool:
     return False
 
 
+class AudioRouter:
+    _original_output: Optional[str] = None
+    _original_input: Optional[str] = None
+    _lock = threading.Lock()
+
+    @classmethod
+    def _get_switch_audio_cmd(cls) -> Optional[str]:
+        if shutil.which("SwitchAudioSource"):
+            return "SwitchAudioSource"
+        # Apple Silicon Homebrew fallback
+        fallback_arm = "/opt/homebrew/bin/SwitchAudioSource"
+        if Path(fallback_arm).exists():
+            return fallback_arm
+        # Intel Homebrew fallback
+        fallback_intel = "/usr/local/bin/SwitchAudioSource"
+        if Path(fallback_intel).exists():
+            return fallback_intel
+        return None
+
+    @classmethod
+    def get_available_outputs(cls) -> list[str]:
+        cmd = cls._get_switch_audio_cmd()
+        if not cmd:
+            return []
+        try:
+            output = subprocess.check_output(
+                [cmd, "-a", "-t", "output"], text=True, stderr=subprocess.DEVNULL
+            )
+            return [line.strip() for line in output.splitlines() if line.strip()]
+        except Exception as e:
+            logger.warning(f"Failed to get available audio outputs: {e}")
+            return []
+
+    @classmethod
+    def get_available_inputs(cls) -> list[str]:
+        cmd = cls._get_switch_audio_cmd()
+        if not cmd:
+            return []
+        try:
+            output = subprocess.check_output(
+                [cmd, "-a", "-t", "input"], text=True, stderr=subprocess.DEVNULL
+            )
+            return [line.strip() for line in output.splitlines() if line.strip()]
+        except Exception as e:
+            logger.warning(f"Failed to get available audio inputs: {e}")
+            return []
+
+    @classmethod
+    def get_current_output(cls) -> Optional[str]:
+        cmd = cls._get_switch_audio_cmd()
+        if not cmd:
+            return None
+        try:
+            return subprocess.check_output(
+                [cmd, "-c"], text=True, stderr=subprocess.DEVNULL
+            ).strip()
+        except Exception as e:
+            logger.warning(f"Failed to get current audio output: {e}")
+            return None
+
+    @classmethod
+    def get_current_input(cls) -> Optional[str]:
+        cmd = cls._get_switch_audio_cmd()
+        if not cmd:
+            return None
+        try:
+            return subprocess.check_output(
+                [cmd, "-t", "input", "-c"], text=True, stderr=subprocess.DEVNULL
+            ).strip()
+        except Exception as e:
+            logger.warning(f"Failed to get current audio input: {e}")
+            return None
+
+    @classmethod
+    def route_to_multi_output(cls) -> bool:
+        if sys.platform != "darwin":
+            return False
+        cmd = cls._get_switch_audio_cmd()
+        if not cmd:
+            logger.info("switchaudio-osx (SwitchAudioSource) is not installed. Automatic routing skipped.")
+            return False
+
+        with cls._lock:
+            try:
+                # 1. Output Routing
+                current_out = cls.get_current_output()
+                if current_out:
+                    lower_current_out = current_out.lower()
+                    if "uscite multiple" in lower_current_out or "multi-output" in lower_current_out:
+                        logger.info("Already outputting to a multi-output device.")
+                    else:
+                        cls._original_output = current_out
+                        logger.info(f"Saved original audio output device: '{cls._original_output}'")
+                        devices_out = cls.get_available_outputs()
+                        target_out = None
+                        for dev in devices_out:
+                            lower_dev = dev.lower()
+                            if "uscite multiple" in lower_dev or "multi-output" in lower_dev:
+                                target_out = dev
+                                break
+                        if not target_out:
+                            for dev in devices_out:
+                                lower_dev = dev.lower()
+                                if "multiple" in lower_dev or "multi" in lower_dev:
+                                    target_out = dev
+                                    break
+                        if target_out:
+                            subprocess.run(
+                                [cmd, "-s", target_out],
+                                check=True,
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL
+                            )
+                            logger.info(f"Automatically routed system audio output to: '{target_out}'")
+
+                # 2. Input Routing
+                current_in = cls.get_current_input()
+                if current_in:
+                    lower_current_in = current_in.lower()
+                    if "dispositivo combinato" in lower_current_in or "aggregate device" in lower_current_in or "combinato" in lower_current_in:
+                        logger.info("Already inputting from an aggregate/combined device.")
+                    else:
+                        cls._original_input = current_in
+                        logger.info(f"Saved original audio input device: '{cls._original_input}'")
+                        devices_in = cls.get_available_inputs()
+                        target_in = None
+                        for dev in devices_in:
+                            lower_dev = dev.lower()
+                            if "dispositivo combinato" in lower_dev or "aggregate device" in lower_dev or "combinato" in lower_dev:
+                                target_in = dev
+                                break
+                        if not target_in:
+                            for dev in devices_in:
+                                lower_dev = dev.lower()
+                                if "aggregate" in lower_dev or "combinat" in lower_dev:
+                                    target_in = dev
+                                    break
+                        if target_in:
+                            subprocess.run(
+                                [cmd, "-t", "input", "-s", target_in],
+                                check=True,
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL
+                            )
+                            logger.info(f"Automatically routed system audio input to: '{target_in}'")
+                
+                return True
+            except Exception as e:
+                logger.warning(f"Error during automatic audio routing: {e}")
+                return False
+
+    @classmethod
+    def restore_original_output(cls) -> bool:
+        if sys.platform != "darwin":
+            return False
+        cmd = cls._get_switch_audio_cmd()
+        if not cmd:
+            return False
+
+        with cls._lock:
+            try:
+                # Restore Output
+                if cls._original_output:
+                    subprocess.run(
+                        [cmd, "-s", cls._original_output],
+                        check=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                    logger.info(f"Automatically restored original audio output device: '{cls._original_output}'")
+                    cls._original_output = None
+                
+                # Restore Input
+                if cls._original_input:
+                    subprocess.run(
+                        [cmd, "-t", "input", "-s", cls._original_input],
+                        check=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                    logger.info(f"Automatically restored original audio input device: '{cls._original_input}'")
+                    cls._original_input = None
+                
+                return True
+            except Exception as e:
+                logger.warning(f"Error during audio output/input restoration: {e}")
+                return False
+
+
 CACHE_DIR = Path(__file__).parent.parent.parent / ".cache"
 
 import math
@@ -149,7 +353,10 @@ def _save_cached_result(cache_key: str, data: dict) -> None:
 
 
 
-def create_app(default_model: str = "mlx-community/whisper-large-v3-turbo") -> FastAPI:
+def create_app(
+    default_model: str = "mlx-community/whisper-large-v3-turbo",
+    recordings_dir: Path | None = None,
+) -> FastAPI:
     app = FastAPI(
         title="local-asr-server",
         version="0.1.0",
@@ -166,6 +373,9 @@ def create_app(default_model: str = "mlx-community/whisper-large-v3-turbo") -> F
     )
 
     app.state.default_model = default_model
+    app.state.recording_store = RecordingStore(
+        recordings_dir or Path("~/Recordings/local-asr")
+    )
 
     # Set up static files serving
     static_dir = Path(__file__).parent / "static"
@@ -193,9 +403,100 @@ def create_app(default_model: str = "mlx-community/whisper-large-v3-turbo") -> F
             "endpoints": [
                 "POST /v1/audio/transcriptions",
                 "POST /v1/audio/transcriptions/path",
+                "POST /v1/recordings",
+                "POST /v1/recordings/{id}/chunks",
+                "POST /v1/recordings/{id}/stop",
+                "GET /v1/recordings/{id}",
+                "GET /v1/recordings/{id}/audio",
                 "GET /health",
             ],
+            "recordings": True,
         }
+
+    @app.post("/v1/recordings", status_code=201)
+    def create_recording(request: CreateRecordingRequest):
+        store: RecordingStore = app.state.recording_store
+        try:
+            AudioRouter.route_to_multi_output()
+            return store.create(
+                title=request.title,
+                mime_type=request.mime_type,
+                model=request.model or app.state.default_model,
+                language=request.language,
+            )
+        except OSError as exc:
+            raise HTTPException(status_code=507, detail=str(exc)) from exc
+
+    @app.post("/v1/system/audio-route/test-route")
+    def test_audio_route():
+        success = AudioRouter.route_to_multi_output()
+        return {
+            "success": success,
+            "original_output": AudioRouter._original_output,
+            "original_input": AudioRouter._original_input
+        }
+
+    @app.post("/v1/system/audio-route/test-restore")
+    def test_audio_restore():
+        success = AudioRouter.restore_original_output()
+        return {"success": success}
+
+    @app.post("/v1/recordings/{recording_id}/chunks")
+    async def append_recording_chunk(
+        recording_id: str,
+        file: UploadFile = File(...),
+        sequence: int = Form(...),
+    ):
+        store: RecordingStore = app.state.recording_store
+        try:
+            content = await file.read()
+            return store.append_chunk(recording_id, sequence, content)
+        except RecordingNotFound as exc:
+            raise HTTPException(status_code=404, detail="Recording not found") from exc
+        except RecordingConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=507, detail=str(exc)) from exc
+
+    @app.post("/v1/recordings/{recording_id}/stop", status_code=202)
+    def stop_recording(recording_id: str):
+        store: RecordingStore = app.state.recording_store
+        try:
+            AudioRouter.restore_original_output()
+            metadata, _ = store.finalize(recording_id)
+            return metadata
+        except RecordingNotFound as exc:
+            raise HTTPException(status_code=404, detail="Recording not found") from exc
+        except RecordingConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=507, detail=str(exc)) from exc
+
+    @app.get("/v1/recordings/{recording_id}")
+    def get_recording(recording_id: str):
+        try:
+            return app.state.recording_store.get(recording_id)
+        except RecordingNotFound as exc:
+            raise HTTPException(status_code=404, detail="Recording not found") from exc
+
+    @app.get("/v1/recordings/{recording_id}/audio")
+    def get_recording_audio(recording_id: str):
+        store: RecordingStore = app.state.recording_store
+        try:
+            metadata = store.get(recording_id, include_result=False)
+            return FileResponse(
+                store.audio_path(recording_id),
+                media_type=metadata["mime_type"],
+                filename=Path(metadata["audio_file"]).name,
+            )
+        except RecordingNotFound as exc:
+            raise HTTPException(status_code=404, detail="Recording not found") from exc
+        except RecordingConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/v1/recordings")
+    def list_recordings(limit: int = 20):
+        return {"items": app.state.recording_store.list(limit)}
 
     @app.post("/v1/audio/transcriptions")
     async def transcribe_upload(

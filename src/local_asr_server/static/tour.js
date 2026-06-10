@@ -33,6 +33,7 @@ const Tour = (() => {
             text: 'Benvenuto! Questa è la tua console di trascrizione locale alimentata da MLX Whisper. L\'elaborazione avviene interamente sul tuo dispositivo, garantendo privacy e velocità.',
             position: 'bottom',
             onBeforeShow: () => {
+                window.AppNavigation?.switchPage('transcription');
                 StepIndicator.setStep('upload');
             },
             nextDelay: 3
@@ -45,16 +46,16 @@ const Tour = (() => {
             nextDelay: 3
         },
         {
-            elementId: 'stepper',
+            elementId: 'section-upload',
             title: 'Flusso di Lavoro',
-            text: 'L\'interfaccia è strutturata in 3 semplici passaggi: Carica Audio, Trascrivi (con impostazioni) e Visualizza Risultati.',
+            text: 'Parti dalla sorgente audio. Puoi registrare, scegliere una registrazione recente oppure importare un file.',
             position: 'bottom',
             nextDelay: 3
         },
         {
             elementId: 'dropzone',
-            title: 'Area di Caricamento',
-            text: 'Trascina qui qualsiasi file audio comune (MP3, WAV, M4A, FLAC, WEBM) fino a 25MB, oppure clicca su "Seleziona File" per sfogliare il tuo computer.',
+            title: 'Trascrivi un audio',
+            text: 'Seleziona o trascina un file audio comune fino a 25 MB per passare alla configurazione.',
             position: 'bottom',
             onBeforeShow: () => {
                 if (isShowcaseMode) {

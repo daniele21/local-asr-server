@@ -148,6 +148,7 @@ const CollapsiblePanel = (() => {
             // Start collapsed
             body.style.maxHeight = '0px';
             body.classList.add('collapsible--collapsed');
+            trigger.setAttribute('aria-expanded', 'false');
 
             trigger.addEventListener('click', () => toggle(trigger, body));
         });
@@ -165,6 +166,7 @@ const CollapsiblePanel = (() => {
             body.classList.remove('collapsible--collapsed');
             body.style.maxHeight = body.scrollHeight + 'px';
             trigger.classList.add('collapsible-trigger--open');
+            trigger.setAttribute('aria-expanded', 'true');
 
             const onTransitionEnd = (e) => {
                 if (e.propertyName === 'max-height') {
@@ -182,6 +184,7 @@ const CollapsiblePanel = (() => {
                 body.style.maxHeight = '0px';
                 body.classList.add('collapsible--collapsed');
                 trigger.classList.remove('collapsible-trigger--open');
+                trigger.setAttribute('aria-expanded', 'false');
             });
         }
     }
@@ -255,6 +258,10 @@ const FileDropzone = (() => {
             Toast.show(LABELS.toastFileInvalid, 'error');
             return;
         }
+        if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+            Toast.show(`Il file supera il limite di ${MAX_FILE_SIZE_MB} MB.`, 'error');
+            return;
+        }
         if (_onFileSelected) _onFileSelected(file);
     }
 
@@ -282,8 +289,6 @@ const SettingsForm = (() => {
         _populateSelect('model-select', MODELS, '', 'badge');
         _populateSelect('language-select', LANGUAGES, DEFAULTS.language);
         _populateSelect('task-select', TASKS, DEFAULTS.task);
-        _populateSelect('format-select', OUTPUT_FORMATS, DEFAULTS.outputFormat);
-
         // Set default checkbox states
         const wordTs = document.getElementById('timestamps-check');
         const condPrev = document.getElementById('condition-check');
@@ -329,7 +334,6 @@ const SettingsForm = (() => {
             model: elements.model?.value || '',
             language: elements.language?.value || '',
             task: elements.task?.value || DEFAULTS.task,
-            response_format: elements.response_format?.value || DEFAULTS.outputFormat,
             word_timestamps: elements.word_timestamps?.checked ? 'true' : 'false',
             condition_on_previous_text: elements.condition_on_previous_text?.checked ? 'true' : 'false',
             temperature: elements.temperature?.value || '',

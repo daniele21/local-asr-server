@@ -44,6 +44,19 @@ document.addEventListener('DOMContentLoaded', () => {
         copyBtn:         document.getElementById('copy-btn'),
         copyBtnText:     document.getElementById('copy-btn-text'),
         newTransBtn:     document.getElementById('new-transcription-btn'),
+        recordingsList:  document.getElementById('recordings-list'),
+        recordingsCount: document.getElementById('recordings-count'),
+        refreshRecordings: document.getElementById('refresh-recordings'),
+        recordingsPagination: document.getElementById('recordings-pagination'),
+        recordingsPrevious: document.getElementById('recordings-prev'),
+        recordingsNext: document.getElementById('recordings-next'),
+        recordingsPageStatus: document.getElementById('recordings-page-status'),
+        recorderPanel: document.getElementById('view-recording'),
+        recordingPageContent: document.getElementById('recording-page-content'),
+        dropzone: document.getElementById('dropzone'),
+        browseBtn: document.getElementById('browse-btn'),
+        helpMenuToggle: document.getElementById('help-menu-toggle'),
+        helpMenuPanel: document.getElementById('help-menu-panel'),
 
         // Header
         themeToggle:  document.getElementById('theme-toggle'),
@@ -58,6 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let selectedFile = null;
     let timerInterval = null;
     let timerStart = 0;
+    let selectedObjectUrl = null;
 
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -74,15 +88,34 @@ document.addEventListener('DOMContentLoaded', () => {
         SettingsForm.populate();
 
         // Initialize components
+        dom.recordingPageContent.appendChild(dom.recorderPanel);
+        dom.recorderPanel.hidden = false;
+        window.AppNavigation = { switchPage };
         CollapsiblePanel.init();
         FileDropzone.init({ onFileSelected: handleFileSelected });
+        RecordingsView.init({
+            container: dom.recordingsList,
+            pagination: dom.recordingsPagination,
+            previous: dom.recordingsPrevious,
+            next: dom.recordingsNext,
+            status: dom.recordingsPageStatus,
+            onSelect: selectRecording,
+        });
         Tour.init();
+        RecordingController.init({
+            onSaved: () => {
+                loadRecordings();
+                Toast.show('Registrazione salvata. Ora puoi trascriverla dalla pagina Trascrizione.', 'success');
+            },
+        });
 
         // Bind event handlers
         bindEvents();
 
         // Set initial step
         StepIndicator.setStep('upload');
+        switchPage(getInitialPage(), { updateHash: false });
+        loadRecordings();
 
         // Start server health polling
         checkServerHealth();
@@ -109,16 +142,43 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // New transcription
         dom.newTransBtn.addEventListener('click', goToUploadStep);
+        dom.refreshRecordings.addEventListener('click', loadRecordings);
+        dom.helpMenuToggle.addEventListener('click', toggleHelpMenu);
+        document.querySelectorAll('[data-page-target]').forEach(button => {
+            button.addEventListener('click', () => switchPage(button.dataset.pageTarget));
+        });
+        window.addEventListener('hashchange', () => {
+            switchPage(getInitialPage(), { updateHash: false });
+        });
+
+        document.addEventListener('click', event => {
+            if (!event.target.closest('.help-menu')) closeHelpMenu();
+        });
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') closeHelpMenu();
+        });
 
         // Tabs
         document.querySelectorAll('.tabs__btn').forEach(btn => {
             btn.addEventListener('click', () => switchTab(btn));
+            btn.addEventListener('keydown', handleTabKeydown);
         });
 
         // Guided Tour and Showcase triggers
-        document.getElementById('start-tour-btn')?.addEventListener('click', () => Tour.startInteractive());
-        document.getElementById('start-showcase-btn')?.addEventListener('click', () => Showcase.start());
-        document.getElementById('start-recording-btn')?.addEventListener('click', () => Tour.startRecordingShowcase());
+        document.getElementById('start-tour-btn')?.addEventListener('click', () => {
+            closeHelpMenu();
+            switchPage('transcription');
+            Tour.startInteractive();
+        });
+        document.getElementById('start-showcase-btn')?.addEventListener('click', () => {
+            closeHelpMenu();
+            switchPage('transcription');
+            Showcase.start();
+        });
+        document.getElementById('start-recording-btn')?.addEventListener('click', () => {
+            closeHelpMenu();
+            Tour.startRecordingShowcase();
+        });
     }
 
 
@@ -140,14 +200,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function checkServerHealth() {
         try {
-            const res = await fetch(API.health);
-            if (res.ok) {
-                const data = await res.json();
-                const modelShort = data.default_model.split('/').pop();
-                setServerStatus(true, `${LABELS.statusOnline} (${modelShort})`);
-            } else {
-                setServerStatus(false, LABELS.statusError);
-            }
+            const data = await ApiClient.health();
+            const modelShort = data.default_model.split('/').pop();
+            setServerStatus(true, `${LABELS.statusOnline} · ${modelShort}`);
         } catch {
             setServerStatus(false, LABELS.statusOffline);
         }
@@ -171,18 +226,21 @@ document.addEventListener('DOMContentLoaded', () => {
      * @param {File} file
      */
     function handleFileSelected(file) {
+        if (selectedObjectUrl) URL.revokeObjectURL(selectedObjectUrl);
         selectedFile = file;
+        Workflow.update({ selectedFile: file, step: 'transcribe', sourcePanel: null });
 
         // Update file preview
         dom.previewFilename.textContent = file.name;
         dom.previewFilesize.textContent = Utils.formatBytes(file.size);
 
         // Load audio preview
-        const url = URL.createObjectURL(file);
-        dom.audioElement.src = url;
+        selectedObjectUrl = URL.createObjectURL(file);
+        dom.audioElement.src = selectedObjectUrl;
 
         // Transition to Step 2
         StepIndicator.setStep('transcribe');
+        switchPage('transcription');
     }
 
     /** Go back to the upload step (reset state) */
@@ -190,13 +248,84 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedFile = null;
         FileDropzone.reset();
         dom.audioElement.removeAttribute('src');
+        if (selectedObjectUrl) URL.revokeObjectURL(selectedObjectUrl);
+        selectedObjectUrl = null;
 
         // Reset processing UI
         dom.processingCard.style.display = 'none';
 
         StepIndicator.setStep('upload');
+        Workflow.update({ selectedFile: null, step: 'upload', sourcePanel: null });
+        switchPage('transcription');
+        loadRecordings();
     }
 
+    function getInitialPage() {
+        const page = window.location.hash.replace('#', '');
+        return ['home', 'recording', 'transcription', 'analysis'].includes(page)
+            ? page
+            : 'home';
+    }
+
+    function switchPage(pageName, options = {}) {
+        document.querySelectorAll('[data-app-page]').forEach(page => {
+            page.classList.toggle('app-page--active', page.dataset.appPage === pageName);
+        });
+        document.querySelectorAll('.primary-nav [data-page-target]').forEach(button => {
+            const active = button.dataset.pageTarget === pageName;
+            button.classList.toggle('primary-nav__item--active', active);
+            if (active) button.setAttribute('aria-current', 'page');
+            else button.removeAttribute('aria-current');
+        });
+        if (options.updateHash !== false) {
+            history.replaceState(null, '', `#${pageName}`);
+        }
+        if (pageName === 'transcription') loadRecordings();
+        window.scrollTo({ top: 0, behavior: 'auto' });
+    }
+
+    function toggleHelpMenu() {
+        const shouldOpen = dom.helpMenuPanel.hidden;
+        dom.helpMenuPanel.hidden = !shouldOpen;
+        dom.helpMenuToggle.setAttribute('aria-expanded', String(shouldOpen));
+    }
+
+    function closeHelpMenu() {
+        dom.helpMenuPanel.hidden = true;
+        dom.helpMenuToggle.setAttribute('aria-expanded', 'false');
+    }
+
+    async function loadRecordings() {
+        if (!dom.recordingsList) return;
+        dom.recordingsList.innerHTML = '<p class="recordings-list__empty">Caricamento registrazioni...</p>';
+        try {
+            const { items } = await ApiClient.listRecordings();
+            const count = RecordingsView.setItems(items);
+            dom.recordingsCount.textContent = `${count} ${count === 1 ? 'elemento' : 'elementi'}`;
+        } catch (error) {
+            console.error('Unable to load recordings:', error);
+            dom.recordingsList.innerHTML = '<p class="recordings-list__empty">Impossibile caricare le registrazioni.</p>';
+        }
+    }
+
+    async function selectRecording(recording, button) {
+        button.disabled = true;
+        button.textContent = 'Caricamento...';
+        try {
+            const blob = await ApiClient.recordingAudio(recording.id);
+            const extension = recording.audio_file.split('.').pop() || 'webm';
+            const file = new File(
+                [blob],
+                `${recording.title}.${extension}`,
+                { type: recording.mime_type || blob.type },
+            );
+            handleFileSelected(file);
+        } catch (error) {
+            Toast.show(`Audio non disponibile: ${error.message}`, 'error');
+            button.disabled = false;
+            button.textContent = 'Usa audio';
+        }
+    }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Transcription
@@ -231,20 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const duration = dom.audioElement.duration || 0;
 
         try {
-            const response = await fetch(API.transcribe, {
-                method: 'POST',
-                body: formData,
-            });
-
-            if (!response.ok) {
-                const errText = await response.text();
-                let detail = 'Operazione fallita';
-                try {
-                    const parsed = JSON.parse(errText);
-                    detail = parsed.detail || detail;
-                } catch (_) { /* ignore parse error */ }
-                throw new Error(detail);
-            }
+            const response = await ApiClient.transcribe(formData);
 
             // Stream response
             await processStream(response, duration);
@@ -513,6 +629,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.tabs__btn').forEach(t => {
             t.classList.remove('tabs__btn--active');
             t.setAttribute('aria-selected', 'false');
+            t.setAttribute('tabindex', '-1');
         });
         document.querySelectorAll('.tabs__panel').forEach(p => {
             p.classList.remove('tabs__panel--active');
@@ -521,8 +638,24 @@ document.addEventListener('DOMContentLoaded', () => {
         // Activate selected
         btn.classList.add('tabs__btn--active');
         btn.setAttribute('aria-selected', 'true');
+        btn.setAttribute('tabindex', '0');
         const panel = document.getElementById(btn.dataset.tab);
         if (panel) panel.classList.add('tabs__panel--active');
+    }
+
+    function handleTabKeydown(event) {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        const tabs = Array.from(document.querySelectorAll('.tabs__btn'))
+            .filter(tab => tab.offsetParent !== null);
+        const current = tabs.indexOf(event.currentTarget);
+        let next = current;
+        if (event.key === 'ArrowRight') next = (current + 1) % tabs.length;
+        if (event.key === 'ArrowLeft') next = (current - 1 + tabs.length) % tabs.length;
+        if (event.key === 'Home') next = 0;
+        if (event.key === 'End') next = tabs.length - 1;
+        event.preventDefault();
+        switchTab(tabs[next]);
+        tabs[next].focus();
     }
 
 

@@ -49,11 +49,20 @@ def main() -> None:
         help="Enable reload for development.",
     )
 
+    parser.add_argument(
+        "--recordings-dir",
+        default="~/Recordings/local-asr",
+        help="Directory used to persist call recordings and transcripts.",
+    )
+
     args = parser.parse_args()
 
     from local_asr_server.server import create_app
 
-    app = create_app(default_model=args.model)
+    app = create_app(
+        default_model=args.model,
+        recordings_dir=Path(args.recordings_dir).expanduser(),
+    )
 
     uvicorn.run(
         app,

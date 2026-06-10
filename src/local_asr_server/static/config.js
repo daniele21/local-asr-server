@@ -128,7 +128,10 @@ const MAX_FILE_SIZE_MB = 25;
 const API = {
     health: '/health',
     transcribe: '/v1/audio/transcriptions',
+    recordings: '/v1/recordings',
 };
+
+const RECORDING_CHUNK_INTERVAL_MS = 5000;
 
 // ─── Health Check Interval (ms) ────────────────────────────────────────────────
 const HEALTH_CHECK_INTERVAL_MS = 15000;
