@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build Guided Product Tours"
+  short_description: "Design complete, recordable product tours"
+  default_prompt: "Use $build-guided-product-tours to inspect this app and build a complete spotlight-based guided tour with an optional recorded showcase."

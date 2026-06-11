@@ -148,3 +148,4 @@ Thumbs.db
 # Project-specific local directories
 .cache/
 /.cache/
+test/implementation-plan.md

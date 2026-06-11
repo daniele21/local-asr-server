@@ -125,8 +125,8 @@ class RecordingStore:
                 raise RecordingConflict(
                     f"Cannot stop recording in status {metadata['status']}"
                 )
-            if metadata["chunk_count"] == 0:
-                raise RecordingConflict("Cannot stop an empty recording")
+            # Allow empty recordings – the user may have stopped
+            # before the first chunk interval elapsed.
 
             metadata["status"] = "finalizing"
             metadata["stopped_at"] = _utc_now()
@@ -134,7 +134,11 @@ class RecordingStore:
 
             part_path = self._part_path(session_dir, metadata)
             audio_path = self._audio_path(session_dir, metadata)
-            part_path.replace(audio_path)
+            if part_path.exists():
+                part_path.replace(audio_path)
+            elif not audio_path.exists():
+                # No data was written; create an empty file.
+                audio_path.touch()
 
             metadata["status"] = "recorded"
             self._write_metadata(session_dir, metadata)

@@ -9,6 +9,7 @@ const RecordingController = (() => {
 
     let mediaRecorder = null;
     let mediaStream = null;
+    let sourceStreams = [];
     let sessionId = null;
     let sequence = 0;
     let bytesSaved = 0;
@@ -20,6 +21,8 @@ const RecordingController = (() => {
     let meterFrame = null;
     let meterData = null;
     let onSaved = null;
+    let routeActivated = false;
+    let deviceManuallySelected = false;
     let dom = {};
 
     function init(options = {}) {
@@ -27,6 +30,7 @@ const RecordingController = (() => {
         dom = {
             title: document.getElementById('recording-title'),
             device: document.getElementById('recording-device'),
+            systemDevice: document.getElementById('recording-system-device'),
             start: document.getElementById('recording-start'),
             stop: document.getElementById('recording-stop'),
             status: document.getElementById('recording-status'),
@@ -37,15 +41,34 @@ const RecordingController = (() => {
             levelLabel: document.getElementById('signal-level-label'),
             sourceMode: document.getElementById('recording-source-mode'),
             testRoute: document.getElementById('test-audio-route'),
+            audioSetupStatus: document.getElementById('audio-setup-status'),
+            audioSetupTitle: document.getElementById('audio-setup-title'),
+            audioReadiness: document.getElementById('audio-readiness'),
+            setupOpen: document.getElementById('audio-setup-open'),
+            setupPanel: document.getElementById('audio-setup-panel'),
+            setupClose: document.getElementById('audio-setup-close'),
+            setupLater: document.getElementById('audio-setup-later'),
+            setupVerify: document.getElementById('audio-setup-verify'),
+            setupIntro: document.getElementById('audio-setup-intro'),
+            profileName: document.getElementById('audio-profile-name'),
         };
         if (!dom.start) return;
 
         dom.start.addEventListener('click', start);
         dom.stop.addEventListener('click', stop);
+        dom.device?.addEventListener('change', () => {
+            deviceManuallySelected = true;
+        });
+        dom.setupOpen?.addEventListener('click', openSetupPanel);
+        dom.setupClose?.addEventListener('click', closeSetupPanel);
+        dom.setupLater?.addEventListener('click', closeSetupPanel);
+        dom.setupVerify?.addEventListener('click', verifyAudioSetup);
         if (dom.testRoute) dom.testRoute.addEventListener('click', toggleTestAudioRoute);
-        navigator.mediaDevices?.addEventListener?.('devicechange', loadDevices);
+        navigator.mediaDevices?.addEventListener?.('devicechange', handleDeviceChange);
         window.addEventListener('beforeunload', warnBeforeUnload);
+        window.addEventListener('pagehide', restoreAudioRouteOnUnload);
         loadDevices();
+        refreshAudioStatus();
         restoreSession();
     }
 
@@ -55,24 +78,29 @@ const RecordingController = (() => {
             const devices = await navigator.mediaDevices.enumerateDevices();
             const current = dom.device.value;
             const inputs = devices.filter(device => device.kind === 'audioinput');
-            dom.device.innerHTML = '<option value="">Predefinito di sistema</option>';
+            dom.device.innerHTML = '<option value="">Automatico (predefinito di sistema)</option>';
+            if (dom.systemDevice) {
+                dom.systemDevice.innerHTML = '<option value="">BlackHole non rilevato</option>';
+            }
             inputs.forEach((device, index) => {
                 const option = document.createElement('option');
                 option.value = device.deviceId;
                 option.textContent = device.label || `Ingresso audio ${index + 1}`;
-                dom.device.appendChild(option);
-            });
-            const hasCustomValue = current && current !== "";
-            if (!hasCustomValue) {
-                const aggregateOption = [...dom.device.options].find(option => 
-                    option.textContent.toLowerCase().includes("combinato") || 
-                    option.textContent.toLowerCase().includes("aggregate")
-                );
-                if (aggregateOption) {
-                    dom.device.value = aggregateOption.value;
+                const isBlackHole = option.textContent.toLowerCase().includes('blackhole');
+                const isAggregate = isAggregateInput(option.textContent);
+                if (isBlackHole && dom.systemDevice) {
+                    dom.systemDevice.appendChild(option);
+                } else if (!isAggregate) {
+                    dom.device.appendChild(option);
                 }
-            } else if ([...dom.device.options].some(option => option.value === current)) {
+            });
+            const hasCustomValue = deviceManuallySelected && current;
+            if (hasCustomValue && [...dom.device.options].some(option => option.value === current)) {
                 dom.device.value = current;
+            }
+            if (dom.systemDevice && dom.systemDevice.options.length > 1) {
+                dom.systemDevice.remove(0);
+                dom.systemDevice.selectedIndex = 0;
             }
         } catch (error) {
             console.warn('Unable to enumerate audio devices:', error);
@@ -86,88 +114,59 @@ const RecordingController = (() => {
         }
 
         lockControls(true);
-        setStatus('Richiesta microfono...', 'working');
+        setStatus('Configurazione audio...', 'working');
         try {
-            const audioConstraints = dom.device.value
-                ? { 
-                    deviceId: { exact: dom.device.value },
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    autoGainControl: false,
-                    channelCount: 4
-                  }
-                : {
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    autoGainControl: false,
-                    channelCount: 4
-                  };
+            const mode = dom.sourceMode ? dom.sourceMode.value : 'both';
+            if (mode !== 'mic_only') {
+                const routing = await activateAudioRoute();
+                if (routing.success) {
+                    await delay(500);
+                    await loadDevices();
+                } else {
+                    openSetupPanel();
+                    throw new Error('Completa il setup dell’audio computer prima di registrare.');
+                }
+            }
 
-            mediaStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
-            await loadDevices();
+            setStatus('Accesso alle sorgenti...', 'working');
+            sourceStreams = [];
+            let micStream = null;
+            if (mode !== 'pc_only') {
+                micStream = await getAudioStream(dom.device?.value, true);
+                sourceStreams.push(micStream);
+                assertSingleMicrophone(micStream);
+                await loadDevices();
+            } else if (!dom.systemDevice?.value) {
+                await unlockAudioDeviceLabels();
+                await loadDevices();
+            }
+            const systemStream = mode !== 'mic_only'
+                ? await getAudioStream(dom.systemDevice?.value, false)
+                : null;
+            if (systemStream) sourceStreams.push(systemStream);
+            mediaStream = sourceStreams[0] || null;
 
-            // Web Audio API mixing and routing
             const AudioContextClass = window.AudioContext || window.webkitAudioContext;
             audioContext = new AudioContextClass();
             if (audioContext.state === 'suspended') {
                 await audioContext.resume();
             }
-            const sourceNode = audioContext.createMediaStreamSource(mediaStream);
-            const track = mediaStream.getAudioTracks()[0];
-            const trackSettings = track ? track.getSettings() : {};
-            const sourceChannels = trackSettings.channelCount || sourceNode.channelCount || 2;
-            
-            sourceNode.channelCount = sourceChannels;
-            sourceNode.channelCountMode = 'explicit';
-            const mode = dom.sourceMode ? dom.sourceMode.value : 'both';
-            
             const destNode = audioContext.createMediaStreamDestination();
             destNode.channelCount = 2;
-
-            let finalNodeBeforeDest;
-            if (sourceChannels >= 3) {
-                // Aggregate Device setup: Channel 0 is Microphone, 1 and 2 are BlackHole (system sound)
-                const splitter = audioContext.createChannelSplitter(sourceChannels);
-                const merger = audioContext.createChannelMerger(2);
-                sourceNode.connect(splitter);
-
-                if (mode === 'mic_only') {
-                    // Send mic (channel 0) to both Left and Right
-                    splitter.connect(merger, 0, 0); // Mic -> Left
-                    splitter.connect(merger, 0, 1); // Mic -> Right
-                } else if (mode === 'pc_only') {
-                    // Send BlackHole L/R (channels 1 & 2) to Left and Right
-                    splitter.connect(merger, 1, 0); // BlackHole L -> Left
-                    splitter.connect(merger, 2, 1); // BlackHole R -> Right
-                } else {
-                    // 'both': Mix Mic into both Left/Right, and keep BlackHole L/R stereo
-                    const micGain = audioContext.createGain();
-                    micGain.gain.value = 1.0;
-
-                    // Route Mic (0) to both Left (0) and Right (1) of the merger via micGain
-                    splitter.connect(micGain, 0);
-                    micGain.connect(merger, 0, 0);
-                    micGain.connect(merger, 0, 1);
-
-                    // Route BlackHole L/R (1 & 2) directly to Left/Right of the merger
-                    splitter.connect(merger, 1, 0); // BlackHole L -> Left
-                    splitter.connect(merger, 2, 1); // BlackHole R -> Right
-                }
-                merger.connect(destNode);
-                finalNodeBeforeDest = merger;
-            } else {
-                // Standard 1 or 2 channel stream
-                sourceNode.connect(destNode);
-                finalNodeBeforeDest = sourceNode;
-            }
+            const mixBus = audioContext.createGain();
+            mixBus.gain.value = 1;
+            sourceStreams.forEach(stream => {
+                audioContext.createMediaStreamSource(stream).connect(mixBus);
+            });
+            mixBus.connect(destNode);
 
             // Chrome Workaround: Force the audio graph to stay active by connecting it to destination via zero gain
             const silentGain = audioContext.createGain();
             silentGain.gain.value = 0.0;
-            finalNodeBeforeDest.connect(silentGain);
+            mixBus.connect(silentGain);
             silentGain.connect(audioContext.destination);
 
-            startAudioMeter(finalNodeBeforeDest);
+            startAudioMeter(mixBus);
 
             const mimeType = chooseMimeType();
             const response = await fetch(API.recordings, {
@@ -206,6 +205,7 @@ const RecordingController = (() => {
             dom.progress.textContent = 'Salvataggio in corso...';
         } catch (error) {
             releaseMedia();
+            await restoreAudioRoute();
             lockControls(false);
             setStatus('Errore', 'error');
             Toast.show(`Impossibile avviare la registrazione: ${error.message}`, 'error');
@@ -241,6 +241,14 @@ const RecordingController = (() => {
         dom.stop.disabled = true;
         setStatus('Finalizzazione...', 'working');
 
+        // Flush any buffered audio data before stopping.
+        // requestData() triggers an immediate 'dataavailable' event,
+        // ensuring short recordings (< chunk interval) are captured.
+        if (mediaRecorder.state === 'recording') {
+            try { mediaRecorder.requestData(); } catch { /* ignore */ }
+            await delay(100);
+        }
+
         const recorderStopped = new Promise(resolve => {
             mediaRecorder.addEventListener('stop', resolve, { once: true });
         });
@@ -266,6 +274,8 @@ const RecordingController = (() => {
             setStatus('Errore', 'error');
             dom.start.disabled = false;
             Toast.show(`Finalizzazione fallita: ${error.message}`, 'error', 0);
+        } finally {
+            await restoreAudioRoute();
         }
     }
 
@@ -307,20 +317,22 @@ const RecordingController = (() => {
         dom.start.disabled = locked;
         dom.title.disabled = locked;
         dom.device.disabled = locked;
+        if (dom.systemDevice) dom.systemDevice.disabled = locked;
         if (dom.sourceMode) dom.sourceMode.disabled = locked;
         if (!locked) dom.stop.disabled = true;
     }
 
     function releaseMedia() {
         stopAudioMeter();
-        mediaStream?.getTracks().forEach(track => track.stop());
+        sourceStreams.forEach(stream => stream.getTracks().forEach(track => track.stop()));
+        sourceStreams = [];
         mediaStream = null;
         mediaRecorder = null;
         dom.dot.classList.remove('recorder__dot--active');
     }
 
     function startAudioMeter(streamOrNode) {
-        stopAudioMeter();
+        stopAudioMeter(false);
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         if (!AudioContextClass) return;
         
@@ -376,13 +388,15 @@ const RecordingController = (() => {
         meterFrame = requestAnimationFrame(drawAudioMeter);
     }
 
-    function stopAudioMeter() {
+    function stopAudioMeter(closeContext = true) {
         if (meterFrame) cancelAnimationFrame(meterFrame);
         meterFrame = null;
         analyser = null;
         meterData = null;
-        if (audioContext) audioContext.close().catch(() => {});
-        audioContext = null;
+        if (closeContext && audioContext) {
+            audioContext.close().catch(() => {});
+            audioContext = null;
+        }
         if (dom.canvas) {
             dom.canvas.getContext('2d').clearRect(0, 0, dom.canvas.width, dom.canvas.height);
         }
@@ -398,6 +412,11 @@ const RecordingController = (() => {
         if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
         event.preventDefault();
         event.returnValue = '';
+    }
+
+    function restoreAudioRouteOnUnload() {
+        if (!routeActivated) return;
+        navigator.sendBeacon?.('/v1/system/audio/restore');
     }
 
     async function responseDetail(response) {
@@ -416,24 +435,26 @@ const RecordingController = (() => {
         dom.testRoute.disabled = true;
         try {
             if (!isTestRouted) {
-                const response = await fetch('/v1/system/audio-route/test-route', { method: 'POST' });
+                const response = await fetch('/v1/system/audio/activate', { method: 'POST' });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
                 if (data.success) {
                     isTestRouted = true;
+                    routeActivated = true;
                     dom.testRoute.textContent = 'Ripristina Audio Originale';
                     dom.testRoute.style.background = 'var(--success)';
                     dom.testRoute.style.color = 'white';
-                    Toast.show(`Routing attivo: Uscita -> ${data.original_output || 'Multi-Output'}, Ingresso -> ${data.original_input || 'Aggregate'}`, 'success');
+                    Toast.show(`Routing attivo: ${data.output_device} / ${data.input_device}`, 'success');
                 } else {
                     Toast.show('Impossibile attivare il routing audio di test.', 'error');
                 }
             } else {
-                const response = await fetch('/v1/system/audio-route/test-restore', { method: 'POST' });
+                const response = await fetch('/v1/system/audio/restore', { method: 'POST' });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
                 if (data.success) {
                     isTestRouted = false;
+                    routeActivated = false;
                     dom.testRoute.textContent = 'Testa Routing Audio';
                     dom.testRoute.style.background = '';
                     dom.testRoute.style.color = '';
@@ -447,6 +468,154 @@ const RecordingController = (() => {
         } finally {
             dom.testRoute.disabled = false;
         }
+    }
+
+    async function activateAudioRoute() {
+        const response = await fetch('/v1/system/audio/activate', { method: 'POST' });
+        if (!response.ok) throw new Error(await responseDetail(response));
+        const status = await response.json();
+        routeActivated = Boolean(status.success);
+        renderAudioStatus(status);
+        return status;
+    }
+
+    async function restoreAudioRoute() {
+        if (!routeActivated) return;
+        try {
+            const response = await fetch('/v1/system/audio/restore', { method: 'POST' });
+            if (!response.ok) throw new Error(await responseDetail(response));
+        } catch (error) {
+            console.warn('Unable to restore the original audio route:', error);
+        } finally {
+            routeActivated = false;
+            isTestRouted = false;
+            if (dom.testRoute) {
+                dom.testRoute.textContent = 'Testa routing audio';
+                dom.testRoute.style.background = '';
+                dom.testRoute.style.color = '';
+            }
+            refreshAudioStatus();
+        }
+    }
+
+    async function refreshAudioStatus() {
+        if (!dom.audioSetupStatus) return;
+        try {
+            const response = await fetch('/v1/system/audio/status');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            renderAudioStatus(await response.json());
+        } catch {
+            dom.audioSetupStatus.textContent = 'Stato audio non disponibile.';
+        }
+    }
+
+    function renderAudioStatus(status) {
+        if (!dom.audioSetupStatus) return;
+
+        // Auto-routing mode: no manual profile setup needed
+        const isAutoRouting = status.auto_routing;
+
+        if (status.ready_to_record) {
+            dom.audioReadiness.dataset.state = 'ready';
+            if (status.routing_active) {
+                dom.audioSetupTitle.textContent = 'Routing audio attivo';
+                dom.audioSetupStatus.textContent = status.physical_output
+                    ? `${status.physical_output} + BlackHole · automatico`
+                    : 'Multi-Output temporaneo attivo';
+            } else {
+                dom.audioSetupTitle.textContent = 'Audio computer pronto';
+                dom.audioSetupStatus.textContent = status.physical_output
+                    ? `${status.physical_output} · Multi-Output automatico`
+                    : 'Configurazione automatica disponibile';
+            }
+            if (dom.setupOpen) dom.setupOpen.hidden = true;
+            closeSetupPanel();
+            return;
+        }
+
+        // Not ready
+        dom.audioReadiness.dataset.state = 'missing';
+        const missingItems = status.missing || [];
+        if (missingItems.includes('blackhole')) {
+            dom.audioSetupTitle.textContent = 'BlackHole non installato';
+            dom.audioSetupStatus.textContent = 'Installa BlackHole 2ch: brew install blackhole-2ch';
+        } else if (missingItems.includes('audio_helper')) {
+            dom.audioSetupTitle.textContent = 'Audio helper non disponibile';
+            dom.audioSetupStatus.textContent = 'Esegui: local-asr setup-audio';
+        } else {
+            dom.audioSetupTitle.textContent = 'Configurazione richiesta';
+            dom.audioSetupStatus.textContent = 'Verificare la configurazione audio.';
+        }
+        if (dom.setupOpen) dom.setupOpen.hidden = !isAutoRouting;
+    }
+
+    async function getAudioStream(deviceId, voiceProcessing) {
+        if (!deviceId && !voiceProcessing) {
+            throw new Error('BlackHole non è disponibile tra gli ingressi audio.');
+        }
+        const constraints = {
+            echoCancellation: voiceProcessing,
+            noiseSuppression: voiceProcessing,
+            autoGainControl: voiceProcessing,
+        };
+        if (deviceId) constraints.deviceId = { exact: deviceId };
+        return navigator.mediaDevices.getUserMedia({ audio: constraints });
+    }
+
+    async function handleDeviceChange() {
+        await loadDevices();
+        await refreshAudioStatus();
+    }
+
+    function isAggregateInput(label) {
+        const normalized = label.toLowerCase();
+        return normalized.includes('aggregate')
+            || normalized.includes('combinat')
+            || normalized.includes('local asr input');
+    }
+
+    function assertSingleMicrophone(stream) {
+        const track = stream.getAudioTracks()[0];
+        if (track && isAggregateInput(track.label || '')) {
+            throw new Error(
+                'Il microfono predefinito è un dispositivo aggregato. '
+                + 'Seleziona un solo microfono nelle impostazioni audio.',
+            );
+        }
+    }
+
+    async function unlockAudioDeviceLabels() {
+        const permissionStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+            },
+        });
+        permissionStream.getTracks().forEach(track => track.stop());
+    }
+
+    function openSetupPanel() {
+        if (!dom.setupPanel) return;
+        dom.setupPanel.hidden = false;
+        dom.setupPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function closeSetupPanel() {
+        if (dom.setupPanel) dom.setupPanel.hidden = true;
+    }
+
+    async function verifyAudioSetup() {
+        dom.setupVerify.disabled = true;
+        dom.setupVerify.textContent = 'Verifica in corso...';
+        await loadDevices();
+        await refreshAudioStatus();
+        dom.setupVerify.disabled = false;
+        dom.setupVerify.textContent = 'Ho creato il profilo, verifica';
+    }
+
+    function delay(milliseconds) {
+        return new Promise(resolve => setTimeout(resolve, milliseconds));
     }
 
     return { init };

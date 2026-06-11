@@ -22,10 +22,11 @@ Alternatively, you can install the dependencies manually:
 
 ```bash
 # Install system dependencies (macOS)
-brew install ffmpeg blackhole-2ch
+brew install ffmpeg blackhole-2ch switchaudio-osx
 
 # Install Python package in editable mode
 pip install -e .
+local-asr doctor
 ```
 
 ## Start server
@@ -67,21 +68,22 @@ Each session stores:
 └── transcript.txt
 ```
 
-Browser recording captures the selected audio input. To include the remote
-participants (or any system audio output) on macOS:
+Browser recording captures the selected microphone and BlackHole as two
+separate streams, mixes them with the Web Audio API, and restores the original
+system output after recording. The one-time setup for each output device is:
 
-1. **Install BlackHole**: Run `./setup.sh` or `brew install blackhole-2ch`.
-2. **Create a Multi-Output Device**:
+1. **Install prerequisites**: Run `./setup.sh` or `local-asr setup-audio`.
+2. **Create an output profile**:
    - Open the **Audio MIDI Setup** app on your Mac.
    - Click the **+** button in the bottom-left corner and select **Create Multi-Output Device**.
+   - Rename it to `Local ASR Output - <device name>`, for example
+     `Local ASR Output - MacBook Speakers`.
    - Check both your primary output device (e.g., *Built-in Output* or headphones) and **BlackHole 2ch**.
    - Enable **Drift Correction** next to *BlackHole 2ch*.
-3. **Route System Audio**:
-   - Open macOS **System Settings > Sound > Output**.
-   - Set the output device to the newly created **Multi-Output Device**.
-4. **Select Input in Web UI**:
-   - Open the local-asr Web UI.
-   - Select **BlackHole 2ch** in the microphone/input device list and start recording.
+3. **Verify**: Run `local-asr doctor` or use the guided setup in the Web UI.
+
+Create one profile for every output you regularly use. Microphone and BlackHole
+selection are available under **Configurazione audio avanzata**.
 
 ## Endpoints / Usage Examples
 

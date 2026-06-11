@@ -160,12 +160,6 @@
                             <input id="recording-title" type="text" maxlength="200" placeholder="Riunione progetto">
                         </div>
                         <div class="form-group">
-                            <label for="recording-device">Ingresso audio</label>
-                            <select id="recording-device">
-                                <option value="">Predefinito di sistema</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
                             <label for="recording-source-mode">Cosa registrare</label>
                             <select id="recording-source-mode">
                                 <option value="both">Entrambi (Voce + PC)</option>
@@ -180,6 +174,14 @@
                         <strong id="recording-timer">00:00</strong>
                         <span id="recording-progress">Nessun audio salvato</span>
                     </div>
+                    <div class="audio-readiness" id="audio-readiness" data-state="checking">
+                        <span class="audio-readiness__dot" aria-hidden="true"></span>
+                        <div>
+                            <strong id="audio-setup-title">Verifica configurazione audio</strong>
+                            <p id="audio-setup-status" role="status">Controllo dispositivi disponibili...</p>
+                        </div>
+                        <button type="button" class="btn btn--ghost btn--sm" id="audio-setup-open" hidden>Configura</button>
+                    </div>
 
                     <div class="recorder__actions">
                         <button type="button" class="btn btn--primary btn--lg" id="recording-start">Avvia registrazione</button>
@@ -192,13 +194,51 @@
                         </button>
                         <div class="collapsible__body" id="recording-details-body">
                             <div class="recorder-details__content">
+                                <div class="audio-device-grid">
+                                    <div class="form-group">
+                                        <label for="recording-device">Microfono</label>
+                                        <select id="recording-device">
+                                            <option value="">Automatico (predefinito di sistema)</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="recording-system-device">Audio computer</label>
+                                        <select id="recording-system-device">
+                                            <option value="">Ricerca BlackHole...</option>
+                                        </select>
+                                    </div>
+                                </div>
                                 <button type="button" class="btn btn--ghost btn--sm btn--block" id="test-audio-route">Testa routing audio</button>
-                                <p class="recorder__note">Per includere gli interlocutori usa BlackHole o un dispositivo aggregato.</p>
+                                <p class="recorder__note">La voce e l’audio del computer vengono acquisiti come sorgenti separate e miscelati nel browser.</p>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+            <section class="audio-setup" id="audio-setup-panel" hidden aria-labelledby="audio-setup-heading">
+                <div class="audio-setup__header">
+                    <div>
+                        <span class="workspace-heading__eyebrow">ROUTING AUTOMATICO</span>
+                        <h3 id="audio-setup-heading">Audio del computer</h3>
+                        <p id="audio-setup-intro">Il routing audio viene configurato automaticamente alla registrazione.</p>
+                    </div>
+                    <button type="button" class="icon-btn" id="audio-setup-close" aria-label="Chiudi configurazione">×</button>
+                </div>
+                <div class="audio-setup__steps" style="list-style: none; padding: 0;">
+                    <p style="margin: 0; opacity: 0.8;">Quando premi <strong>Avvia registrazione</strong>, il sistema:</p>
+                    <ol style="margin: 0.75rem 0; padding-left: 1.25rem; opacity: 0.7; font-size: 0.9em;">
+                        <li>Rileva l'uscita audio corrente</li>
+                        <li>Crea un dispositivo Multi-Output temporaneo</li>
+                        <li>Registra sia le cuffie che BlackHole</li>
+                        <li>Ripristina l'uscita originale al termine</li>
+                    </ol>
+                    <p style="margin: 0; opacity: 0.6; font-size: 0.85em;">Requisito: <strong>BlackHole 2ch</strong> installato (<code>brew install blackhole-2ch</code>).</p>
+                </div>
+                <div class="audio-setup__actions">
+                    <button type="button" class="btn btn--primary" id="audio-setup-verify">Verifica configurazione</button>
+                    <button type="button" class="btn btn--secondary" id="audio-setup-later">Chiudi</button>
+                </div>
+            </section>
                 </section>
 
                 <div class="source-grid">

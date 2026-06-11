@@ -13,8 +13,6 @@ import sys
 import asyncio
 import logging
 import hashlib
-import subprocess
-import shutil
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -24,6 +22,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from local_asr_server.audio_router import AudioRouter
 from local_asr_server.recordings import (
     RecordingConflict,
     RecordingNotFound,
@@ -125,193 +124,6 @@ def _is_model_cached(model_name: str) -> bool:
     return False
 
 
-class AudioRouter:
-    _original_output: Optional[str] = None
-    _original_input: Optional[str] = None
-    _lock = threading.Lock()
-
-    @classmethod
-    def _get_switch_audio_cmd(cls) -> Optional[str]:
-        if shutil.which("SwitchAudioSource"):
-            return "SwitchAudioSource"
-        # Apple Silicon Homebrew fallback
-        fallback_arm = "/opt/homebrew/bin/SwitchAudioSource"
-        if Path(fallback_arm).exists():
-            return fallback_arm
-        # Intel Homebrew fallback
-        fallback_intel = "/usr/local/bin/SwitchAudioSource"
-        if Path(fallback_intel).exists():
-            return fallback_intel
-        return None
-
-    @classmethod
-    def get_available_outputs(cls) -> list[str]:
-        cmd = cls._get_switch_audio_cmd()
-        if not cmd:
-            return []
-        try:
-            output = subprocess.check_output(
-                [cmd, "-a", "-t", "output"], text=True, stderr=subprocess.DEVNULL
-            )
-            return [line.strip() for line in output.splitlines() if line.strip()]
-        except Exception as e:
-            logger.warning(f"Failed to get available audio outputs: {e}")
-            return []
-
-    @classmethod
-    def get_available_inputs(cls) -> list[str]:
-        cmd = cls._get_switch_audio_cmd()
-        if not cmd:
-            return []
-        try:
-            output = subprocess.check_output(
-                [cmd, "-a", "-t", "input"], text=True, stderr=subprocess.DEVNULL
-            )
-            return [line.strip() for line in output.splitlines() if line.strip()]
-        except Exception as e:
-            logger.warning(f"Failed to get available audio inputs: {e}")
-            return []
-
-    @classmethod
-    def get_current_output(cls) -> Optional[str]:
-        cmd = cls._get_switch_audio_cmd()
-        if not cmd:
-            return None
-        try:
-            return subprocess.check_output(
-                [cmd, "-c"], text=True, stderr=subprocess.DEVNULL
-            ).strip()
-        except Exception as e:
-            logger.warning(f"Failed to get current audio output: {e}")
-            return None
-
-    @classmethod
-    def get_current_input(cls) -> Optional[str]:
-        cmd = cls._get_switch_audio_cmd()
-        if not cmd:
-            return None
-        try:
-            return subprocess.check_output(
-                [cmd, "-t", "input", "-c"], text=True, stderr=subprocess.DEVNULL
-            ).strip()
-        except Exception as e:
-            logger.warning(f"Failed to get current audio input: {e}")
-            return None
-
-    @classmethod
-    def route_to_multi_output(cls) -> bool:
-        if sys.platform != "darwin":
-            return False
-        cmd = cls._get_switch_audio_cmd()
-        if not cmd:
-            logger.info("switchaudio-osx (SwitchAudioSource) is not installed. Automatic routing skipped.")
-            return False
-
-        with cls._lock:
-            try:
-                # 1. Output Routing
-                current_out = cls.get_current_output()
-                if current_out:
-                    lower_current_out = current_out.lower()
-                    if "uscite multiple" in lower_current_out or "multi-output" in lower_current_out:
-                        logger.info("Already outputting to a multi-output device.")
-                    else:
-                        cls._original_output = current_out
-                        logger.info(f"Saved original audio output device: '{cls._original_output}'")
-                        devices_out = cls.get_available_outputs()
-                        target_out = None
-                        for dev in devices_out:
-                            lower_dev = dev.lower()
-                            if "uscite multiple" in lower_dev or "multi-output" in lower_dev:
-                                target_out = dev
-                                break
-                        if not target_out:
-                            for dev in devices_out:
-                                lower_dev = dev.lower()
-                                if "multiple" in lower_dev or "multi" in lower_dev:
-                                    target_out = dev
-                                    break
-                        if target_out:
-                            subprocess.run(
-                                [cmd, "-s", target_out],
-                                check=True,
-                                stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL
-                            )
-                            logger.info(f"Automatically routed system audio output to: '{target_out}'")
-
-                # 2. Input Routing
-                current_in = cls.get_current_input()
-                if current_in:
-                    lower_current_in = current_in.lower()
-                    if "dispositivo combinato" in lower_current_in or "aggregate device" in lower_current_in or "combinato" in lower_current_in:
-                        logger.info("Already inputting from an aggregate/combined device.")
-                    else:
-                        cls._original_input = current_in
-                        logger.info(f"Saved original audio input device: '{cls._original_input}'")
-                        devices_in = cls.get_available_inputs()
-                        target_in = None
-                        for dev in devices_in:
-                            lower_dev = dev.lower()
-                            if "dispositivo combinato" in lower_dev or "aggregate device" in lower_dev or "combinato" in lower_dev:
-                                target_in = dev
-                                break
-                        if not target_in:
-                            for dev in devices_in:
-                                lower_dev = dev.lower()
-                                if "aggregate" in lower_dev or "combinat" in lower_dev:
-                                    target_in = dev
-                                    break
-                        if target_in:
-                            subprocess.run(
-                                [cmd, "-t", "input", "-s", target_in],
-                                check=True,
-                                stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL
-                            )
-                            logger.info(f"Automatically routed system audio input to: '{target_in}'")
-                
-                return True
-            except Exception as e:
-                logger.warning(f"Error during automatic audio routing: {e}")
-                return False
-
-    @classmethod
-    def restore_original_output(cls) -> bool:
-        if sys.platform != "darwin":
-            return False
-        cmd = cls._get_switch_audio_cmd()
-        if not cmd:
-            return False
-
-        with cls._lock:
-            try:
-                # Restore Output
-                if cls._original_output:
-                    subprocess.run(
-                        [cmd, "-s", cls._original_output],
-                        check=True,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
-                    )
-                    logger.info(f"Automatically restored original audio output device: '{cls._original_output}'")
-                    cls._original_output = None
-                
-                # Restore Input
-                if cls._original_input:
-                    subprocess.run(
-                        [cmd, "-t", "input", "-s", cls._original_input],
-                        check=True,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
-                    )
-                    logger.info(f"Automatically restored original audio input device: '{cls._original_input}'")
-                    cls._original_input = None
-                
-                return True
-            except Exception as e:
-                logger.warning(f"Error during audio output/input restoration: {e}")
-                return False
 
 
 CACHE_DIR = Path(__file__).parent.parent.parent / ".cache"
@@ -377,6 +189,9 @@ def create_app(
         recordings_dir or Path("~/Recordings/local-asr")
     )
 
+    # Clean up any orphan aggregate devices from previous runs/crashes
+    AudioRouter.cleanup_orphans()
+
     # Set up static files serving
     static_dir = Path(__file__).parent / "static"
     static_dir.mkdir(exist_ok=True)
@@ -408,6 +223,9 @@ def create_app(
                 "POST /v1/recordings/{id}/stop",
                 "GET /v1/recordings/{id}",
                 "GET /v1/recordings/{id}/audio",
+                "GET /v1/system/audio/status",
+                "POST /v1/system/audio/activate",
+                "POST /v1/system/audio/restore",
                 "GET /health",
             ],
             "recordings": True,
@@ -417,7 +235,6 @@ def create_app(
     def create_recording(request: CreateRecordingRequest):
         store: RecordingStore = app.state.recording_store
         try:
-            AudioRouter.route_to_multi_output()
             return store.create(
                 title=request.title,
                 mime_type=request.mime_type,
@@ -427,19 +244,37 @@ def create_app(
         except OSError as exc:
             raise HTTPException(status_code=507, detail=str(exc)) from exc
 
+    @app.get("/v1/system/audio/status")
+    def audio_status():
+        return AudioRouter.get_status()
+
+    @app.post("/v1/system/audio/activate")
+    def activate_audio_route():
+        success = AudioRouter.route_to_multi_output()
+        status = AudioRouter.get_status()
+        return {
+            **status,
+            "success": success,
+            "routing_active": success,
+        }
+
+    @app.post("/v1/system/audio/restore")
+    def restore_audio_route():
+        success = AudioRouter.restore_original_output()
+        return {
+            **AudioRouter.get_status(),
+            "success": success,
+            "routing_active": False,
+        }
+
+    # Compatibility aliases for the existing advanced-controls button.
     @app.post("/v1/system/audio-route/test-route")
     def test_audio_route():
-        success = AudioRouter.route_to_multi_output()
-        return {
-            "success": success,
-            "original_output": AudioRouter._original_output,
-            "original_input": AudioRouter._original_input
-        }
+        return activate_audio_route()
 
     @app.post("/v1/system/audio-route/test-restore")
     def test_audio_restore():
-        success = AudioRouter.restore_original_output()
-        return {"success": success}
+        return restore_audio_route()
 
     @app.post("/v1/recordings/{recording_id}/chunks")
     async def append_recording_chunk(
@@ -462,7 +297,6 @@ def create_app(
     def stop_recording(recording_id: str):
         store: RecordingStore = app.state.recording_store
         try:
-            AudioRouter.restore_original_output()
             metadata, _ = store.finalize(recording_id)
             return metadata
         except RecordingNotFound as exc:
