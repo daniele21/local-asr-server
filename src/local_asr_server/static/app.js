@@ -22,6 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
         transcribeBtn:     document.getElementById('transcribe-btn'),
         transcribeBtnText: document.getElementById('transcribe-btn-text'),
         btnSpinner:        document.getElementById('btn-spinner'),
+        transcribePlayBtn: document.getElementById('transcribe-play-btn'),
 
         // Processing
         processingCard:       document.getElementById('processing-card'),
@@ -58,6 +59,21 @@ document.addEventListener('DOMContentLoaded', () => {
         helpMenuToggle: document.getElementById('help-menu-toggle'),
         helpMenuPanel: document.getElementById('help-menu-panel'),
 
+        // Collapsible picker & columns
+        sourceCollapsible: document.getElementById('source-collapsible'),
+        sourceSummary: document.getElementById('source-summary'),
+        transcribeWorkspace: document.getElementById('transcribe-workspace'),
+
+        // Transcription History & Settings
+        transcriptionsList: document.getElementById('transcriptions-list'),
+        transcriptionsDirInput: document.getElementById('transcriptions-dir-input'),
+        saveSettingsBtn: document.getElementById('save-settings-btn'),
+        historyCount: document.getElementById('history-count'),
+        historyPagination: document.getElementById('history-pagination'),
+        historyPrev: document.getElementById('history-prev'),
+        historyNext: document.getElementById('history-next'),
+        historyPageStatus: document.getElementById('history-page-status'),
+
         // Header
         themeToggle:  document.getElementById('theme-toggle'),
         serverStatus: document.getElementById('server-status'),
@@ -72,6 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let timerInterval = null;
     let timerStart = 0;
     let selectedObjectUrl = null;
+    let historyPage = 1;
 
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -88,8 +105,10 @@ document.addEventListener('DOMContentLoaded', () => {
         SettingsForm.populate();
 
         // Initialize components
-        dom.recordingPageContent.appendChild(dom.recorderPanel);
-        dom.recorderPanel.hidden = false;
+        if (dom.recordingPageContent && dom.recorderPanel) {
+            dom.recordingPageContent.appendChild(dom.recorderPanel);
+            dom.recorderPanel.hidden = false;
+        }
         window.AppNavigation = { switchPage };
         CollapsiblePanel.init();
         FileDropzone.init({ onFileSelected: handleFileSelected });
@@ -100,6 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
             next: dom.recordingsNext,
             status: dom.recordingsPageStatus,
             onSelect: selectRecording,
+            onRename: loadRecordings,
         });
         Tour.init();
         RecordingController.init({
@@ -116,6 +136,8 @@ document.addEventListener('DOMContentLoaded', () => {
         StepIndicator.setStep('upload');
         switchPage(getInitialPage(), { updateHash: false });
         loadRecordings();
+        loadSettings();
+        loadHistory();
 
         // Start server health polling
         checkServerHealth();
@@ -179,6 +201,19 @@ document.addEventListener('DOMContentLoaded', () => {
             closeHelpMenu();
             Tour.startRecordingShowcase();
         });
+
+        // Transcribe Play Button event listeners
+        dom.transcribePlayBtn?.addEventListener('click', toggleTranscribePlay);
+        dom.audioElement?.addEventListener('play', () => updateTranscribePlayIcon(true));
+        dom.audioElement?.addEventListener('pause', () => updateTranscribePlayIcon(false));
+        dom.audioElement?.addEventListener('ended', () => updateTranscribePlayIcon(false));
+
+        // Settings Save
+        dom.saveSettingsBtn?.addEventListener('click', saveFolderSettings);
+
+        // History Pagination
+        dom.historyPrev?.addEventListener('click', () => setHistoryPage(historyPage - 1));
+        dom.historyNext?.addEventListener('click', () => setHistoryPage(historyPage + 1));
     }
 
 
@@ -195,7 +230,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // Server Health
+    // Server Health & Configurations
     // ═══════════════════════════════════════════════════════════════════════════
 
     async function checkServerHealth() {
@@ -214,6 +249,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
         dot.className = `status-badge__dot status-badge__dot--${isOnline ? 'online' : 'offline'}`;
         txt.textContent = text;
+    }
+
+    async function loadSettings() {
+        if (!dom.transcriptionsDirInput) return;
+        try {
+            const settings = await ApiClient.getSettings();
+            dom.transcriptionsDirInput.value = settings.transcriptions_dir || '';
+        } catch (err) {
+            console.error('Failed to load settings:', err);
+        }
+    }
+
+    async function saveFolderSettings() {
+        const dir = dom.transcriptionsDirInput.value.trim();
+        if (!dir) {
+            Toast.show('Inserisci un percorso valido.', 'warning');
+            return;
+        }
+        dom.saveSettingsBtn.disabled = true;
+        dom.saveSettingsBtn.textContent = 'Salvataggio...';
+        try {
+            const settings = await ApiClient.updateSettings(dir);
+            dom.transcriptionsDirInput.value = settings.transcriptions_dir;
+            Toast.show('Cartella salvataggio aggiornata con successo.', 'success');
+            loadHistory();
+        } catch (err) {
+            Toast.show(`Errore: ${err.message}`, 'error');
+        } finally {
+            dom.saveSettingsBtn.disabled = false;
+            dom.saveSettingsBtn.textContent = 'Salva';
+        }
     }
 
 
@@ -240,7 +306,43 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Transition to Step 2
         StepIndicator.setStep('transcribe');
+        collapseSourcePanel();
         switchPage('transcription');
+    }
+
+    function collapseSourcePanel() {
+        const body = document.getElementById('source-collapsible-body');
+        const trigger = document.getElementById('source-collapsible-trigger');
+        if (body && !body.classList.contains('collapsible--collapsed')) {
+            body.style.maxHeight = body.scrollHeight + 'px';
+            body.offsetHeight; // force reflow
+            body.style.maxHeight = '0px';
+            body.classList.add('collapsible--collapsed');
+            trigger?.classList.remove('collapsible-trigger--open');
+            trigger?.setAttribute('aria-expanded', 'false');
+        }
+        dom.sourceSummary.style.display = 'flex';
+        dom.transcribeWorkspace.style.display = 'grid';
+    }
+
+    function expandSourcePanel() {
+        const body = document.getElementById('source-collapsible-body');
+        const trigger = document.getElementById('source-collapsible-trigger');
+        if (body && body.classList.contains('collapsible--collapsed')) {
+            body.classList.remove('collapsible--collapsed');
+            body.style.maxHeight = body.scrollHeight + 'px';
+            trigger?.classList.add('collapsible-trigger--open');
+            trigger?.setAttribute('aria-expanded', 'true');
+            const onTransitionEnd = (e) => {
+                if (e.propertyName === 'max-height') {
+                    body.style.maxHeight = 'none';
+                    body.removeEventListener('transitionend', onTransitionEnd);
+                }
+            };
+            body.addEventListener('transitionend', onTransitionEnd);
+        }
+        dom.sourceSummary.style.display = 'none';
+        dom.transcribeWorkspace.style.display = 'none';
     }
 
     /** Go back to the upload step (reset state) */
@@ -256,6 +358,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         StepIndicator.setStep('upload');
         Workflow.update({ selectedFile: null, step: 'upload', sourcePanel: null });
+        expandSourcePanel();
         switchPage('transcription');
         loadRecordings();
     }
@@ -280,7 +383,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (options.updateHash !== false) {
             history.replaceState(null, '', `#${pageName}`);
         }
-        if (pageName === 'transcription') loadRecordings();
+        if (pageName === 'transcription') {
+            loadRecordings();
+            loadHistory();
+        }
         window.scrollTo({ top: 0, behavior: 'auto' });
     }
 
@@ -328,6 +434,133 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // Transcribe Playback control
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    function toggleTranscribePlay() {
+        if (!dom.audioElement) return;
+        if (dom.audioElement.paused) {
+            dom.audioElement.play().catch(err => {
+                console.error('Audio playback failed:', err);
+                Toast.show('Errore durante la riproduzione audio', 'error');
+            });
+        } else {
+            dom.audioElement.pause();
+        }
+    }
+
+    function updateTranscribePlayIcon(isPlaying) {
+        if (!dom.transcribePlayBtn) return;
+        const playIcon = dom.transcribePlayBtn.querySelector('.icon-play');
+        const pauseIcon = dom.transcribePlayBtn.querySelector('.icon-pause');
+        if (isPlaying) {
+            if (playIcon) playIcon.style.display = 'none';
+            if (pauseIcon) pauseIcon.style.display = 'inline-block';
+            dom.transcribePlayBtn.title = 'Pausa';
+        } else {
+            if (playIcon) playIcon.style.display = 'inline-block';
+            if (pauseIcon) pauseIcon.style.display = 'none';
+            dom.transcribePlayBtn.title = 'Ascolta';
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Transcription History
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    async function loadHistory() {
+        if (!dom.transcriptionsList) return;
+        dom.transcriptionsList.innerHTML = '<p class="transcriptions-list__empty">Caricamento storico...</p>';
+        try {
+            const { items, total, page, limit } = await ApiClient.listTranscriptions(historyPage, 5);
+            dom.historyCount.textContent = `${total} ${total === 1 ? 'elemento' : 'elementi'}`;
+            renderHistory(items, total, page, limit);
+        } catch (err) {
+            console.error('Failed to load history:', err);
+            dom.transcriptionsList.innerHTML = '<p class="transcriptions-list__empty">Impossibile caricare lo storico.</p>';
+        }
+    }
+
+    function setHistoryPage(page) {
+        const totalItems = parseInt(dom.historyCount.textContent) || 0;
+        const totalPages = Math.max(1, Math.ceil(totalItems / 5));
+        historyPage = Math.min(Math.max(page, 1), totalPages);
+        loadHistory();
+    }
+
+    function renderHistory(items, total, page, limit) {
+        dom.transcriptionsList.replaceChildren();
+        if (items.length === 0) {
+            const empty = document.createElement('p');
+            empty.className = 'transcriptions-list__empty';
+            empty.textContent = 'Nessuna trascrizione in archivio.';
+            dom.transcriptionsList.appendChild(empty);
+            dom.historyPagination.hidden = true;
+            return;
+        }
+
+        items.forEach(item => {
+            const row = document.createElement('article');
+            row.className = 'transcription-row';
+
+            const info = document.createElement('div');
+            info.className = 'transcription-row__info';
+
+            const meta = document.createElement('span');
+            meta.className = 'transcription-row__meta';
+            const dtStr = new Intl.DateTimeFormat('it-IT', {
+                dateStyle: 'medium',
+                timeStyle: 'short'
+            }).format(new Date(item.timestamp));
+            const modelName = item.model ? item.model.split('/').pop() : 'Default';
+            meta.textContent = `${dtStr} · Modello: ${modelName} · Lingua: ${item.language || 'it'} · Audio: ${item.audio_filename}`;
+
+            const snippet = document.createElement('div');
+            snippet.className = 'transcription-row__snippet';
+            snippet.textContent = item.text || '(Trascrizione vuota)';
+
+            info.append(meta, snippet);
+
+            const actions = document.createElement('div');
+            actions.className = 'transcription-row__actions';
+
+            const readBtn = document.createElement('button');
+            readBtn.type = 'button';
+            readBtn.className = 'btn btn--ghost btn--sm';
+            readBtn.textContent = 'Leggi';
+            readBtn.addEventListener('click', () => {
+                renderResults(item);
+            });
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.type = 'button';
+            deleteBtn.className = 'btn btn--ghost btn--sm btn-delete';
+            deleteBtn.textContent = 'Elimina';
+            deleteBtn.addEventListener('click', async () => {
+                if (confirm('Sei sicuro di voler eliminare questa trascrizione dallo storico?')) {
+                    try {
+                        await ApiClient.deleteTranscription(item.id);
+                        Toast.show('Trascrizione eliminata', 'success');
+                        loadHistory();
+                    } catch (err) {
+                        Toast.show(`Eliminazione fallita: ${err.message}`, 'error');
+                    }
+                }
+            });
+
+            actions.append(readBtn, deleteBtn);
+            row.append(info, actions);
+            dom.transcriptionsList.appendChild(row);
+        });
+
+        const totalPages = Math.max(1, Math.ceil(total / limit));
+        dom.historyPagination.hidden = totalPages <= 1;
+        dom.historyPrev.disabled = page === 1;
+        dom.historyNext.disabled = page === totalPages;
+        dom.historyPageStatus.textContent = `Pagina ${page} di ${totalPages}`;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // Transcription
     // ═══════════════════════════════════════════════════════════════════════════
 
@@ -372,6 +605,7 @@ document.addEventListener('DOMContentLoaded', () => {
             clearInterval(timerInterval);
             dom.processingCard.style.display = 'none';
             unlockUI();
+            loadHistory();
         }
     }
 

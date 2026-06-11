@@ -69,9 +69,10 @@ class RecordingStore:
         session_dir = self.root / date_dir / recording_id
         session_dir.mkdir(parents=True)
         extension = _extension_for_mime(mime_type)
+        default_title = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         metadata = {
             "id": recording_id,
-            "title": title.strip()[:200] or "Registrazione senza titolo",
+            "title": title.strip()[:200] if title.strip() else default_title,
             "status": "recording",
             "created_at": _utc_now(),
             "stopped_at": None,
@@ -88,6 +89,20 @@ class RecordingStore:
         (session_dir / f"recording{extension}.part").touch()
         self._write_metadata(session_dir, metadata)
         return self.public_metadata(metadata)
+
+    def update_title(self, recording_id: str, title: str) -> dict[str, Any]:
+        with self._lock_for(recording_id):
+            session_dir, metadata = self._load(recording_id)
+            new_title = title.strip()[:200]
+            if not new_title:
+                try:
+                    dt = datetime.fromisoformat(metadata["created_at"])
+                    new_title = dt.strftime("%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    new_title = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            metadata["title"] = new_title
+            self._write_metadata(session_dir, metadata)
+            return self.public_metadata(metadata)
 
     def append_chunk(self, recording_id: str, sequence: int, content: bytes) -> dict[str, Any]:
         if sequence < 0:

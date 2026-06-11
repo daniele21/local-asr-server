@@ -28,6 +28,7 @@ from local_asr_server.recordings import (
     RecordingNotFound,
     RecordingStore,
 )
+from local_asr_server.settings import load_settings, save_settings
 
 
 class TranscribePathRequest(BaseModel):
@@ -44,10 +45,18 @@ class TranscribePathRequest(BaseModel):
 
 
 class CreateRecordingRequest(BaseModel):
-    title: str = "Registrazione senza titolo"
+    title: Optional[str] = None
     mime_type: str = "audio/webm;codecs=opus"
     model: Optional[str] = None
     language: Optional[str] = "it"
+
+
+class UpdateRecordingRequest(BaseModel):
+    title: str
+
+
+class SettingsRequest(BaseModel):
+    transcriptions_dir: str
 
 
 def _str_to_bool(value: str | bool | None, default: bool = False) -> bool:
@@ -71,6 +80,9 @@ def _transcribe(
     verbose: Optional[bool],
 ) -> dict:
     import mlx_whisper
+
+    if not language:
+        language = None
 
     kwargs = {
         "path_or_hf_repo": model,
@@ -188,6 +200,8 @@ def create_app(
     app.state.recording_store = RecordingStore(
         recordings_dir or Path("~/Recordings/local-asr")
     )
+    from local_asr_server.transcriptions import TranscriptionStore
+    app.state.transcription_store = TranscriptionStore()
 
     # Clean up any orphan aggregate devices from previous runs/crashes
     AudioRouter.cleanup_orphans()
@@ -379,6 +393,11 @@ def create_app(
                 except OSError as e:
                     logger.warning(f"[/v1/audio/transcriptions] Failed to remove temp file {tmp_path}: {e}")
 
+                # Save to user's transcription folder as well
+                saved_meta = app.state.transcription_store.save(cached_res, audio_filename=file.filename)
+                cached_res["saved_id"] = saved_meta["id"]
+                cached_res["saved_file_path"] = str(app.state.transcription_store.root)
+
                 if is_streaming:
                     async def cached_event_generator():
                         yield json.dumps({
@@ -493,6 +512,10 @@ def create_app(
                     payload = _clean_nan_values(payload)
                     _save_cached_result(cache_key, payload)
                     
+                    saved_meta = app.state.transcription_store.save(payload, audio_filename=file.filename)
+                    payload["saved_id"] = saved_meta["id"]
+                    payload["saved_file_path"] = str(app.state.transcription_store.root)
+                    
                     yield json.dumps({
                         "type": "completed",
                         "data": payload
@@ -528,6 +551,10 @@ def create_app(
             }
             payload = _clean_nan_values(payload)
             _save_cached_result(cache_key, payload)
+
+            saved_meta = app.state.transcription_store.save(payload, audio_filename=file.filename)
+            payload["saved_id"] = saved_meta["id"]
+            payload["saved_file_path"] = str(app.state.transcription_store.root)
 
             if response_format == "text":
                 return PlainTextResponse(payload["text"])
@@ -595,6 +622,10 @@ def create_app(
                 },
             }
 
+            saved_meta = app.state.transcription_store.save(payload, audio_filename=audio_path.name)
+            payload["saved_id"] = saved_meta["id"]
+            payload["saved_file_path"] = str(app.state.transcription_store.root)
+
             if request.response_format == "text":
                 return PlainTextResponse(payload["text"])
 
@@ -609,5 +640,51 @@ def create_app(
                 status_code=500,
                 detail=f"Transcription failed: {exc}",
             ) from exc
+
+    @app.patch("/v1/recordings/{recording_id}")
+    def update_recording(recording_id: str, request: UpdateRecordingRequest):
+        store: RecordingStore = app.state.recording_store
+        try:
+            return store.update_title(recording_id, request.title)
+        except RecordingNotFound as exc:
+            raise HTTPException(status_code=404, detail="Recording not found") from exc
+
+    @app.get("/v1/settings")
+    def get_settings():
+        return load_settings()
+
+    @app.post("/v1/settings")
+    def update_settings(request: SettingsRequest):
+        current = load_settings()
+        path = Path(request.transcriptions_dir).expanduser().resolve()
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            test_file = path / ".write_test"
+            test_file.touch()
+            test_file.unlink()
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Directory non valida o non scrivibile: {e}")
+        current["transcriptions_dir"] = str(path)
+        save_settings(current)
+        return current
+
+    @app.get("/v1/transcriptions")
+    def list_transcriptions(page: int = 1, limit: int = 10):
+        items, total = app.state.transcription_store.list(page=page, limit=limit)
+        return {"items": items, "total": total, "page": page, "limit": limit}
+
+    @app.get("/v1/transcriptions/{transcription_id}")
+    def get_transcription(transcription_id: str):
+        try:
+            return app.state.transcription_store.get(transcription_id)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="Transcription not found")
+
+    @app.delete("/v1/transcriptions/{transcription_id}")
+    def delete_transcription(transcription_id: str):
+        success = app.state.transcription_store.delete(transcription_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Transcription not found")
+        return {"ok": True}
 
     return app

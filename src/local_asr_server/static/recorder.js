@@ -40,6 +40,7 @@ const RecordingController = (() => {
             canvas: document.getElementById('audio-level-canvas'),
             levelLabel: document.getElementById('signal-level-label'),
             sourceMode: document.getElementById('recording-source-mode'),
+            language: document.getElementById('recording-language-select'),
             testRoute: document.getElementById('test-audio-route'),
             audioSetupStatus: document.getElementById('audio-setup-status'),
             audioSetupTitle: document.getElementById('audio-setup-title'),
@@ -176,7 +177,7 @@ const RecordingController = (() => {
                     title: dom.title.value || 'Registrazione senza titolo',
                     mime_type: mimeType,
                     model: null,
-                    language: null,
+                    language: dom.language?.value || null,
                 }),
             });
             if (!response.ok) throw new Error(await responseDetail(response));

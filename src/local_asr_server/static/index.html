@@ -99,7 +99,109 @@
                         <p>Cattura l’audio e salvalo nella libreria locale. La trascrizione è un passaggio separato.</p>
                     </div>
                 </div>
-                <div id="recording-page-content"></div>
+                <div id="recording-page-content">
+                    <section class="recorder-panel" id="view-recording" aria-labelledby="recorder-title" hidden>
+                        <div class="recorder-panel__header">
+                            <div>
+                                <span class="workspace-heading__eyebrow">REGISTRAZIONE LOCALE</span>
+                                <h3 id="recorder-title">Registra una nuova sorgente</h3>
+                                <p>L’audio viene salvato progressivamente e sarà disponibile qui al termine.</p>
+                            </div>
+                            <span class="recorder__status" id="recording-status" role="status">Pronto</span>
+                        </div>
+
+                        <div class="recording-stage">
+                            <div class="signal-panel">
+                                <div class="signal-panel__header">
+                                    <span>SEGNALE IN INGRESSO</span>
+                                    <span id="signal-level-label">-∞ dB</span>
+                                </div>
+                                <canvas id="audio-level-canvas" class="signal-canvas" width="960" height="240" aria-label="Livello del segnale audio"></canvas>
+                                <div class="signal-scale" aria-hidden="true">
+                                    <span>-48</span><span>-36</span><span>-24</span><span>-12</span><span>-6</span><span>0 dB</span>
+                                </div>
+                            </div>
+
+                            <div class="recorder-controls">
+                                <div class="recorder__form">
+                                    <div class="form-group">
+                                        <label for="recording-title">Titolo registrazione</label>
+                                        <input id="recording-title" type="text" maxlength="200" placeholder="Riunione progetto">
+                                    </div>
+                                </div>
+
+                                <div class="recorder__meter">
+                                    <span class="recorder__dot" id="recording-dot"></span>
+                                    <strong id="recording-timer">00:00</strong>
+                                    <span id="recording-progress">Nessun audio salvato</span>
+                                </div>
+                                <div class="audio-readiness" id="audio-readiness" data-state="checking">
+                                    <span class="audio-readiness__dot" aria-hidden="true"></span>
+                                    <div>
+                                        <strong id="audio-setup-title">Verifica configurazione audio</strong>
+                                        <p id="audio-setup-status" role="status">Controllo dispositivi disponibili...</p>
+                                    </div>
+                                    <button type="button" class="btn btn--ghost btn--sm" id="audio-setup-open" hidden>Configura</button>
+                                </div>
+
+                                <div class="recorder__actions">
+                                    <button type="button" class="btn btn--primary btn--lg" id="recording-start">Avvia registrazione</button>
+                                    <button type="button" class="btn btn--secondary btn--lg" id="recording-stop" disabled>Termina e salva</button>
+                                </div>
+                                <div class="collapsible recorder-details">
+                                    <button type="button" class="collapsible__trigger" data-collapsible-trigger="recording-details-body" id="recording-details-trigger" aria-expanded="false" aria-controls="recording-details-body">
+                                        <span>Configurazione audio avanzata</span>
+                                        <svg class="collapsible__chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
+                                    </button>
+                                    <div class="collapsible__body" id="recording-details-body">
+                                        <div class="recorder-details__content">
+                                            <div class="audio-device-grid">
+                                                <div class="form-group">
+                                                    <label for="recording-device">Microfono</label>
+                                                    <select id="recording-device">
+                                                        <option value="">Automatico (predefinito di sistema)</option>
+                                                    </select>
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="recording-system-device">Audio computer</label>
+                                                    <select id="recording-system-device">
+                                                        <option value="">Ricerca BlackHole...</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <button type="button" class="btn btn--ghost btn--sm btn--block" id="test-audio-route">Testa routing audio</button>
+                                            <p class="recorder__note">La voce e l’audio del computer vengono acquisiti come sorgenti separate e miscelati nel browser.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <section class="audio-setup" id="audio-setup-panel" hidden aria-labelledby="audio-setup-heading">
+                            <div class="audio-setup__header">
+                                <div>
+                                    <span class="workspace-heading__eyebrow">ROUTING AUTOMATICO</span>
+                                    <h3 id="audio-setup-heading">Audio del computer</h3>
+                                    <p id="audio-setup-intro">Il routing audio viene configurato automaticamente alla registrazione.</p>
+                                </div>
+                                <button type="button" class="icon-btn" id="audio-setup-close" aria-label="Chiudi configurazione">×</button>
+                            </div>
+                            <div class="audio-setup__steps" style="list-style: none; padding: 0;">
+                                <p style="margin: 0; opacity: 0.8;">Quando premi <strong>Avvia registrazione</strong>, il sistema:</p>
+                                <ol style="margin: 0.75rem 0; padding-left: 1.25rem; opacity: 0.7; font-size: 0.9em;">
+                                    <li>Rileva l'uscita audio corrente</li>
+                                    <li>Crea un dispositivo Multi-Output temporaneo</li>
+                                    <li>Registra sia le cuffie che BlackHole</li>
+                                    <li>Ripristina l'uscita originale al termine</li>
+                                </ol>
+                                <p style="margin: 0; opacity: 0.6; font-size: 0.85em;">Requisito: <strong>BlackHole 2ch</strong> installato (<code>brew install blackhole-2ch</code>).</p>
+                            </div>
+                            <div class="audio-setup__actions">
+                                <button type="button" class="btn btn--primary" id="audio-setup-verify">Verifica configurazione</button>
+                                <button type="button" class="btn btn--secondary" id="audio-setup-later">Chiudi</button>
+                            </div>
+                        </section>
+                    </section>
+                </div>
             </section>
 
             <section class="app-page" id="page-transcription" data-app-page="transcription">
@@ -131,203 +233,87 @@
                     </div>
                 </div>
 
-                <section class="recorder-panel" id="view-recording" aria-labelledby="recorder-title" hidden>
-                    <div class="recorder-panel__header">
-                        <div>
-                            <span class="workspace-heading__eyebrow">REGISTRAZIONE LOCALE</span>
-                            <h3 id="recorder-title">Registra una nuova sorgente</h3>
-                            <p>L’audio viene salvato progressivamente e sarà disponibile qui al termine.</p>
-                        </div>
-                        <span class="recorder__status" id="recording-status" role="status">Pronto</span>
-                    </div>
-
-            <div class="recording-stage">
-                <div class="signal-panel">
-                    <div class="signal-panel__header">
-                        <span>SEGNALE IN INGRESSO</span>
-                        <span id="signal-level-label">-∞ dB</span>
-                    </div>
-                    <canvas id="audio-level-canvas" class="signal-canvas" width="960" height="240" aria-label="Livello del segnale audio"></canvas>
-                    <div class="signal-scale" aria-hidden="true">
-                        <span>-48</span><span>-36</span><span>-24</span><span>-12</span><span>-6</span><span>0 dB</span>
-                    </div>
-                </div>
-
-                <div class="recorder-controls">
-                    <div class="recorder__form">
-                        <div class="form-group">
-                            <label for="recording-title">Titolo registrazione</label>
-                            <input id="recording-title" type="text" maxlength="200" placeholder="Riunione progetto">
-                        </div>
-                        <div class="form-group">
-                            <label for="recording-source-mode">Cosa registrare</label>
-                            <select id="recording-source-mode">
-                                <option value="both">Entrambi (Voce + PC)</option>
-                                <option value="mic_only">Solo la mia voce (Microfono)</option>
-                                <option value="pc_only">Solo l'audio del PC (Interlocutore)</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="recorder__meter">
-                        <span class="recorder__dot" id="recording-dot"></span>
-                        <strong id="recording-timer">00:00</strong>
-                        <span id="recording-progress">Nessun audio salvato</span>
-                    </div>
-                    <div class="audio-readiness" id="audio-readiness" data-state="checking">
-                        <span class="audio-readiness__dot" aria-hidden="true"></span>
-                        <div>
-                            <strong id="audio-setup-title">Verifica configurazione audio</strong>
-                            <p id="audio-setup-status" role="status">Controllo dispositivi disponibili...</p>
-                        </div>
-                        <button type="button" class="btn btn--ghost btn--sm" id="audio-setup-open" hidden>Configura</button>
-                    </div>
-
-                    <div class="recorder__actions">
-                        <button type="button" class="btn btn--primary btn--lg" id="recording-start">Avvia registrazione</button>
-                        <button type="button" class="btn btn--secondary btn--lg" id="recording-stop" disabled>Termina e salva</button>
-                    </div>
-                    <div class="collapsible recorder-details">
-                        <button type="button" class="collapsible__trigger" data-collapsible-trigger="recording-details-body" id="recording-details-trigger" aria-expanded="false" aria-controls="recording-details-body">
-                            <span>Configurazione audio avanzata</span>
-                            <svg class="collapsible__chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
-                        </button>
-                        <div class="collapsible__body" id="recording-details-body">
-                            <div class="recorder-details__content">
-                                <div class="audio-device-grid">
-                                    <div class="form-group">
-                                        <label for="recording-device">Microfono</label>
-                                        <select id="recording-device">
-                                            <option value="">Automatico (predefinito di sistema)</option>
-                                        </select>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="recording-system-device">Audio computer</label>
-                                        <select id="recording-system-device">
-                                            <option value="">Ricerca BlackHole...</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <button type="button" class="btn btn--ghost btn--sm btn--block" id="test-audio-route">Testa routing audio</button>
-                                <p class="recorder__note">La voce e l’audio del computer vengono acquisiti come sorgenti separate e miscelati nel browser.</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <section class="audio-setup" id="audio-setup-panel" hidden aria-labelledby="audio-setup-heading">
-                <div class="audio-setup__header">
-                    <div>
-                        <span class="workspace-heading__eyebrow">ROUTING AUTOMATICO</span>
-                        <h3 id="audio-setup-heading">Audio del computer</h3>
-                        <p id="audio-setup-intro">Il routing audio viene configurato automaticamente alla registrazione.</p>
-                    </div>
-                    <button type="button" class="icon-btn" id="audio-setup-close" aria-label="Chiudi configurazione">×</button>
-                </div>
-                <div class="audio-setup__steps" style="list-style: none; padding: 0;">
-                    <p style="margin: 0; opacity: 0.8;">Quando premi <strong>Avvia registrazione</strong>, il sistema:</p>
-                    <ol style="margin: 0.75rem 0; padding-left: 1.25rem; opacity: 0.7; font-size: 0.9em;">
-                        <li>Rileva l'uscita audio corrente</li>
-                        <li>Crea un dispositivo Multi-Output temporaneo</li>
-                        <li>Registra sia le cuffie che BlackHole</li>
-                        <li>Ripristina l'uscita originale al termine</li>
-                    </ol>
-                    <p style="margin: 0; opacity: 0.6; font-size: 0.85em;">Requisito: <strong>BlackHole 2ch</strong> installato (<code>brew install blackhole-2ch</code>).</p>
-                </div>
-                <div class="audio-setup__actions">
-                    <button type="button" class="btn btn--primary" id="audio-setup-verify">Verifica configurazione</button>
-                    <button type="button" class="btn btn--secondary" id="audio-setup-later">Chiudi</button>
-                </div>
-            </section>
-                </section>
-
-                <div class="source-grid">
-                    <section class="recordings-library" aria-labelledby="recordings-title">
-                        <div class="recordings-library__header">
-                            <div>
-                                <h3 id="recordings-title">Registrazioni recenti</h3>
-                                <span id="recordings-count">0 elementi</span>
-                            </div>
-                            <button type="button" class="btn btn--ghost btn--sm" id="refresh-recordings">Aggiorna</button>
-                        </div>
-                        <div class="recordings-list" id="recordings-list">
-                            <p class="recordings-list__empty">Caricamento registrazioni...</p>
-                        </div>
-                        <nav class="recordings-pagination" id="recordings-pagination" aria-label="Paginazione registrazioni" hidden>
-                            <button type="button" class="btn btn--ghost btn--sm" id="recordings-prev">Precedente</button>
-                            <span id="recordings-page-status" aria-live="polite">Pagina 1 di 1</span>
-                            <button type="button" class="btn btn--ghost btn--sm" id="recordings-next">Successiva</button>
-                        </nav>
-                    </section>
-
-                    <section class="audio-import" aria-labelledby="audio-import-title">
-                        <div class="audio-import__header">
-                            <span class="source-action__index">02</span>
-                            <div>
-                                <h3 id="audio-import-title">Trascrivi un audio</h3>
-                                <p>Seleziona o trascina un file dal computer.</p>
-                            </div>
-                        </div>
-                        <div class="dropzone dropzone--compact" id="dropzone">
-                            <input type="file" id="file-input" accept="audio/*" class="sr-only">
-                            <div class="dropzone__content" id="dropzone-content">
-                                <div class="dropzone__icon">
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                        <polyline points="17 8 12 3 7 8"/>
-                                        <line x1="12" x2="12" y1="3" y2="15"/>
-                                    </svg>
-                                </div>
-                                <h2 class="dropzone__title">Trascina qui il file</h2>
-                                <p class="dropzone__hint">MP3, WAV, M4A, WEBM, FLAC · Max 25 MB</p>
-                                <button type="button" class="btn btn--secondary" id="browse-btn">Seleziona audio</button>
-                            </div>
-                        </div>
-                    </section>
-                </div>
-
-            </section>
-
-            <!-- ═══ STEP 2: Transcribe ═══════════════════════════════════ -->
-            <section class="section section--hidden" data-step="transcribe" id="section-transcribe">
-
-                <!-- File Preview Card -->
-                <div class="card file-card" id="file-card">
-                    <div class="file-card__info">
-                        <div class="file-card__icon">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-                        </div>
-                        <div class="file-card__details">
-                            <span class="file-card__name" id="preview-filename">file.mp3</span>
-                            <span class="file-card__size" id="preview-filesize">0 KB</span>
-                        </div>
-                        <button type="button" class="btn btn--ghost btn--sm" id="change-file-btn">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-                            Cambia file
-                        </button>
-                    </div>
-                    <div class="file-card__player">
-                        <audio id="audio-element" controls></audio>
-                    </div>
-                </div>
-
-                <!-- CTA Button -->
-                <button type="button" class="btn btn--primary btn--lg btn--block" id="transcribe-btn">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                    <span id="transcribe-btn-text">Trascrivi Audio</span>
-                    <div class="btn__spinner" id="btn-spinner" style="display: none;"></div>
-                </button>
-
-                <!-- Advanced Settings (Collapsible) -->
-                <div class="collapsible" id="settings-collapsible">
-                    <button type="button" class="collapsible__trigger" data-collapsible-trigger="settings-body" id="settings-trigger" aria-expanded="false" aria-controls="settings-body">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-                        <span>Impostazioni avanzate</span>
-                        <svg class="collapsible__chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
+                <!-- Source Panel Collapsible -->
+                <div class="collapsible collapsible--expanded" id="source-collapsible">
+                    <button type="button" class="collapsible__trigger" data-collapsible-trigger="source-collapsible-body" id="source-collapsible-trigger" aria-expanded="true" aria-controls="source-collapsible-body">
+                        <span>Seleziona sorgente audio (Dropzone / Registrazioni)</span>
+                        <svg class="collapsible__chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
                     </button>
-                    <div class="collapsible__body" id="settings-body">
-                        <form id="transcribe-form" class="settings-form">
-                            <div class="settings-form__grid">
+                    <div class="collapsible__body" id="source-collapsible-body">
+                        <div class="source-grid" style="padding: 1rem 0;">
+                            <section class="recordings-library" aria-labelledby="recordings-title">
+                                <div class="recordings-library__header">
+                                    <div>
+                                        <h3 id="recordings-title">Registrazioni recenti</h3>
+                                        <span id="recordings-count">0 elementi</span>
+                                    </div>
+                                    <button type="button" class="btn btn--ghost btn--sm" id="refresh-recordings">Aggiorna</button>
+                                </div>
+                                <div class="recordings-list" id="recordings-list">
+                                    <p class="recordings-list__empty">Caricamento registrazioni...</p>
+                                </div>
+                                <nav class="recordings-pagination" id="recordings-pagination" aria-label="Paginazione registrazioni" hidden>
+                                    <button type="button" class="btn btn--ghost btn--sm" id="recordings-prev">Precedente</button>
+                                    <span id="recordings-page-status" aria-live="polite">Pagina 1 di 1</span>
+                                    <button type="button" class="btn btn--ghost btn--sm" id="recordings-next">Successiva</button>
+                                </nav>
+                            </section>
+
+                            <section class="audio-import" aria-labelledby="audio-import-title">
+                                <div class="audio-import__header">
+                                    <span class="source-action__index">02</span>
+                                    <div>
+                                        <h3 id="audio-import-title">Trascrivi un audio</h3>
+                                        <p>Seleziona o trascina un file dal computer.</p>
+                                    </div>
+                                </div>
+                                <div class="dropzone dropzone--compact" id="dropzone">
+                                    <input type="file" id="file-input" accept="audio/*" class="sr-only">
+                                    <div class="dropzone__content" id="dropzone-content">
+                                        <div class="dropzone__icon">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                                <polyline points="17 8 12 3 7 8"/>
+                                                <line x1="12" x2="12" y1="3" y2="15"/>
+                                            </svg>
+                                        </div>
+                                        <h2 class="dropzone__title">Trascina qui il file</h2>
+                                        <p class="dropzone__hint">MP3, WAV, M4A, WEBM, FLAC · Max 25 MB</p>
+                                        <button type="button" class="btn btn--secondary" id="browse-btn">Seleziona audio</button>
+                                    </div>
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Source Summary Bar (shown when source is selected/collapsed) -->
+                <div class="source-summary" id="source-summary" style="display: none;">
+                    <div class="source-summary__details">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+                            <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+                        </svg>
+                        <div>
+                            <strong id="preview-filename">nome_file.mp3</strong>
+                            <span id="preview-filesize">0 KB</span>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn--ghost btn--sm" id="change-file-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                        Cambia sorgente
+                    </button>
+                </div>
+
+                <!-- 2-Column Workspace -->
+                <div class="transcribe-workspace" id="transcribe-workspace" style="display: none;">
+                    <!-- Column 1: Advanced Settings -->
+                    <div class="workspace-col workspace-col--settings">
+                        <div class="card settings-card">
+                            <div class="card__header">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                                <h3>Impostazioni avanzate</h3>
+                            </div>
+                            <form id="transcribe-form" class="settings-form" style="margin-top: 1rem;">
                                 <div class="form-group">
                                     <label for="model-select">Modello</label>
                                     <select id="model-select" name="model"></select>
@@ -344,25 +330,54 @@
                                     <label for="temperature-input">Temperatura</label>
                                     <input type="number" id="temperature-input" name="temperature" min="0" max="1" step="0.1" placeholder="Auto">
                                 </div>
+                                <div class="settings-form__toggles" style="margin-top: 1rem;">
+                                    <label class="toggle">
+                                        <input type="checkbox" id="timestamps-check" name="word_timestamps">
+                                        <span class="toggle__slider"></span>
+                                        <span class="toggle__label">Timestamp per parola</span>
+                                    </label>
+                                    <label class="toggle">
+                                        <input type="checkbox" id="condition-check" name="condition_on_previous_text" checked>
+                                        <span class="toggle__slider"></span>
+                                        <span class="toggle__label">Condiziona su testo precedente</span>
+                                    </label>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Track & Transcription Button -->
+                    <div class="workspace-col workspace-col--action">
+                        <div class="card action-card">
+                            <div class="card__header">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                                <h3>Traccia audio</h3>
                             </div>
-                            <div class="settings-form__toggles">
-                                <label class="toggle">
-                                    <input type="checkbox" id="timestamps-check" name="word_timestamps">
-                                    <span class="toggle__slider"></span>
-                                    <span class="toggle__label">Timestamp per parola</span>
-                                </label>
-                                <label class="toggle">
-                                    <input type="checkbox" id="condition-check" name="condition_on_previous_text" checked>
-                                    <span class="toggle__slider"></span>
-                                    <span class="toggle__label">Condiziona su testo precedente</span>
-                                </label>
+                            <div class="file-card__player" style="margin: 1.5rem 0;">
+                                <audio id="audio-element" controls style="width: 100%;"></audio>
                             </div>
-                        </form>
+
+                            <div class="transcribe-action-group">
+                                <button type="button" class="btn btn--secondary btn--lg" id="transcribe-play-btn" title="Ascolta audio">
+                                    <svg class="icon-play" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                                        <polygon points="5 3 19 12 5 21 5 3"/>
+                                    </svg>
+                                    <svg class="icon-pause" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20" style="display:none;">
+                                        <rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>
+                                    </svg>
+                                </button>
+                                <button type="button" class="btn btn--primary btn--lg" id="transcribe-btn" style="flex: 1;">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                    <span id="transcribe-btn-text">Trascrivi audio</span>
+                                    <div class="btn__spinner" id="btn-spinner" style="display: none;"></div>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Processing Area (hidden until transcription starts) -->
-                <div class="card processing" id="processing-card" style="display: none;">
+                <!-- Processing Card (Live transcription & logs) -->
+                <div class="card processing" id="processing-card" style="display: none; margin-top: 1.5rem;">
                     <div class="processing__loader">
                         <div class="pulse-dots"><div></div><div></div><div></div></div>
                     </div>
@@ -450,12 +465,37 @@
                 </div>
 
                 <!-- New Transcription CTA -->
-                <button type="button" class="btn btn--secondary btn--block" id="new-transcription-btn">
+                <button type="button" class="btn btn--secondary btn--block" id="new-transcription-btn" style="margin-top: 1rem;">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     Nuova Trascrizione
                 </button>
             </section>
-        </div>
+
+            <!-- ═══ STEP 4: Historical Transcriptions ════════════════════ -->
+            <section class="card history-section" id="history-section" style="margin-top: 2rem;">
+                <div class="history-section__header">
+                    <div>
+                        <h2>Storico trascrizioni</h2>
+                        <span id="history-count">0 elementi</span>
+                    </div>
+                    <div class="history-settings">
+                        <label for="transcriptions-dir-input">Cartella salvataggio:</label>
+                        <div class="history-settings__group">
+                            <input type="text" id="transcriptions-dir-input" placeholder="/Users/.../Transcriptions/local-asr">
+                            <button type="button" class="btn btn--primary btn--sm" id="save-settings-btn">Salva</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="transcriptions-list" id="transcriptions-list" style="margin-top: 1rem;">
+                    <p class="transcriptions-list__empty">Nessuna trascrizione salvata.</p>
+                </div>
+                <nav class="recordings-pagination" id="history-pagination" aria-label="Paginazione storico" hidden style="margin-top: 1rem;">
+                    <button type="button" class="btn btn--ghost btn--sm" id="history-prev">Precedente</button>
+                    <span id="history-page-status" aria-live="polite">Pagina 1 di 1</span>
+                    <button type="button" class="btn btn--ghost btn--sm" id="history-next">Successiva</button>
+                </nav>
+            </section>
+        </main>
         </section>
             </section>
 
