@@ -111,22 +111,11 @@
                         </div>
 
                         <div class="recording-stage">
-                            <div class="signal-panel">
-                                <div class="signal-panel__header">
-                                    <span>SEGNALE IN INGRESSO</span>
-                                    <span id="signal-level-label">-∞ dB</span>
-                                </div>
-                                <canvas id="audio-level-canvas" class="signal-canvas" width="960" height="240" aria-label="Livello del segnale audio"></canvas>
-                                <div class="signal-scale" aria-hidden="true">
-                                    <span>-48</span><span>-36</span><span>-24</span><span>-12</span><span>-6</span><span>0 dB</span>
-                                </div>
-                            </div>
-
                             <div class="recorder-controls">
                                 <div class="recorder__form">
                                     <div class="form-group">
                                         <label for="recording-title">Titolo registrazione</label>
-                                        <input id="recording-title" type="text" maxlength="200" placeholder="Riunione progetto">
+                                        <input id="recording-title" type="text" maxlength="200" placeholder="Titolo Registrazione">
                                     </div>
                                 </div>
 
@@ -173,6 +162,17 @@
                                             <p class="recorder__note">La voce e l’audio del computer vengono acquisiti come sorgenti separate e miscelati nel browser.</p>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+
+                            <div class="signal-panel">
+                                <div class="signal-panel__header">
+                                    <span>SEGNALE IN INGRESSO</span>
+                                    <span id="signal-level-label">-∞ dB</span>
+                                </div>
+                                <canvas id="audio-level-canvas" class="signal-canvas" width="960" height="240" aria-label="Livello del segnale audio"></canvas>
+                                <div class="signal-scale" aria-hidden="true">
+                                    <span>-48</span><span>-36</span><span>-24</span><span>-12</span><span>-6</span><span>0 dB</span>
                                 </div>
                             </div>
                         </div>

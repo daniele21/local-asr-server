@@ -18,7 +18,7 @@ class RecordingStoreTests(unittest.TestCase):
 
     def create_recording(self) -> dict:
         return self.store.create(
-            title="Riunione progetto",
+            title="Titolo Registrazione",
             mime_type="audio/webm;codecs=opus",
             model="test-model",
             language="it",

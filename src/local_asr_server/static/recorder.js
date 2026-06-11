@@ -362,25 +362,40 @@ const RecordingController = (() => {
         const height = dom.canvas.height;
         const styles = getComputedStyle(document.documentElement);
         const accent = styles.getPropertyValue('--accent').trim() || '#8b5cf6';
+        const accentHover = styles.getPropertyValue('--accent-hover').trim() || '#a78bfa';
         const muted = styles.getPropertyValue('--border').trim() || 'rgba(255,255,255,.08)';
-        const barCount = 48;
-        const gap = 6;
+        const barCount = 60;
+        const gap = 4;
         const barWidth = (width - gap * (barCount - 1)) / barCount;
         let sumSquares = 0;
 
         context.clearRect(0, 0, width, height);
+
+        // Linear gradient for active audio bars
+        const gradient = context.createLinearGradient(0, 0, 0, height);
+        gradient.addColorStop(0, accentHover);
+        gradient.addColorStop(0.5, accent);
+        gradient.addColorStop(1, accentHover);
+
         for (let index = 0; index < barCount; index += 1) {
             const sampleIndex = Math.floor(index * meterData.length / barCount);
             const normalized = meterData[sampleIndex] / 255;
             sumSquares += normalized * normalized;
-            const barHeight = Math.max(4, normalized * height);
-            context.fillStyle = normalized > 0.06 ? accent : muted;
-            context.fillRect(
-                index * (barWidth + gap),
-                height - barHeight,
-                barWidth,
-                barHeight,
-            );
+            
+            // Symmetric height (centered vertically)
+            const minHeight = 6;
+            const barHeight = Math.max(minHeight, normalized * (height * 0.85));
+            const y = (height - barHeight) / 2;
+
+            context.fillStyle = normalized > 0.05 ? gradient : muted;
+            
+            context.beginPath();
+            if (context.roundRect) {
+                context.roundRect(index * (barWidth + gap), y, barWidth, barHeight, barWidth / 2);
+            } else {
+                context.rect(index * (barWidth + gap), y, barWidth, barHeight);
+            }
+            context.fill();
         }
 
         const rms = Math.sqrt(sumSquares / barCount);
