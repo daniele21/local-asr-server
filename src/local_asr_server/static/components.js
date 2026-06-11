@@ -145,10 +145,20 @@ const CollapsiblePanel = (() => {
             const body = document.getElementById(targetId);
             if (!body) return;
 
-            // Start collapsed
-            body.style.maxHeight = '0px';
-            body.classList.add('collapsible--collapsed');
-            trigger.setAttribute('aria-expanded', 'false');
+            // Respect initial state from HTML
+            const isInitiallyExpanded = trigger.getAttribute('aria-expanded') === 'true' || 
+                                        trigger.closest('.collapsible')?.classList.contains('collapsible--expanded');
+
+            if (isInitiallyExpanded) {
+                body.style.maxHeight = 'none';
+                body.classList.remove('collapsible--collapsed');
+                trigger.classList.add('collapsible-trigger--open');
+                trigger.setAttribute('aria-expanded', 'true');
+            } else {
+                body.style.maxHeight = '0px';
+                body.classList.add('collapsible--collapsed');
+                trigger.setAttribute('aria-expanded', 'false');
+            }
 
             trigger.addEventListener('click', () => toggle(trigger, body));
         });
