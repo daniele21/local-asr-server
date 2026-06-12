@@ -111,6 +111,17 @@ class ClosedRoomWindowManager:
             self.webview.loadRequest_(request)
             logger.info("WebView loading URL: %s", url)
 
+    def evaluate_js(self, js_code: str) -> None:
+        """Evaluate JavaScript in the webview on the main thread."""
+        if not self.webview:
+            return
+        
+        def _eval():
+            if self.webview:
+                self.webview.evaluateJavaScript_completionHandler_(js_code, None)
+        
+        run_on_main_thread(_eval)
+
     def show_loading(self) -> None:
         """Display a premium loading screen inside the webview."""
         if not self.webview:

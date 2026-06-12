@@ -209,6 +209,8 @@ def create_app(
     )
 
     app.state.default_model = default_model
+    app.state.is_recording = False
+    app.state.is_transcribing = False
     app.state.recording_store = RecordingStore(
         recordings_dir or Path("~/Recordings/local-asr")
     )
@@ -236,11 +238,13 @@ def create_app(
 
     @app.get("/health")
     def health() -> dict:
+        status_str = "recording" if app.state.is_recording else ("transcribing" if app.state.is_transcribing else "idle")
         return {
             "ok": True,
             "server": "local-asr-server",
             "backend": "mlx-whisper",
             "default_model": app.state.default_model,
+            "status": status_str,
             "endpoints": [
                 "POST /v1/audio/transcriptions",
                 "POST /v1/audio/transcriptions/path",
@@ -261,12 +265,14 @@ def create_app(
     def create_recording(request: CreateRecordingRequest):
         store: RecordingStore = app.state.recording_store
         try:
-            return store.create(
+            res = store.create(
                 title=request.title,
                 mime_type=request.mime_type,
                 model=request.model or app.state.default_model,
                 language=request.language,
             )
+            app.state.is_recording = True
+            return res
         except OSError as exc:
             raise HTTPException(status_code=507, detail=str(exc)) from exc
 
@@ -331,6 +337,8 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except OSError as exc:
             raise HTTPException(status_code=507, detail=str(exc)) from exc
+        finally:
+            app.state.is_recording = False
 
     @app.get("/v1/recordings/{recording_id}")
     def get_recording(recording_id: str):
@@ -433,148 +441,156 @@ def create_app(
             # Cache miss, proceed as normal
             if is_streaming:
                 async def event_generator():
-                    q = queue.Queue()
-                    
-                    is_cached = _is_model_cached(target_model)
-                    logger.info(f"[/v1/audio/transcriptions] Model cache status for {target_model}: cached={is_cached}")
+                    app.state.is_transcribing = True
+                    try:
+                        q = queue.Queue()
+                        
+                        is_cached = _is_model_cached(target_model)
+                        logger.info(f"[/v1/audio/transcriptions] Model cache status for {target_model}: cached={is_cached}")
 
-                    if is_cached:
-                        yield json.dumps({
-                            "type": "progress",
-                            "step": "loading_model",
-                            "message": "Caricamento del modello Whisper in memoria..."
-                        }) + "\n"
-                    else:
-                        yield json.dumps({
-                            "type": "progress",
-                            "step": "downloading",
-                            "message": f"Download del modello '{target_model}' da Hugging Face (~1.6 GB)..."
-                        }) + "\n"
-
-                    transcribe_result = {}
-                    transcribe_error = None
-
-                    def worker():
-                        nonlocal transcribe_error
-                        try:
-                            logger.info(f"[/v1/audio/transcriptions] [Worker Thread] Starting transcription for {tmp_path}")
-                            capture = ThreadStdoutCapture(q)
-                            with contextlib.redirect_stdout(capture):
-                                res = _transcribe(
-                                    audio_path=tmp_path,
-                                    model=target_model,
-                                    language=language,
-                                    task=task,
-                                    word_timestamps=_str_to_bool(word_timestamps),
-                                    initial_prompt=initial_prompt,
-                                    temperature=temperature,
-                                    condition_on_previous_text=_str_to_bool(condition_on_previous_text, True),
-                                    verbose=True,
-                                )
-                                transcribe_result.update(res)
-                            logger.info(f"[/v1/audio/transcriptions] [Worker Thread] Transcription completed successfully")
-                        except Exception as e:
-                            logger.error(f"[/v1/audio/transcriptions] [Worker Thread] Transcription failed: {e}", exc_info=True)
-                            transcribe_error = e
-
-                    t = threading.Thread(target=worker)
-                    t.start()
-
-                    while t.is_alive() or not q.empty():
-                        try:
-                            msg = q.get_nowait()
-                            logger.info(f"[/v1/audio/transcriptions] [Live Segment] {msg}")
+                        if is_cached:
                             yield json.dumps({
                                 "type": "progress",
-                                "step": "transcribing",
-                                "message": msg
+                                "step": "loading_model",
+                                "message": "Caricamento del modello Whisper in memoria..."
                             }) + "\n"
-                        except queue.Empty:
-                            await asyncio.sleep(0.1)
+                        else:
+                            yield json.dumps({
+                                "type": "progress",
+                                "step": "downloading",
+                                "message": f"Download del modello '{target_model}' da Hugging Face (~1.6 GB)..."
+                            }) + "\n"
 
-                    t.join()
+                        transcribe_result = {}
+                        transcribe_error = None
 
-                    try:
-                        if os.path.exists(tmp_path):
-                            os.remove(tmp_path)
-                            logger.info(f"[/v1/audio/transcriptions] Cleaned up temporary file: {tmp_path}")
-                    except OSError as e:
-                        logger.warning(f"[/v1/audio/transcriptions] Failed to remove temp file {tmp_path}: {e}")
+                        def worker():
+                            nonlocal transcribe_error
+                            try:
+                                logger.info(f"[/v1/audio/transcriptions] [Worker Thread] Starting transcription for {tmp_path}")
+                                capture = ThreadStdoutCapture(q)
+                                with contextlib.redirect_stdout(capture):
+                                    res = _transcribe(
+                                        audio_path=tmp_path,
+                                        model=target_model,
+                                        language=language,
+                                        task=task,
+                                        word_timestamps=_str_to_bool(word_timestamps),
+                                        initial_prompt=initial_prompt,
+                                        temperature=temperature,
+                                        condition_on_previous_text=_str_to_bool(condition_on_previous_text, True),
+                                        verbose=True,
+                                    )
+                                    transcribe_result.update(res)
+                                logger.info(f"[/v1/audio/transcriptions] [Worker Thread] Transcription completed successfully")
+                            except Exception as e:
+                                logger.error(f"[/v1/audio/transcriptions] [Worker Thread] Transcription failed: {e}", exc_info=True)
+                                transcribe_error = e
 
-                    if transcribe_error:
+                        t = threading.Thread(target=worker)
+                        t.start()
+
+                        while t.is_alive() or not q.empty():
+                            try:
+                                msg = q.get_nowait()
+                                logger.info(f"[/v1/audio/transcriptions] [Live Segment] {msg}")
+                                yield json.dumps({
+                                    "type": "progress",
+                                    "step": "transcribing",
+                                    "message": msg
+                                }) + "\n"
+                            except queue.Empty:
+                                await asyncio.sleep(0.1)
+
+                        t.join()
+
+                        try:
+                            if os.path.exists(tmp_path):
+                                os.remove(tmp_path)
+                                logger.info(f"[/v1/audio/transcriptions] Cleaned up temporary file: {tmp_path}")
+                        except OSError as e:
+                            logger.warning(f"[/v1/audio/transcriptions] Failed to remove temp file {tmp_path}: {e}")
+
+                        if transcribe_error:
+                            yield json.dumps({
+                                "type": "error",
+                                "message": f"Transcription failed: {transcribe_error}"
+                            }) + "\n"
+                            return
+
+                        elapsed = time.perf_counter() - started_at
+                        logger.info(f"[/v1/audio/transcriptions] Total processing time (streaming): {elapsed:.2f} seconds")
+                        
+                        payload = {
+                            "text": transcribe_result.get("text", ""),
+                            "language": transcribe_result.get("language", language),
+                            "segments": transcribe_result.get("segments", []),
+                            "model": target_model,
+                            "backend": "mlx-whisper",
+                            "stats": {
+                                "time_total_seconds": elapsed,
+                            },
+                        }
+                        payload = _clean_nan_values(payload)
+                        _save_cached_result(cache_key, payload)
+                        
+                        saved_meta = app.state.transcription_store.save(payload, audio_filename=file.filename)
+                        payload["saved_id"] = saved_meta["id"]
+                        payload["saved_file_path"] = str(app.state.transcription_store.root)
+                        
                         yield json.dumps({
-                            "type": "error",
-                            "message": f"Transcription failed: {transcribe_error}"
+                            "type": "completed",
+                            "data": payload
                         }) + "\n"
-                        return
-
-                    elapsed = time.perf_counter() - started_at
-                    logger.info(f"[/v1/audio/transcriptions] Total processing time (streaming): {elapsed:.2f} seconds")
-                    
-                    payload = {
-                        "text": transcribe_result.get("text", ""),
-                        "language": transcribe_result.get("language", language),
-                        "segments": transcribe_result.get("segments", []),
-                        "model": target_model,
-                        "backend": "mlx-whisper",
-                        "stats": {
-                            "time_total_seconds": elapsed,
-                        },
-                    }
-                    payload = _clean_nan_values(payload)
-                    _save_cached_result(cache_key, payload)
-                    
-                    saved_meta = app.state.transcription_store.save(payload, audio_filename=file.filename)
-                    payload["saved_id"] = saved_meta["id"]
-                    payload["saved_file_path"] = str(app.state.transcription_store.root)
-                    
-                    yield json.dumps({
-                        "type": "completed",
-                        "data": payload
-                    }) + "\n"
+                    finally:
+                        app.state.is_transcribing = False
 
                 return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
             logger.info(f"[/v1/audio/transcriptions] Running non-streaming transcription for {tmp_path} using {target_model}...")
-            result = _transcribe(
-                audio_path=tmp_path,
-                model=target_model,
-                language=language,
-                task=task,
-                word_timestamps=_str_to_bool(word_timestamps),
-                initial_prompt=initial_prompt,
-                temperature=temperature,
-                condition_on_previous_text=_str_to_bool(condition_on_previous_text, True),
-                verbose=None if verbose is None else _str_to_bool(verbose),
-            )
+            app.state.is_transcribing = True
+            try:
+                result = _transcribe(
+                    audio_path=tmp_path,
+                    model=target_model,
+                    language=language,
+                    task=task,
+                    word_timestamps=_str_to_bool(word_timestamps),
+                    initial_prompt=initial_prompt,
+                    temperature=temperature,
+                    condition_on_previous_text=_str_to_bool(condition_on_previous_text, True),
+                    verbose=None if verbose is None else _str_to_bool(verbose),
+                )
 
-            elapsed = time.perf_counter() - started_at
-            logger.info(f"[/v1/audio/transcriptions] Transcription completed in {elapsed:.2f} seconds")
+                elapsed = time.perf_counter() - started_at
+                logger.info(f"[/v1/audio/transcriptions] Transcription completed in {elapsed:.2f} seconds")
 
-            payload = {
-                "text": result.get("text", ""),
-                "language": result.get("language", language),
-                "segments": result.get("segments", []),
-                "model": target_model,
-                "backend": "mlx-whisper",
-                "stats": {
-                    "time_total_seconds": elapsed,
-                },
-            }
-            payload = _clean_nan_values(payload)
-            _save_cached_result(cache_key, payload)
+                payload = {
+                    "text": result.get("text", ""),
+                    "language": result.get("language", language),
+                    "segments": result.get("segments", []),
+                    "model": target_model,
+                    "backend": "mlx-whisper",
+                    "stats": {
+                        "time_total_seconds": elapsed,
+                    },
+                }
+                payload = _clean_nan_values(payload)
+                _save_cached_result(cache_key, payload)
 
-            saved_meta = app.state.transcription_store.save(payload, audio_filename=file.filename)
-            payload["saved_id"] = saved_meta["id"]
-            payload["saved_file_path"] = str(app.state.transcription_store.root)
+                saved_meta = app.state.transcription_store.save(payload, audio_filename=file.filename)
+                payload["saved_id"] = saved_meta["id"]
+                payload["saved_file_path"] = str(app.state.transcription_store.root)
 
-            if response_format == "text":
-                return PlainTextResponse(payload["text"])
+                if response_format == "text":
+                    return PlainTextResponse(payload["text"])
 
-            if response_format == "verbose_json":
-                return JSONResponse(payload)
+                if response_format == "verbose_json":
+                    return JSONResponse(payload)
 
-            return JSONResponse({"text": payload["text"]})
+                return JSONResponse({"text": payload["text"]})
+            finally:
+                app.state.is_transcribing = False
 
         except Exception as exc:
             logger.error(f"[/v1/audio/transcriptions] Request failed: {exc}", exc_info=True)
@@ -607,6 +623,7 @@ def create_app(
                 detail=f"Audio file not found: {audio_path}",
             )
 
+        app.state.is_transcribing = True
         try:
             result = _transcribe(
                 audio_path=str(audio_path),
@@ -652,6 +669,8 @@ def create_app(
                 status_code=500,
                 detail=f"Transcription failed: {exc}",
             ) from exc
+        finally:
+            app.state.is_transcribing = False
 
     @app.patch("/v1/recordings/{recording_id}")
     def update_recording(recording_id: str, request: UpdateRecordingRequest):

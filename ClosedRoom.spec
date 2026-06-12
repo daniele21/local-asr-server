@@ -203,8 +203,8 @@ app = BUNDLE(                                                           # noqa: 
     bundle_identifier="com.closedroom.app",
     version="1.0.0",
     info_plist={
-        # Show Dock icon and window (LSUIElement = False)
-        "LSUIElement": False,
+        # Run as a background agent (no Dock icon, stays in menu bar)
+        "LSUIElement": True,
         "CFBundleName": "ClosedRoom",
         "CFBundleDisplayName": "ClosedRoom",
         "CFBundleIdentifier": "com.closedroom.app",

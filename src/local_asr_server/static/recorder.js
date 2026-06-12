@@ -634,5 +634,14 @@ const RecordingController = (() => {
         return new Promise(resolve => setTimeout(resolve, milliseconds));
     }
 
-    return { init };
+    function isRecording() {
+        return !!mediaRecorder && mediaRecorder.state === 'recording';
+    }
+
+    return {
+        init,
+        start,
+        stop,
+        isRecording
+    };
 })();
