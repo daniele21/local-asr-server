@@ -30,6 +30,7 @@ from local_asr_server.recordings import (
 )
 from local_asr_server.settings import load_settings, save_settings
 from local_asr_server.llm import LLMService
+from local_asr_server.paths import get_cache_dir, get_static_dir
 
 class AnalysisRequest(BaseModel):
     transcription_id: Optional[str] = None
@@ -147,7 +148,9 @@ def _is_model_cached(model_name: str) -> bool:
 
 
 
-CACHE_DIR = Path(__file__).parent.parent.parent / ".cache"
+# Cache directory — uses macOS Application Support in bundle mode,
+# or a project-local .cache/ in dev mode.
+CACHE_DIR = get_cache_dir()
 
 import math
 
@@ -215,8 +218,8 @@ def create_app(
     # Clean up any orphan aggregate devices from previous runs/crashes
     AudioRouter.cleanup_orphans()
 
-    # Set up static files serving
-    static_dir = Path(__file__).parent / "static"
+    # Set up static files serving — resolves correctly in both dev and bundle.
+    static_dir = get_static_dir()
     static_dir.mkdir(exist_ok=True)
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 

@@ -17,8 +17,23 @@ dependencies = [
     "mlx-whisper",
 ]
 
+[project.optional-dependencies]
+# macOS menu bar mode — install with: uv pip install -e ".[app]"
+app = [
+    "rumps>=0.4.0",
+    "pyobjc-framework-Cocoa>=10.0",
+]
+# Build tooling — install with: uv pip install -e ".[build]"
+build = [
+    "pyinstaller>=6.0",
+]
+
 [project.scripts]
 local-asr = "local_asr_server.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+local_asr_server = ["static/*", "static/**/*"]
+

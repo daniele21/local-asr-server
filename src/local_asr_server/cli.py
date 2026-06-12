@@ -52,6 +52,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "setup-audio",
         help="Install macOS audio routing prerequisites.",
     )
+    subparsers.add_parser(
+        "app",
+        help="Launch ClosedRoom in menu bar mode (macOS only).",
+    )
     return parser
 
 
@@ -144,6 +148,10 @@ def main() -> None:
         return
     if args.command == "setup-audio":
         _setup_audio()
+        return
+    if args.command == "app":
+        from local_asr_server.menubar import main as menubar_main
+        menubar_main()
         return
     if args.command != "serve":
         parser.print_help()

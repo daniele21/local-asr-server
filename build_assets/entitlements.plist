@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        ClosedRoom entitlements.
+        These are required for ad-hoc signed apps to work correctly on macOS.
+    -->
+
+    <!-- Allow the app to run without full sandboxing (required for local server + audio routing) -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+
+    <!-- Microphone access for recording -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+
+    <!-- Allow network connections to localhost -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.network.server</key>
+    <true/>
+
+    <!-- Allow spawning child processes (swiftc compilation in dev, subprocesses) -->
+    <key>com.apple.security.inherit</key>
+    <true/>
+
+    <!-- Hardened runtime: allow JIT for Python bytecode execution -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+
+    <!-- Allow JIT compilation to write to unsigned executable memory pages (required by LLVM / numba) -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+
+    <!-- Allow loading unsigned dylibs (MLX native extensions) -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>

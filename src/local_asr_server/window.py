@@ -1,0 +1,269 @@
+"""
+window.py — Native macOS WKWebView Window Wrapper for ClosedRoom.
+
+This module provides a native NSWindow hosting a WKWebView using PyObjC
+to render the ClosedRoom web interface. It runs within the main Cocoa event
+loop managed by the status-bar menu app.
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import Callable, Optional
+
+import objc
+from AppKit import (
+    NSApplication,
+    NSApplicationDidBecomeActiveNotification,
+    NSBackingStoreBuffered,
+    NSNotificationCenter,
+    NSObject,
+    NSScreen,
+    NSViewHeightSizable,
+    NSViewWidthSizable,
+    NSWindow,
+    NSWindowStyleMaskClosable,
+    NSWindowStyleMaskMiniaturizable,
+    NSWindowStyleMaskResizable,
+    NSWindowStyleMaskTitled,
+)
+from Foundation import NSURL, NSURLRequest
+
+logger = logging.getLogger(__name__)
+
+# Load WebKit framework dynamically via PyObjC
+try:
+    objc.loadBundle(
+        "WebKit",
+        globals(),
+        bundle_path="/System/Library/Frameworks/WebKit.framework",
+    )
+    WKWebView = objc.lookUpClass("WKWebView")
+    _WEBKIT_AVAILABLE = True
+except Exception as exc:
+    logger.error("Failed to load WebKit framework: %s", exc)
+    _WEBKIT_AVAILABLE = False
+    WKWebView = None
+
+
+class ClosedRoomWindowDelegate(NSObject):
+    """Delegate for the ClosedRoom window to handle window lifecycle events."""
+
+    def initWithWindowManager_(self, manager: ClosedRoomWindowManager) -> ClosedRoomWindowDelegate:
+        self = objc.super(ClosedRoomWindowDelegate, self).init()
+        if self:
+            self._manager = manager
+        return self
+
+    def windowShouldClose_(self, sender: objc.objc_object) -> bool:
+        """Intercept the window close button and hide the window instead."""
+        logger.info("Window close intercepted. Hiding window.")
+        if self._manager.window:
+            self._manager.window.orderOut_(None)
+        return False  # Return False to prevent actual window destruction
+
+
+class ClosedRoomActivationObserver(NSObject):
+    """Observer for app activation notifications (e.g. clicking the Dock icon)."""
+
+    def initWithCallback_(self, callback: Callable[[], None]) -> ClosedRoomActivationObserver:
+        self = objc.super(ClosedRoomActivationObserver, self).init()
+        if self:
+            self._callback = callback
+        return self
+
+    def appDidBecomeActive_(self, notification: objc.objc_object) -> None:
+        """Callback triggered when the application becomes active."""
+        logger.info("App became active. Re-opening window.")
+        self._callback()
+
+
+class ClosedRoomWindowManager:
+    """Manages the lifecycle and state of the native WKWebView application window."""
+
+    def __init__(self, url: str) -> None:
+        self.url = url
+        self.window: Optional[NSWindow] = None
+        self.webview: Optional[objc.objc_object] = None
+        self._delegate: Optional[ClosedRoomWindowDelegate] = None
+        self._observer: Optional[ClosedRoomActivationObserver] = None
+
+    def show(self) -> None:
+        """Show the native window, creating it if it doesn't exist yet."""
+        if not _WEBKIT_AVAILABLE or WKWebView is None:
+            logger.error("Cannot show window: WebKit is not available.")
+            return
+
+        if not self.window:
+            self._create_window()
+
+        if self.window:
+            self.window.makeKeyAndOrderFront_(None)
+            NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+
+    def load_url(self, url: str) -> None:
+        """Load a new URL into the webview."""
+        self.url = url
+        if self.webview:
+            ns_url = NSURL.URLWithString_(url)
+            request = NSURLRequest.requestWithURL_(ns_url)
+            self.webview.loadRequest_(request)
+            logger.info("WebView loading URL: %s", url)
+
+    def show_loading(self) -> None:
+        """Display a premium loading screen inside the webview."""
+        if not self.webview:
+            return
+
+        loading_html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>ClosedRoom</title>
+          <style>
+            body {
+              background: radial-gradient(circle at center, #1e1e24 0%, #121214 100%);
+              color: #f3f4f6;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              height: 100vh;
+              margin: 0;
+              overflow: hidden;
+            }
+            .container {
+              text-align: center;
+              animation: fadeIn 0.8s ease-out;
+            }
+            .spinner {
+              width: 50px;
+              height: 50px;
+              border: 3.5px solid rgba(255, 255, 255, 0.08);
+              border-radius: 50%;
+              border-top-color: #3b82f6;
+              animation: spin 1.2s cubic-bezier(0.5, 0.1, 0.5, 0.9) infinite;
+              margin: 0 auto 24px;
+              box-shadow: 0 0 15px rgba(59, 130, 246, 0.2);
+            }
+            .title {
+              font-size: 20px;
+              font-weight: 600;
+              letter-spacing: -0.025em;
+              margin-bottom: 8px;
+              background: linear-gradient(135deg, #ffffff 0%, #a1a1aa 100%);
+              -webkit-background-clip: text;
+              -webkit-text-fill-color: transparent;
+            }
+            .subtitle {
+              font-size: 13px;
+              color: #71717a;
+              font-weight: 400;
+            }
+            @keyframes spin {
+              to { transform: rotate(360deg); }
+            }
+            @keyframes fadeIn {
+              from { opacity: 0; transform: translateY(10px); }
+              to { opacity: 1; transform: translateY(0); }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="spinner"></div>
+            <div class="title">ClosedRoom</div>
+            <div class="subtitle">Avvio del server di trascrizione locale in corso...</div>
+          </div>
+        </body>
+        </html>
+        """
+        self.webview.loadHTMLString_baseURL_(loading_html, None)
+        logger.info("WebView showing loading screen")
+
+    def _create_window(self) -> None:
+        """Initialize the NSWindow and add WKWebView."""
+        logger.info("Creating native application window...")
+
+        # Styles: Title bar, close, minimize, resize
+        style_mask = (
+            NSWindowStyleMaskTitled
+            | NSWindowStyleMaskClosable
+            | NSWindowStyleMaskMiniaturizable
+            | NSWindowStyleMaskResizable
+        )
+
+        # Default frame dimensions
+        rect = ((100, 100), (1024, 768))
+
+        # Create window
+        self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            rect, style_mask, NSBackingStoreBuffered, False
+        )
+        self.window.setTitle_("ClosedRoom")
+        self.window.center()
+
+        # Create WKWebView
+        content_rect = self.window.contentView().frame()
+        self.webview = WKWebView.alloc().initWithFrame_(content_rect)
+        self.webview.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
+        self.window.setContentView_(self.webview)
+
+        # Display initial loading screen
+        self.show_loading()
+
+        # Set Window Delegate (to handle close intercepts)
+        self._delegate = ClosedRoomWindowDelegate.alloc().initWithWindowManager_(self)
+        self.window.setDelegate_(self._delegate)
+
+        # Register observer for Dock icon reactivations
+        self._register_activation_observer()
+
+    def _register_activation_observer(self) -> None:
+        """Observe application activation notifications to reopen window on Dock clicks."""
+        self._observer = ClosedRoomActivationObserver.alloc().initWithCallback_(self.show)
+        NSNotificationCenter.defaultCenter().addObserver_selector_name_object_(
+            self._observer,
+            "appDidBecomeActive:",
+            NSApplicationDidBecomeActiveNotification,
+            None,
+        )
+
+    def close(self) -> None:
+        """Deallocate window and clean up observers."""
+        if self._observer:
+            NSNotificationCenter.defaultCenter().removeObserver_(self._observer)
+            self._observer = None
+        if self.window:
+            self.window.setDelegate_(None)
+            self.window.close()
+            self.window = None
+        self._delegate = None
+        self.webview = None
+
+
+class MainThreadHelper(NSObject):
+    """Helper class to run Python callables on the main macOS thread."""
+
+    def runCallback_(self, callback: Callable[[], None]) -> None:
+        try:
+            callback()
+        except Exception as exc:
+            logger.exception("Error executing callback on main thread: %s", exc)
+
+
+_main_thread_helper = MainThreadHelper.alloc().init()
+
+
+def run_on_main_thread(callback: Callable[[], None], wait: bool = False) -> None:
+    """Run a Python callback on the macOS main thread using PyObjC."""
+    _main_thread_helper.performSelectorOnMainThread_withObject_waitUntilDone_(
+        b"runCallback:",
+        callback,
+        wait,
+    )
+

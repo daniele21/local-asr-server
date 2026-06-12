@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="PrivateMeet records, transcribes and analyses meetings entirely on your Mac. No bots, no cloud upload, no mandatory subscription." />
+  <meta name="theme-color" content="#09051f" />
+  <title>PrivateMeet — Your meetings stay on your Mac</title>
+  <style>
+    :root{
+      --bg:#09051f;
+      --bg-deep:#050316;
+      --surface:#13102d;
+      --surface-2:#19143a;
+      --surface-3:#21184a;
+      --text:#fbfaff;
+      --muted:#b8b2cd;
+      --muted-2:#857f9f;
+      --line:rgba(255,255,255,.11);
+      --line-strong:rgba(255,255,255,.19);
+      --purple:#9f74ff;
+      --violet:#7355ff;
+      --blue:#58c8ff;
+      --cyan:#66f0e3;
+      --lime:#c6ff6a;
+      --shadow:0 30px 100px rgba(0,0,0,.45);
+      --radius:28px;
+      --max:1180px;
+    }
+
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{
+      margin:0;
+      color:var(--text);
+      background:
+        radial-gradient(circle at 8% 12%,rgba(89,56,193,.19),transparent 28%),
+        radial-gradient(circle at 95% 30%,rgba(24,121,179,.12),transparent 28%),
+        linear-gradient(180deg,var(--bg-deep),var(--bg) 45%,#07041b 100%);
+      font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      line-height:1.55;
+      overflow-x:hidden;
+    }
+
+    a{color:inherit;text-decoration:none}
+    button,input{font:inherit}
+    button{color:inherit}
+    img{max-width:100%;display:block}
+    .container{width:min(calc(100% - 36px),var(--max));margin:0 auto}
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+    .nav{
+      position:fixed;top:0;left:0;right:0;z-index:60;
+      background:linear-gradient(180deg,rgba(5,3,22,.84),rgba(5,3,22,.58));
+      backdrop-filter:blur(18px);
+      border-bottom:1px solid rgba(255,255,255,.07);
+    }
+    .nav-inner{height:72px;display:flex;align-items:center;justify-content:space-between;gap:22px}
+    .brand{display:flex;align-items:center;gap:12px;font-weight:850;letter-spacing:-.04em}
+    .brand-mark{
+      width:38px;height:38px;border-radius:13px;display:grid;place-items:center;
+      background:linear-gradient(145deg,#efeaff,var(--purple) 52%,var(--blue));
+      color:#100a2f;font-size:1rem;font-weight:950;box-shadow:0 10px 36px rgba(125,84,255,.32);
+      position:relative;overflow:hidden;
+    }
+    .brand-mark::after{content:"";position:absolute;inset:-50% 45% -50% -40%;transform:rotate(18deg);background:rgba(255,255,255,.34)}
+    .brand small{display:block;color:var(--muted-2);font-size:.64rem;font-weight:650;letter-spacing:.07em;text-transform:uppercase;margin-top:-2px}
+    .nav-links{display:flex;align-items:center;gap:28px;color:var(--muted);font-size:.91rem}
+    .nav-links a:hover{color:#fff}
+
+    .btn{
+      display:inline-flex;align-items:center;justify-content:center;gap:9px;
+      min-height:49px;padding:0 20px;border:1px solid transparent;border-radius:14px;
+      font-weight:800;cursor:pointer;transition:transform .2s ease,border-color .2s ease,background .2s ease,box-shadow .2s ease;
+    }
+    .btn:hover{transform:translateY(-2px)}
+    .btn-primary{color:#10092c;background:linear-gradient(135deg,#f3efff,var(--purple) 58%,#7ee8ff);box-shadow:0 14px 40px rgba(125,84,255,.25)}
+    .btn-secondary{background:rgba(255,255,255,.055);border-color:var(--line);color:#fff}
+    .btn-ghost{min-height:41px;padding:0 15px;border-color:var(--line);background:rgba(255,255,255,.04)}
+
+    .hero{
+      min-height:100svh;padding:128px 0 64px;display:flex;align-items:center;position:relative;isolation:isolate;
+      background-image:linear-gradient(90deg,rgba(5,3,22,.98) 0%,rgba(5,3,22,.91) 40%,rgba(5,3,22,.46) 74%,rgba(5,3,22,.66) 100%),url('home_bg.webp');
+      background-size:cover;background-position:center;
+    }
+    .hero::before{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,transparent 68%,var(--bg-deep) 100%)}
+    .hero::after{content:"";position:absolute;width:420px;height:420px;border-radius:50%;right:-180px;top:120px;z-index:-1;background:rgba(88,200,255,.11);filter:blur(80px)}
+    .hero-grid{display:grid;grid-template-columns:1.03fr .97fr;gap:54px;align-items:center}
+    .eyebrow{display:inline-flex;align-items:center;gap:10px;padding:9px 13px;border-radius:999px;border:1px solid rgba(159,116,255,.35);background:rgba(105,76,220,.15);font-size:.82rem;font-weight:780;color:#e4d9ff}
+    .pulse{width:8px;height:8px;border-radius:50%;background:var(--cyan);box-shadow:0 0 0 6px rgba(102,240,227,.1)}
+    h1{font-size:clamp(3.5rem,7.4vw,6.9rem);line-height:.91;letter-spacing:-.075em;margin:24px 0 22px;max-width:860px}
+    .hero-highlight{background:linear-gradient(105deg,#fff 4%,#d9ceff 46%,#78dfff 92%);-webkit-background-clip:text;background-clip:text;color:transparent}
+    .hero-copy{max-width:660px;color:#cec8df;font-size:1.19rem;margin:0 0 30px}
+    .hero-actions{display:flex;flex-wrap:wrap;gap:12px}
+    .proof-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px}
+    .proof-chip{padding:8px 11px;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(7,4,28,.42);color:#bdb6d1;font-size:.81rem;backdrop-filter:blur(10px)}
+    .proof-chip::before{content:"✓";color:var(--cyan);font-weight:900;margin-right:7px}
+
+    .hero-visual{position:relative;min-height:580px;display:grid;place-items:center}
+    .orb{position:absolute;border-radius:50%;filter:blur(2px);opacity:.8;animation:float 7s ease-in-out infinite}
+    .orb.one{width:105px;height:105px;background:radial-gradient(circle at 30% 30%,#fff,#9a67ff 40%,transparent 72%);right:8%;top:7%}
+    .orb.two{width:58px;height:58px;background:radial-gradient(circle at 30% 30%,#fff,#55ddff 42%,transparent 73%);left:0;bottom:16%;animation-delay:-2s}
+    @keyframes float{50%{transform:translateY(-15px) translateX(6px)}}
+
+    .device{
+      width:min(100%,530px);border:1px solid rgba(255,255,255,.19);border-radius:32px;padding:11px;
+      background:linear-gradient(145deg,rgba(255,255,255,.22),rgba(255,255,255,.035));box-shadow:var(--shadow);transform:perspective(1200px) rotateY(-7deg) rotateX(3deg);position:relative;
+    }
+    .device::before{content:"";position:absolute;inset:-2px;border-radius:34px;padding:1px;background:linear-gradient(130deg,rgba(255,255,255,.6),rgba(159,116,255,.15),rgba(88,200,255,.4));-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
+    .screen{border-radius:23px;overflow:hidden;background:#0b0822;border:1px solid rgba(255,255,255,.09)}
+    .window-top{height:42px;display:flex;align-items:center;gap:7px;padding:0 14px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.03)}
+    .traffic{width:9px;height:9px;border-radius:50%;background:#ff6e6a}.traffic:nth-child(2){background:#ffd161}.traffic:nth-child(3){background:#68df8c}
+    .screen-body{display:grid;grid-template-columns:108px 1fr;min-height:430px}
+    .screen-side{border-right:1px solid var(--line);padding:15px 10px;background:rgba(255,255,255,.018)}
+    .screen-side div{font-size:.68rem;color:#77708f;padding:8px;border-radius:8px;margin-bottom:4px}
+    .screen-side div.active{background:linear-gradient(90deg,rgba(159,116,255,.2),rgba(88,200,255,.08));color:#fff;border:1px solid rgba(159,116,255,.18)}
+    .screen-main{padding:18px}
+    .app-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:13px}
+    .app-title{font-size:.94rem;font-weight:850}.app-meta{font-size:.65rem;color:#7d7693;margin-top:2px}
+    .local-label{font-size:.62rem;padding:6px 8px;border-radius:999px;border:1px solid rgba(102,240,227,.23);color:#aafff6;background:rgba(102,240,227,.07)}
+    .wave-card{height:68px;border-radius:14px;border:1px solid var(--line);background:linear-gradient(180deg,rgba(159,116,255,.08),rgba(255,255,255,.02));display:flex;align-items:center;gap:3px;padding:0 14px;margin-bottom:12px;overflow:hidden}
+    .bar{width:4px;border-radius:999px;background:linear-gradient(180deg,var(--cyan),var(--purple));opacity:.9}
+    .bar:nth-child(3n){height:42%}.bar:nth-child(3n+1){height:72%}.bar:nth-child(3n+2){height:28%}
+    .output-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .mini-card{border:1px solid var(--line);background:rgba(255,255,255,.025);border-radius:13px;padding:11px;min-height:95px}
+    .mini-label{text-transform:uppercase;letter-spacing:.11em;color:#77708f;font-size:.56rem;margin-bottom:7px}
+    .mini-line{font-size:.67rem;color:#d9d5e4;display:flex;gap:7px;margin:6px 0}.mini-line::before{content:"";width:4px;height:4px;border-radius:50%;background:var(--cyan);margin-top:5px;flex:0 0 auto}
+    .source-card{margin-top:10px;border:1px solid rgba(159,116,255,.18);background:linear-gradient(90deg,rgba(159,116,255,.09),rgba(88,200,255,.04));border-radius:13px;padding:11px;display:flex;justify-content:space-between;gap:12px;font-size:.66rem;color:#d5d0e2}
+    .source-card span:last-child{color:var(--cyan);white-space:nowrap}
+    .floating-proof{position:absolute;right:-10px;bottom:35px;padding:13px 16px;border-radius:17px;border:1px solid rgba(255,255,255,.15);background:rgba(14,8,42,.82);backdrop-filter:blur(18px);box-shadow:0 18px 60px rgba(0,0,0,.35);max-width:225px}
+    .floating-proof strong{font-size:.84rem;display:block}.floating-proof span{font-size:.7rem;color:var(--muted)}
+    .floating-proof::before{content:"●";color:var(--cyan);margin-right:6px}
+
+    section{padding:94px 0}
+    .section-head{max-width:800px;margin-bottom:40px}
+    .section-kicker{font-size:.78rem;font-weight:850;letter-spacing:.15em;text-transform:uppercase;color:#ae8dff}
+    h2{font-size:clamp(2.45rem,5.5vw,4.8rem);line-height:.98;letter-spacing:-.06em;margin:13px 0 16px}
+    .section-head p{max-width:690px;color:var(--muted);font-size:1.06rem;margin:0}
+
+    .reveal-band{padding:26px 0 76px}
+    .reveal-card{display:grid;grid-template-columns:1fr auto;gap:22px;align-items:center;padding:22px 24px;border:1px solid var(--line);border-radius:22px;background:linear-gradient(90deg,rgba(159,116,255,.09),rgba(88,200,255,.045));box-shadow:0 18px 65px rgba(0,0,0,.22)}
+    .reveal-card strong{font-size:1rem}.reveal-card p{margin:3px 0 0;color:var(--muted);font-size:.9rem}
+    .disclosure{display:none;margin-top:14px;padding:25px;border-radius:22px;border:1px solid var(--line);background:rgba(255,255,255,.025)}
+    .disclosure.open{display:block;animation:fadeIn .28s ease}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+
+    .boundary-grid{display:grid;grid-template-columns:.95fr 1.05fr;gap:34px;align-items:stretch}
+    .boundary-copy{padding:30px;border:1px solid var(--line);border-radius:var(--radius);background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.02))}
+    .boundary-copy h3{font-size:1.65rem;letter-spacing:-.04em;margin:0 0 10px}.boundary-copy p{color:var(--muted);margin:0}
+    .boundary-list{display:grid;gap:12px;margin-top:24px}.boundary-list div{display:flex;gap:10px;color:#e6e1ee;font-size:.92rem}.boundary-list div::before{content:"✓";color:var(--cyan);font-weight:900}
+    .architecture{position:relative;border:1px solid rgba(159,116,255,.22);border-radius:var(--radius);background:radial-gradient(circle at 70% 15%,rgba(88,200,255,.11),transparent 28%),linear-gradient(180deg,#151034,#0c0824);padding:28px;min-height:430px;overflow:hidden}
+    .architecture::after{content:"LOCAL DEVICE";position:absolute;top:16px;right:18px;font-size:.58rem;letter-spacing:.18em;color:#7d7599}
+    .flow-line{position:absolute;left:14%;right:14%;top:50%;height:1px;background:linear-gradient(90deg,transparent,var(--purple),var(--blue),transparent)}
+    .flow-nodes{position:relative;z-index:2;height:100%;display:grid;grid-template-columns:repeat(4,1fr);gap:10px;align-items:center}
+    .flow-node{text-align:center;min-width:0}
+    .node-icon{width:70px;height:70px;margin:0 auto 13px;border-radius:22px;display:grid;place-items:center;border:1px solid rgba(255,255,255,.13);background:linear-gradient(145deg,rgba(255,255,255,.09),rgba(255,255,255,.025));box-shadow:0 18px 55px rgba(0,0,0,.25);font-size:1.35rem}
+    .flow-node:nth-child(2) .node-icon{background:linear-gradient(145deg,rgba(159,116,255,.22),rgba(159,116,255,.04))}.flow-node:nth-child(3) .node-icon{background:linear-gradient(145deg,rgba(88,200,255,.19),rgba(88,200,255,.04))}.flow-node:nth-child(4) .node-icon{background:linear-gradient(145deg,rgba(102,240,227,.17),rgba(102,240,227,.03))}
+    .flow-node strong{font-size:.81rem;display:block}.flow-node span{display:block;color:var(--muted-2);font-size:.68rem;margin-top:3px}
+    .architecture-note{position:absolute;left:28px;right:28px;bottom:24px;padding:11px 13px;border-radius:12px;border:1px solid rgba(102,240,227,.18);background:rgba(102,240,227,.055);color:#bcfff9;font-size:.75rem;text-align:center}
+
+    .journey-wrap{display:grid;grid-template-columns:260px 1fr;gap:24px}
+    .journey-tabs{display:grid;gap:10px;align-content:start}
+    .journey-tab{width:100%;text-align:left;padding:17px;border:1px solid var(--line);border-radius:17px;background:rgba(255,255,255,.025);cursor:pointer;transition:.2s ease}
+    .journey-tab:hover{border-color:var(--line-strong)}
+    .journey-tab.active{background:linear-gradient(90deg,rgba(159,116,255,.17),rgba(88,200,255,.06));border-color:rgba(159,116,255,.35)}
+    .journey-tab span{display:block;color:#8f86a8;font-size:.68rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:3px}.journey-tab strong{font-size:.95rem}
+    .journey-stage{border:1px solid var(--line);border-radius:30px;background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.018));padding:34px;min-height:490px;position:relative;overflow:hidden}
+    .journey-stage::before{content:"";position:absolute;width:290px;height:290px;border-radius:50%;right:-100px;top:-120px;background:rgba(159,116,255,.13);filter:blur(45px)}
+    .journey-panel{display:none;position:relative;z-index:2}.journey-panel.active{display:grid;grid-template-columns:1fr 1fr;gap:34px;align-items:center;animation:fadeIn .3s ease}
+    .journey-panel h3{font-size:2rem;letter-spacing:-.045em;margin:0 0 12px}.journey-panel p{color:var(--muted);margin:0 0 20px}
+    .bullet-list{display:grid;gap:10px}.bullet-list div{display:flex;gap:9px;font-size:.9rem;color:#e2ddec}.bullet-list div::before{content:"→";color:var(--blue);font-weight:900}
+    .graphic-card{min-height:315px;border-radius:24px;border:1px solid rgba(255,255,255,.13);background:radial-gradient(circle at 55% 40%,rgba(159,116,255,.2),transparent 34%),#0b0723;display:grid;place-items:center;padding:22px;position:relative;overflow:hidden}
+    .record-ring{width:180px;height:180px;border-radius:50%;display:grid;place-items:center;border:1px solid rgba(255,255,255,.18);box-shadow:0 0 0 22px rgba(159,116,255,.06),0 0 0 45px rgba(88,200,255,.03)}
+    .record-dot{width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#ff7b9b,#9f74ff);box-shadow:0 0 40px rgba(255,123,155,.35)}
+    .transcript-lines{width:86%;display:grid;gap:12px}.transcript-line{height:12px;border-radius:999px;background:linear-gradient(90deg,rgba(255,255,255,.18),rgba(159,116,255,.45),rgba(255,255,255,.08))}.transcript-line:nth-child(2){width:73%}.transcript-line:nth-child(3){width:91%}.transcript-line:nth-child(4){width:62%}.transcript-line:nth-child(5){width:82%}
+    .insight-stack{width:88%;display:grid;gap:11px}.insight-pill{padding:13px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.04);font-size:.78rem;color:#ddd8e8}.insight-pill strong{color:var(--cyan);margin-right:6px}
+    .memory-map{position:relative;width:90%;height:245px}.memory-node{position:absolute;padding:10px 12px;border:1px solid var(--line);border-radius:13px;background:#181138;font-size:.71rem;box-shadow:0 15px 35px rgba(0,0,0,.25)}.memory-node.center{left:36%;top:40%;background:linear-gradient(135deg,#6b4fe0,#288fb4);font-weight:800}.memory-node.a{left:3%;top:10%}.memory-node.b{right:3%;top:8%}.memory-node.c{left:0;bottom:8%}.memory-node.d{right:4%;bottom:4%}.memory-map svg{position:absolute;inset:0;width:100%;height:100%}
+
+    .outcomes-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}
+    .outcome-main,.outcome-side{border:1px solid var(--line);border-radius:var(--radius);background:linear-gradient(180deg,rgba(255,255,255,.044),rgba(255,255,255,.018));padding:28px}
+    .outcome-main{min-height:435px;position:relative;overflow:hidden}.outcome-main::after{content:"";position:absolute;right:-120px;bottom:-130px;width:320px;height:320px;border-radius:50%;background:rgba(88,200,255,.1);filter:blur(50px)}
+    .outcome-main h3,.outcome-side h3{margin:0 0 8px;font-size:1.45rem;letter-spacing:-.035em}.outcome-main>p,.outcome-side>p{color:var(--muted);margin:0}
+    .output-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:24px 0 20px}.output-tab{padding:9px 12px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer;font-size:.78rem}.output-tab.active{background:#f5f1ff;color:#10092b;border-color:#f5f1ff;font-weight:800}
+    .output-preview{position:relative;z-index:2;border-radius:20px;border:1px solid var(--line);background:#0c0823;padding:20px;min-height:230px}.output-panel{display:none}.output-panel.active{display:block;animation:fadeIn .25s ease}.output-panel h4{margin:0 0 12px;font-size:.91rem}.output-row{display:grid;grid-template-columns:90px 1fr;gap:10px;padding:10px 0;border-top:1px solid rgba(255,255,255,.07);font-size:.77rem}.output-row span:first-child{color:#81799a}.output-row span:last-child{color:#ddd8e8}
+    .outcome-side{display:flex;flex-direction:column;justify-content:space-between;background:radial-gradient(circle at 50% 0%,rgba(159,116,255,.13),transparent 34%),rgba(255,255,255,.025)}
+    .search-box{margin-top:28px;padding:13px 15px;border:1px solid var(--line);border-radius:14px;color:#8f87a4;background:rgba(0,0,0,.18);font-size:.81rem}.answer-card{margin-top:12px;border-radius:18px;border:1px solid rgba(102,240,227,.15);background:rgba(102,240,227,.045);padding:17px;font-size:.8rem;color:#d9e8e7}.answer-card strong{display:block;color:#aafff6;margin-bottom:5px}.citation-chip{display:inline-block;margin-top:10px;padding:5px 7px;border-radius:8px;background:rgba(255,255,255,.06);color:#8fdff1;font-size:.67rem}
+
+    .usecase-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+    .usecase{border:1px solid var(--line);border-radius:24px;background:rgba(255,255,255,.025);overflow:hidden;transition:.2s ease}
+    .usecase:hover{transform:translateY(-3px);border-color:rgba(159,116,255,.28)}
+    .usecase-summary{width:100%;padding:25px;text-align:left;background:transparent;border:0;cursor:pointer}
+    .usecase-icon{width:46px;height:46px;border-radius:15px;display:grid;place-items:center;background:linear-gradient(145deg,rgba(159,116,255,.22),rgba(88,200,255,.08));border:1px solid rgba(255,255,255,.12);margin-bottom:20px;font-size:1.1rem}
+    .usecase h3{margin:0 0 7px;font-size:1.1rem}.usecase p{color:var(--muted);font-size:.88rem;margin:0}.usecase-hint{display:block;margin-top:18px;color:#ae8dff;font-size:.75rem;font-weight:800}
+    .usecase-detail{display:none;padding:0 25px 24px}.usecase.open .usecase-detail{display:block;animation:fadeIn .24s ease}.deliverables{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:16px}.deliverables div{font-size:.8rem;color:#ded9e8}.deliverables div::before{content:"+";color:var(--cyan);font-weight:900;margin-right:8px}
+
+    .compare{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+    .compare-card{border:1px solid var(--line);border-radius:28px;padding:28px;min-height:355px}.compare-card.cloud{background:rgba(255,255,255,.025)}.compare-card.local{background:radial-gradient(circle at 70% 10%,rgba(102,240,227,.1),transparent 30%),linear-gradient(180deg,rgba(159,116,255,.08),rgba(255,255,255,.02));border-color:rgba(102,240,227,.18)}
+    .compare-label{font-size:.72rem;text-transform:uppercase;letter-spacing:.13em;color:#9188aa}.compare-card.local .compare-label{color:var(--cyan)}.compare-card h3{font-size:1.45rem;letter-spacing:-.04em;margin:9px 0 20px}
+    .compare-diagram{height:145px;display:flex;align-items:center;justify-content:center;gap:18px;margin-bottom:20px}.person-icon,.cloud-icon,.mac-icon{width:70px;height:70px;border-radius:22px;display:grid;place-items:center;border:1px solid var(--line);background:rgba(255,255,255,.045);font-size:1.35rem}.arrow{color:#6f6887;font-size:1.25rem}.compare-card.local .arrow{color:var(--cyan)}
+    .compare-points{display:grid;gap:9px}.compare-points div{font-size:.86rem;color:var(--muted);display:flex;gap:8px}.compare-points div::before{content:"•";color:#7d7694}.compare-card.local .compare-points div::before{content:"✓";color:var(--cyan);font-weight:900}
+
+    .pricing-wrap{display:grid;grid-template-columns:1.08fr .92fr;gap:22px;align-items:stretch}
+    .price-card{border:1px solid rgba(159,116,255,.24);border-radius:32px;background:radial-gradient(circle at 92% 0%,rgba(88,200,255,.14),transparent 31%),linear-gradient(180deg,#17113a,#0c0825);padding:36px;box-shadow:var(--shadow)}
+    .price-tag{display:inline-block;padding:7px 10px;border-radius:999px;background:rgba(159,116,255,.14);border:1px solid rgba(159,116,255,.22);font-size:.72rem;font-weight:850;color:#d9ccff;text-transform:uppercase;letter-spacing:.09em}
+    .price{display:flex;align-items:baseline;gap:8px;margin:18px 0 4px}.price strong{font-size:5rem;letter-spacing:-.075em;line-height:1}.price span{color:var(--muted)}.price-sub{color:var(--muted);margin-bottom:26px}
+    .price-list{display:grid;gap:12px;margin:24px 0 29px}.price-list div{display:flex;gap:9px;color:#e4dfee;font-size:.91rem}.price-list div::before{content:"✓";color:var(--cyan);font-weight:900}
+    .pricing-secondary{display:grid;gap:14px}.mini-price{border:1px solid var(--line);border-radius:23px;padding:24px;background:rgba(255,255,255,.025)}.mini-price h3{margin:0 0 7px;font-size:1.16rem}.mini-price p{color:var(--muted);font-size:.87rem;margin:0 0 15px}.text-link{background:transparent;border:0;padding:0;color:#bc9eff;font-weight:800;cursor:pointer}.mini-disclosure{display:none;margin-top:13px;color:#cfc9da;font-size:.82rem}.mini-disclosure.open{display:block}
+
+    .faq{max-width:900px;display:grid;gap:11px}.faq details{border:1px solid var(--line);border-radius:18px;background:rgba(255,255,255,.025);padding:18px 20px}.faq summary{cursor:pointer;font-weight:780;list-style:none}.faq summary::-webkit-details-marker{display:none}.faq p{color:var(--muted);font-size:.9rem;margin:11px 0 2px}
+
+    .cta{padding:55px 0 100px}.cta-panel{border:1px solid rgba(159,116,255,.25);border-radius:36px;padding:62px 38px;text-align:center;background:linear-gradient(180deg,rgba(159,116,255,.13),rgba(88,200,255,.035)),url('home_bg.webp');background-size:cover;background-position:center 45%;position:relative;overflow:hidden;box-shadow:var(--shadow)}.cta-panel::before{content:"";position:absolute;inset:0;background:rgba(7,4,28,.72)}.cta-content{position:relative;z-index:2}.cta-panel h2{max-width:820px;margin:10px auto 14px}.cta-panel p{max-width:620px;margin:0 auto 26px;color:#d0cadd}.signup{max-width:620px;margin:0 auto;display:flex;gap:10px}.signup input{flex:1;min-width:0;min-height:50px;border-radius:14px;border:1px solid var(--line);background:rgba(5,3,22,.76);color:#fff;padding:0 16px;outline:none}.signup input:focus{border-color:rgba(159,116,255,.55)}.form-note{margin-top:11px;color:#948ca9;font-size:.77rem}.success-msg{display:none;margin-top:13px;color:#b6fff7;font-weight:800}
+
+    footer{border-top:1px solid rgba(255,255,255,.07);padding:32px 0 42px;color:#88809f;font-size:.82rem}.footer-inner{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap}.footer-brand{display:flex;align-items:center;gap:13px}.footer-brand img{width:115px;height:auto;opacity:.88}.footer-links{display:flex;gap:18px}
+
+    @media(max-width:1000px){
+      .hero-grid,.boundary-grid,.outcomes-grid,.pricing-wrap{grid-template-columns:1fr}
+      .hero{padding-top:116px}.hero-visual{min-height:510px}.device{transform:none;max-width:620px}.journey-wrap{grid-template-columns:1fr}.journey-tabs{grid-template-columns:repeat(4,1fr)}.journey-tab{text-align:center;padding:13px 8px}.journey-tab span{display:none}.usecase-grid{grid-template-columns:1fr 1fr}.compare{grid-template-columns:1fr}.architecture{min-height:390px}
+    }
+    @media(max-width:720px){
+      .nav-links{display:none}.brand small{display:none}.nav-inner{height:66px}.hero{min-height:auto;padding:108px 0 55px;background-position:62% center}.hero-grid{gap:22px}h1{font-size:clamp(3.3rem,16vw,5.4rem)}.hero-copy{font-size:1.03rem}.hero-visual{min-height:410px}.device{padding:7px;border-radius:24px}.screen{border-radius:18px}.screen-body{grid-template-columns:78px 1fr;min-height:345px}.screen-side{padding:10px 6px}.screen-side div{font-size:.58rem;padding:7px 4px}.screen-main{padding:12px}.output-grid{grid-template-columns:1fr}.mini-card:nth-child(2){display:none}.wave-card{height:55px}.floating-proof{right:0;bottom:0}.orb{display:none}
+      section{padding:72px 0}.reveal-card{grid-template-columns:1fr}.reveal-card .btn{width:100%}.flow-nodes{grid-template-columns:1fr 1fr;gap:22px}.flow-line{display:none}.architecture{min-height:520px}.journey-tabs{grid-template-columns:1fr 1fr}.journey-panel.active{grid-template-columns:1fr}.graphic-card{min-height:270px}.usecase-grid{grid-template-columns:1fr}.compare-diagram{height:120px}.price strong{font-size:4.2rem}.cta-panel{padding:43px 20px}.signup{flex-direction:column}.footer-inner{align-items:flex-start;flex-direction:column}.footer-brand img{width:105px}
+    }
+  </style>
+</head>
+<body>
+  <header class="nav">
+    <div class="container nav-inner">
+      <a class="brand" href="#top" aria-label="PrivateMeet home">
+        <span class="brand-mark">P</span>
+        <span>PrivateMeet<small>A local-first AI tool</small></span>
+      </a>
+      <nav class="nav-links" aria-label="Main navigation">
+        <a href="#local">Why local</a>
+        <a href="#workflow">How it works</a>
+        <a href="#use-cases">Use cases</a>
+        <a href="#pricing">Pricing</a>
+      </nav>
+      <a class="btn btn-primary btn-ghost" href="#early-access">Join beta</a>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="container hero-grid">
+        <div>
+          <div class="eyebrow"><span class="pulse"></span> AI meeting intelligence, entirely on-device</div>
+          <h1><span class="hero-highlight">Your meetings stay on your Mac.</span><br>The intelligence does too.</h1>
+          <p class="hero-copy">Record, transcribe, summarise and search confidential meetings without inviting a bot or uploading a single conversation to the cloud.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#early-access">Get early access <span>→</span></a>
+            <button class="btn btn-secondary" data-toggle="privacyReveal">See what stays local</button>
+          </div>
+          <div class="proof-row">
+            <span class="proof-chip">Works offline</span>
+            <span class="proof-chip">No account required</span>
+            <span class="proof-chip">One-time purchase</span>
+          </div>
+        </div>
+
+        <div class="hero-visual" aria-label="PrivateMeet product interface preview">
+          <span class="orb one"></span><span class="orb two"></span>
+          <div class="device">
+            <div class="screen">
+              <div class="window-top"><span class="traffic"></span><span class="traffic"></span><span class="traffic"></span></div>
+              <div class="screen-body">
+                <aside class="screen-side"><div class="active">Meetings</div><div>Search</div><div>Decisions</div><div>Tasks</div><div>Templates</div></aside>
+                <div class="screen-main">
+                  <div class="app-head"><div><div class="app-title">Client discovery — Acme</div><div class="app-meta">42 min · 4 speakers · Today</div></div><span class="local-label">100% local</span></div>
+                  <div class="wave-card" aria-hidden="true">
+                    <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
+                  </div>
+                  <div class="output-grid">
+                    <div class="mini-card"><div class="mini-label">Decisions</div><div class="mini-line">Start with a 30-day pilot.</div><div class="mini-line">Keep customer data on-device.</div></div>
+                    <div class="mini-card"><div class="mini-label">Action items</div><div class="mini-line">Send security documentation.</div><div class="mini-line">Book technical review.</div></div>
+                  </div>
+                  <div class="source-card"><span>“We cannot upload customer calls to an external cloud.”</span><span>18:42</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="floating-proof"><strong>Internet disconnected</strong><span>Transcription and analysis are still running.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="reveal-band">
+      <div class="container">
+        <div class="reveal-card">
+          <div><strong>A different architecture, not just another privacy claim.</strong><p>Open the local data path only when you want the technical detail.</p></div>
+          <button class="btn btn-secondary" data-toggle="privacyReveal">Reveal the local workflow</button>
+        </div>
+        <div class="disclosure" id="privacyReveal">
+          <div class="boundary-grid">
+            <div class="boundary-copy">
+              <div class="section-kicker">Nothing leaves the device</div>
+              <h3>The full AI workflow runs inside your Mac.</h3>
+              <p>Audio capture, transcription, language analysis, search and storage are handled locally. External services are not part of the core flow.</p>
+              <div class="boundary-list"><div>Whisper-based transcription on Apple Silicon</div><div>Local quantised language model for analysis</div><div>Encrypted local meeting archive</div><div>Optional telemetry disabled by default</div></div>
+            </div>
+            <div class="architecture">
+              <div class="flow-line"></div>
+              <div class="flow-nodes">
+                <div class="flow-node"><div class="node-icon">◉</div><strong>Audio</strong><span>Mic + system</span></div>
+                <div class="flow-node"><div class="node-icon">≈</div><strong>Whisper</strong><span>Transcription</span></div>
+                <div class="flow-node"><div class="node-icon">✦</div><strong>Local LLM</strong><span>Analysis</span></div>
+                <div class="flow-node"><div class="node-icon">⌕</div><strong>Workspace</strong><span>Search + memory</span></div>
+              </div>
+              <div class="architecture-note">The device boundary never needs to be crossed.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <section id="local">
+      <div class="container">
+        <div class="section-head"><div class="section-kicker">Privacy by architecture</div><h2>Cloud assistants ask for trust. PrivateMeet removes the need.</h2><p>The difference is easier to understand visually: one workflow sends the meeting outside; the other keeps the whole process in the machine already in front of you.</p></div>
+        <div class="compare">
+          <article class="compare-card cloud">
+            <div class="compare-label">Typical cloud assistant</div><h3>Your meeting crosses several systems</h3>
+            <div class="compare-diagram"><div class="person-icon">◉</div><div class="arrow">→</div><div class="cloud-icon">☁</div><div class="arrow">→</div><div class="person-icon">AI</div></div>
+            <div class="compare-points"><div>A bot may need to join the call</div><div>Audio and transcripts are uploaded</div><div>Storage and processing depend on a vendor</div><div>Recurring fees scale with users or minutes</div></div>
+          </article>
+          <article class="compare-card local">
+            <div class="compare-label">PrivateMeet</div><h3>The meeting remains inside one device</h3>
+            <div class="compare-diagram"><div class="person-icon">◉</div><div class="arrow">→</div><div class="mac-icon">⌘</div><div class="arrow">→</div><div class="person-icon">✓</div></div>
+            <div class="compare-points"><div>No external meeting participant</div><div>No cloud upload in the core workflow</div><div>Local models, archive and search</div><div>Use the licensed version without a subscription</div></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="workflow">
+      <div class="container">
+        <div class="section-head"><div class="section-kicker">Progressive workflow</div><h2>Understand one step at a time.</h2><p>Select a stage to see what happens. The product reveals complexity only when it becomes useful.</p></div>
+        <div class="journey-wrap">
+          <div class="journey-tabs" role="tablist" aria-label="Product workflow">
+            <button class="journey-tab active" data-stage="record" role="tab"><span>Step 01</span><strong>Record</strong></button>
+            <button class="journey-tab" data-stage="transcribe" role="tab"><span>Step 02</span><strong>Transcribe</strong></button>
+            <button class="journey-tab" data-stage="understand" role="tab"><span>Step 03</span><strong>Understand</strong></button>
+            <button class="journey-tab" data-stage="reuse" role="tab"><span>Step 04</span><strong>Reuse</strong></button>
+          </div>
+          <div class="journey-stage">
+            <article class="journey-panel active" data-panel="record"><div><div class="section-kicker">Capture</div><h3>Record without inviting a bot.</h3><p>PrivateMeet captures microphone and system audio directly from your Mac, independently of the meeting platform.</p><div class="bullet-list"><div>Zoom, Meet, Teams and other apps</div><div>Visible recording status</div><div>Recovery protection for long sessions</div></div></div><div class="graphic-card"><div class="record-ring"><div class="record-dot"></div></div></div></article>
+            <article class="journey-panel" data-panel="transcribe"><div><div class="section-kicker">Transcription</div><h3>Turn speech into text on-device.</h3><p>A local Whisper model generates a timestamped transcript without uploading the recording to an external API.</p><div class="bullet-list"><div>Speaker-aware transcript</div><div>Searchable timestamps</div><div>Audio remains available for verification</div></div></div><div class="graphic-card"><div class="transcript-lines"><div class="transcript-line"></div><div class="transcript-line"></div><div class="transcript-line"></div><div class="transcript-line"></div><div class="transcript-line"></div></div></div></article>
+            <article class="journey-panel" data-panel="understand"><div><div class="section-kicker">Analysis</div><h3>Extract what changes the work.</h3><p>The local language model identifies decisions, action items, owners, risks and unresolved questions—not just a generic summary.</p><div class="bullet-list"><div>Role-specific meeting templates</div><div>Every insight linked to its source</div><div>Editable outputs before export</div></div></div><div class="graphic-card"><div class="insight-stack"><div class="insight-pill"><strong>Decision</strong> Start with a 30-day pilot.</div><div class="insight-pill"><strong>Owner</strong> Dan — security documentation.</div><div class="insight-pill"><strong>Risk</strong> Procurement approval is still open.</div><div class="insight-pill"><strong>Question</strong> Who owns the rollout plan?</div></div></div></article>
+            <article class="journey-panel" data-panel="reuse"><div><div class="section-kicker">Memory</div><h3>Connect one meeting to the next.</h3><p>Search across your local archive and ask what was decided, promised or left unresolved over time.</p><div class="bullet-list"><div>Cross-meeting semantic search</div><div>Decision and commitment history</div><div>Source meeting and timestamp references</div></div></div><div class="graphic-card"><div class="memory-map"><svg viewBox="0 0 400 245" aria-hidden="true"><line x1="200" y1="120" x2="78" y2="45" stroke="rgba(159,116,255,.5)"/><line x1="200" y1="120" x2="326" y2="42" stroke="rgba(88,200,255,.5)"/><line x1="200" y1="120" x2="62" y2="205" stroke="rgba(159,116,255,.4)"/><line x1="200" y1="120" x2="340" y2="203" stroke="rgba(102,240,227,.45)"/></svg><div class="memory-node center">Decision memory</div><div class="memory-node a">Discovery call</div><div class="memory-node b">Product sync</div><div class="memory-node c">Client review</div><div class="memory-node d">Follow-up</div></div></div></article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="container">
+        <div class="section-head"><div class="section-kicker">Useful output</div><h2>Do not stop at the transcript.</h2><p>The interface first shows the essential result. Deeper evidence, sources and alternative formats appear only when requested.</p></div>
+        <div class="outcomes-grid">
+          <article class="outcome-main"><h3>Choose the output you need</h3><p>One conversation can become several practical deliverables.</p>
+            <div class="output-tabs" role="tablist"><button class="output-tab active" data-output="recap">Client recap</button><button class="output-tab" data-output="product">Product brief</button><button class="output-tab" data-output="tasks">Task list</button></div>
+            <div class="output-preview">
+              <div class="output-panel active" data-output-panel="recap"><h4>Client meeting recap</h4><div class="output-row"><span>Objective</span><span>Reduce onboarding time from 12 to 5 days.</span></div><div class="output-row"><span>Decision</span><span>Begin with the European operations team.</span></div><div class="output-row"><span>Next step</span><span>Schedule the security review by Friday.</span></div></div>
+              <div class="output-panel" data-output-panel="product"><h4>Product discovery brief</h4><div class="output-row"><span>User need</span><span>Remove manual document checks during onboarding.</span></div><div class="output-row"><span>Constraint</span><span>Customer data cannot leave the company environment.</span></div><div class="output-row"><span>Open point</span><span>Define approval ownership for exceptions.</span></div></div>
+              <div class="output-panel" data-output-panel="tasks"><h4>Action items</h4><div class="output-row"><span>Dan</span><span>Send architecture and security documentation.</span></div><div class="output-row"><span>Laura</span><span>Confirm pilot team and participant list.</span></div><div class="output-row"><span>Deadline</span><span>Technical review before Friday, 5 PM.</span></div></div>
+            </div>
+          </article>
+          <article class="outcome-side"><div><h3>Ask your meeting history</h3><p>The answer is useful only when you can verify where it came from.</p><div class="search-box">What did Acme decide about data hosting?</div><div class="answer-card"><strong>Local processing was selected for the pilot.</strong>The client said customer conversations cannot be uploaded to an external cloud.<br><span class="citation-chip">Client discovery · 18:42</span></div></div><div class="proof-row"><span class="proof-chip">Source linked</span><span class="proof-chip">Local search</span></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="use-cases">
+      <div class="container">
+        <div class="section-head"><div class="section-kicker">Built for confidential work</div><h2>Start with your role. Reveal the exact deliverables.</h2><p>Each workflow hides the detail until the visitor chooses the use case that matters to them.</p></div>
+        <div class="usecase-grid">
+          <article class="usecase"><button class="usecase-summary"><div class="usecase-icon">◇</div><h3>Consultants</h3><p>Turn client calls into structured follow-ups and project evidence.</p><span class="usecase-hint">See deliverables ↓</span></button><div class="usecase-detail"><div class="deliverables"><div>Executive recap</div><div>Requirements and constraints</div><div>Commitment and decision log</div><div>Follow-up email draft</div></div></div></article>
+          <article class="usecase"><button class="usecase-summary"><div class="usecase-icon">⌘</div><h3>Product teams</h3><p>Preserve product decisions and reduce ambiguity after discovery.</p><span class="usecase-hint">See deliverables ↓</span></button><div class="usecase-detail"><div class="deliverables"><div>User needs and evidence</div><div>Open questions and risks</div><div>Decision history</div><div>Backlog-ready action items</div></div></div></article>
+          <article class="usecase"><button class="usecase-summary"><div class="usecase-icon">◎</div><h3>Recruiters</h3><p>Structure interviews without moving candidate conversations to the cloud.</p><span class="usecase-hint">See deliverables ↓</span></button><div class="usecase-detail"><div class="deliverables"><div>Evidence-based candidate notes</div><div>Skills and experience summary</div><div>Points to validate</div><div>Consistent interview template</div></div></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="pricing">
+      <div class="container">
+        <div class="section-head"><div class="section-kicker">Simple ownership</div><h2>Pay once. Keep using the version you bought.</h2><p>The pricing follows the product architecture: no cloud usage meter, no per-minute bill and no mandatory personal subscription.</p></div>
+        <div class="pricing-wrap">
+          <article class="price-card"><span class="price-tag">Founder license</span><div class="price"><strong>€79</strong><span>one time</span></div><div class="price-sub">Early access price for the first public release.</div><div class="price-list"><div>Unlimited local meetings</div><div>Local transcription and analysis</div><div>Meeting memory and search</div><div>Professional templates and exports</div><div>12 months of feature updates</div><div>Perpetual use of the licensed version</div></div><a class="btn btn-primary" style="width:100%" href="#early-access">Reserve early access</a></article>
+          <div class="pricing-secondary">
+            <article class="mini-price"><h3>What happens after 12 months?</h3><p>Your licensed version keeps working. Future major versions may be offered as optional paid upgrades.</p><button class="text-link" data-mini="upgradeDetails">Read the upgrade policy ↓</button><div class="mini-disclosure" id="upgradeDetails">Security fixes may remain available where technically possible. Major new capabilities and model upgrades can be purchased separately at a discounted existing-customer price.</div></article>
+            <article class="mini-price"><h3>Need a team deployment?</h3><p>Business pricing can add centralised installation, policy controls, shared templates and priority support.</p><button class="text-link" data-mini="teamDetails">See business scope ↓</button><div class="mini-disclosure" id="teamDetails">The business offer is separate from the individual license and is designed for consultancies, professional firms and internal teams that need managed distribution and governance.</div></article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="container">
+        <div class="section-head"><div class="section-kicker">FAQ</div><h2>Only the detail you need, when you need it.</h2></div>
+        <div class="faq">
+          <details open><summary>Does PrivateMeet upload audio or transcripts?</summary><p>No. The core recording, transcription, analysis and search workflow is designed to run locally. Any future optional external integration would be clearly identified and disabled by default.</p></details>
+          <details><summary>Which Macs are supported?</summary><p>The first release is designed for Apple Silicon Macs. 16 GB of unified memory is recommended. Final support for 8 GB devices depends on performance testing.</p></details>
+          <details><summary>Does it work with Zoom, Meet and Teams?</summary><p>Yes. PrivateMeet captures microphone and system audio, so the core workflow is not tied to one meeting platform.</p></details>
+          <details><summary>Do I need to invite a bot?</summary><p>No. PrivateMeet runs as a native Mac application and does not enter the meeting as an external participant.</p></details>
+          <details><summary>Is recording always legal?</summary><p>No universal rule applies. Recording laws and consent requirements vary by jurisdiction. The user remains responsible for informing participants and obtaining the required consent.</p></details>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta" id="early-access">
+      <div class="container"><div class="cta-panel"><div class="cta-content"><div class="section-kicker">Early access</div><h2>Keep the meeting. Keep the intelligence. Keep control.</h2><p>Join the first professionals testing a local-first alternative to cloud meeting assistants.</p><form class="signup" id="signupForm"><label class="sr-only" for="emailInput">Email address</label><input id="emailInput" type="email" placeholder="you@company.com" required /><button class="btn btn-primary" type="submit">Join the waitlist</button></form><div class="form-note">Product updates and beta invitations only.</div><div class="success-msg" id="successMsg">You are on the list. Connect the form to your email platform before publishing.</div></div></div></div>
+    </section>
+  </main>
+
+  <footer><div class="container footer-inner"><div class="footer-brand"><img src="staituned-logo.png" alt="stAI tuned" /><span>Independent local-first AI experiment.</span></div><div class="footer-links"><a href="#">Privacy</a><a href="#">Terms</a><a href="mailto:hello@example.com">Contact</a></div></div></footer>
+
+  <script>
+    document.querySelectorAll('[data-toggle]').forEach(button=>button.addEventListener('click',()=>{
+      const target=document.getElementById(button.dataset.toggle);target.classList.toggle('open');
+      if(target.classList.contains('open')) target.scrollIntoView({behavior:'smooth',block:'center'});
+    }));
+
+    document.querySelectorAll('.journey-tab').forEach(tab=>tab.addEventListener('click',()=>{
+      document.querySelectorAll('.journey-tab').forEach(x=>x.classList.remove('active'));
+      document.querySelectorAll('.journey-panel').forEach(x=>x.classList.remove('active'));
+      tab.classList.add('active');
+      document.querySelector(`[data-panel="${tab.dataset.stage}"]`).classList.add('active');
+    }));
+
+    document.querySelectorAll('.output-tab').forEach(tab=>tab.addEventListener('click',()=>{
+      document.querySelectorAll('.output-tab').forEach(x=>x.classList.remove('active'));
+      document.querySelectorAll('.output-panel').forEach(x=>x.classList.remove('active'));
+      tab.classList.add('active');
+      document.querySelector(`[data-output-panel="${tab.dataset.output}"]`).classList.add('active');
+    }));
+
+    document.querySelectorAll('.usecase-summary').forEach(button=>button.addEventListener('click',()=>{
+      const card=button.closest('.usecase');card.classList.toggle('open');
+      button.querySelector('.usecase-hint').textContent=card.classList.contains('open')?'Hide deliverables ↑':'See deliverables ↓';
+    }));
+
+    document.querySelectorAll('[data-mini]').forEach(button=>button.addEventListener('click',()=>{
+      const target=document.getElementById(button.dataset.mini);target.classList.toggle('open');
+    }));
+
+    document.getElementById('signupForm').addEventListener('submit',event=>{
+      event.preventDefault();
+      const email=document.getElementById('emailInput');
+      if(!email.value.trim())return;
+      document.getElementById('successMsg').style.display='block';email.value='';
+    });
+  </script>
+</body>
+</html>

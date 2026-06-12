@@ -4,6 +4,9 @@ compile.py — Compile and cache the Swift Core Audio helper binary.
 The helper source (``audio_helper.swift``) is compiled with ``swiftc``
 and the resulting binary is stored in ``.cache/audio-helper/``.
 Recompilation only happens when the source file changes (SHA-256 check).
+
+In bundle mode (PyInstaller .app), the binary is pre-compiled during the
+build and shipped inside Resources — no compilation is performed at runtime.
 """
 
 from __future__ import annotations
@@ -128,6 +131,22 @@ def get_helper_binary() -> str:
     """
     Get the path to the helper binary, compiling if necessary.
 
-    This is the main entry point used by `AudioHelper.__init__`.
+    In bundle mode the binary is pre-compiled and shipped inside the .app
+    bundle — no compilation happens at runtime.  In dev mode it is compiled
+    from the Swift source on first use (and cached by source hash).
+
+    This is the main entry point used by ``AudioHelper.__init__``.
     """
+    # Bundle mode: return the pre-compiled binary shipped with the app
+    from local_asr_server.paths import is_bundled, get_audio_helper_path
+    if is_bundled():
+        bundled = get_audio_helper_path()
+        if bundled.exists():
+            return str(bundled)
+        raise RuntimeError(
+            f"Bundled audio helper not found at: {bundled}. "
+            "This is a packaging error — please report it."
+        )
+
+    # Dev mode: compile from source
     return compile_helper(force=False)
