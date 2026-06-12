@@ -29,7 +29,13 @@ from local_asr_server.recordings import (
     RecordingStore,
 )
 from local_asr_server.settings import load_settings, save_settings
+from local_asr_server.llm import LLMService
 
+class AnalysisRequest(BaseModel):
+    transcription_id: Optional[str] = None
+    text: Optional[str] = None
+    gemini_api_key: Optional[str] = None
+    llm_provider: Optional[str] = None
 
 class TranscribePathRequest(BaseModel):
     file: str
@@ -57,6 +63,9 @@ class UpdateRecordingRequest(BaseModel):
 
 class SettingsRequest(BaseModel):
     transcriptions_dir: str
+    recordings_dir: Optional[str] = ""
+    gemini_api_key: Optional[str] = ""
+    llm_provider: Optional[str] = "mock"
 
 
 def _str_to_bool(value: str | bool | None, default: bool = False) -> bool:
@@ -656,17 +665,78 @@ def create_app(
     @app.post("/v1/settings")
     def update_settings(request: SettingsRequest):
         current = load_settings()
-        path = Path(request.transcriptions_dir).expanduser().resolve()
+        
+        # Validate transcriptions_dir
+        trans_path = Path(request.transcriptions_dir).expanduser().resolve()
         try:
-            path.mkdir(parents=True, exist_ok=True)
-            test_file = path / ".write_test"
+            trans_path.mkdir(parents=True, exist_ok=True)
+            test_file = trans_path / ".write_test"
             test_file.touch()
             test_file.unlink()
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Directory non valida o non scrivibile: {e}")
-        current["transcriptions_dir"] = str(path)
+            raise HTTPException(status_code=400, detail=f"Directory trascrizioni non valida o non scrivibile: {e}")
+        current["transcriptions_dir"] = str(trans_path)
+
+        # Validate recordings_dir if provided
+        if request.recordings_dir:
+            rec_path = Path(request.recordings_dir).expanduser().resolve()
+            try:
+                rec_path.mkdir(parents=True, exist_ok=True)
+                test_file = rec_path / ".write_test"
+                test_file.touch()
+                test_file.unlink()
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Directory audio non valida o non scrivibile: {e}")
+            current["recordings_dir"] = str(rec_path)
+            
+        current["gemini_api_key"] = request.gemini_api_key or ""
+        current["llm_provider"] = request.llm_provider or "mock"
         save_settings(current)
         return current
+
+    @app.post("/v1/system/select-directory")
+    def select_directory():
+        import subprocess
+        try:
+            script = 'tell application "System Events" to set frontmost of process "Finder" to true\n' \
+                     'POSIX path of (choose folder with prompt "Seleziona la cartella di destinazione:")'
+            cmd = ["osascript", "-e", script]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                path = result.stdout.strip()
+                return {"path": path}
+            else:
+                return {"path": None, "error": "Selezione annullata o fallita."}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Errore nell'apertura della dialog: {e}")
+
+    @app.post("/v1/analysis")
+    def analyze_transcription(request: AnalysisRequest):
+        text_to_analyze = ""
+        if request.transcription_id:
+            try:
+                trans = app.state.transcription_store.get(request.transcription_id)
+                text_to_analyze = trans.get("text", "")
+            except Exception:
+                raise HTTPException(status_code=404, detail="Trascrizione non trovata.")
+        elif request.text:
+            text_to_analyze = request.text
+        else:
+            raise HTTPException(status_code=400, detail="Fornire transcription_id o text.")
+
+        if not text_to_analyze.strip():
+            raise HTTPException(status_code=400, detail="Il testo da analizzare è vuoto.")
+
+        settings = load_settings()
+        provider_name = request.llm_provider or settings.get("llm_provider", "mock")
+        api_key = request.gemini_api_key or settings.get("gemini_api_key", "")
+
+        try:
+            provider = LLMService.get_provider(provider_name, api_key)
+            result = provider.analyze(text_to_analyze)
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
     @app.get("/v1/transcriptions")
     def list_transcriptions(page: int = 1, limit: int = 10):

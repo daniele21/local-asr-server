@@ -67,7 +67,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // Transcription History & Settings
         transcriptionsList: document.getElementById('transcriptions-list'),
         transcriptionsDirInput: document.getElementById('transcriptions-dir-input'),
+        recordingsDirInput: document.getElementById('recordings-dir-input'),
+        browseTranscriptionsDirBtn: document.getElementById('browse-transcriptions-dir-btn'),
+        browseRecordingsDirBtn: document.getElementById('browse-recordings-dir-btn'),
         saveSettingsBtn: document.getElementById('save-settings-btn'),
+        saveRecordingsSettingsBtn: document.getElementById('save-recordings-settings-btn'),
         historyCount: document.getElementById('history-count'),
         historyPagination: document.getElementById('history-pagination'),
         historyPrev: document.getElementById('history-prev'),
@@ -210,10 +214,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Settings Save
         dom.saveSettingsBtn?.addEventListener('click', saveFolderSettings);
+        dom.saveRecordingsSettingsBtn?.addEventListener('click', saveAudioFolderSettings);
+        dom.browseTranscriptionsDirBtn?.addEventListener('click', () => browseDirectory('transcription'));
+        dom.browseRecordingsDirBtn?.addEventListener('click', () => browseDirectory('audio'));
 
         // History Pagination
         dom.historyPrev?.addEventListener('click', () => setHistoryPage(historyPage - 1));
         dom.historyNext?.addEventListener('click', () => setHistoryPage(historyPage + 1));
+
+        // Initialize Analysis bindings
+        AnalysisController.init();
     }
 
 
@@ -256,23 +266,32 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const settings = await ApiClient.getSettings();
             dom.transcriptionsDirInput.value = settings.transcriptions_dir || '';
+            if (dom.recordingsDirInput) {
+                dom.recordingsDirInput.value = settings.recordings_dir || '';
+            }
         } catch (err) {
             console.error('Failed to load settings:', err);
         }
     }
 
     async function saveFolderSettings() {
-        const dir = dom.transcriptionsDirInput.value.trim();
-        if (!dir) {
-            Toast.show('Inserisci un percorso valido.', 'warning');
+        const transDir = dom.transcriptionsDirInput.value.trim();
+        if (!transDir) {
+            Toast.show('Inserisci un percorso valido per le trascrizioni.', 'warning');
             return;
         }
         dom.saveSettingsBtn.disabled = true;
         dom.saveSettingsBtn.textContent = 'Salvataggio...';
         try {
-            const settings = await ApiClient.updateSettings(dir);
+            const current = await ApiClient.getSettings();
+            const settings = await ApiClient.updateSettings(
+                transDir,
+                current.recordings_dir || '',
+                current.gemini_api_key || '',
+                current.llm_provider || 'mock'
+            );
             dom.transcriptionsDirInput.value = settings.transcriptions_dir;
-            Toast.show('Cartella salvataggio aggiornata con successo.', 'success');
+            Toast.show('Cartella trascrizioni aggiornata con successo.', 'success');
             loadHistory();
         } catch (err) {
             Toast.show(`Errore: ${err.message}`, 'error');
@@ -282,6 +301,57 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function saveAudioFolderSettings() {
+        const recDir = dom.recordingsDirInput.value.trim();
+        if (!recDir) {
+            Toast.show('Inserisci un percorso valido per le registrazioni audio.', 'warning');
+            return;
+        }
+        dom.saveRecordingsSettingsBtn.disabled = true;
+        dom.saveRecordingsSettingsBtn.textContent = 'Salvataggio...';
+        try {
+            const current = await ApiClient.getSettings();
+            const settings = await ApiClient.updateSettings(
+                current.transcriptions_dir || '',
+                recDir,
+                current.gemini_api_key || '',
+                current.llm_provider || 'mock'
+            );
+            dom.recordingsDirInput.value = settings.recordings_dir;
+            Toast.show('Cartella audio aggiornata con successo.', 'success');
+        } catch (err) {
+            Toast.show(`Errore: ${err.message}`, 'error');
+        } finally {
+            dom.saveRecordingsSettingsBtn.disabled = false;
+            dom.saveRecordingsSettingsBtn.textContent = 'Salva';
+        }
+    }
+
+    async function browseDirectory(target) {
+        const btn = target === 'transcription' ? dom.browseTranscriptionsDirBtn : dom.browseRecordingsDirBtn;
+        const input = target === 'transcription' ? dom.transcriptionsDirInput : dom.recordingsDirInput;
+        if (!btn || !input) return;
+
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '...';
+
+        try {
+            const data = await ApiClient.selectDirectory();
+            if (data.path) {
+                input.value = data.path;
+                Toast.show('Cartella selezionata. Clicca su Salva per confermare.', 'info');
+            } else if (data.error) {
+                console.warn('System directory dialog warning:', data.error);
+            }
+        } catch (err) {
+            console.error('Failed to open directory dialog:', err);
+            Toast.show('Impossibile aprire la selezione cartella di sistema.', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Step Navigation
@@ -386,6 +456,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pageName === 'transcription') {
             loadRecordings();
             loadHistory();
+        } else if (pageName === 'analysis') {
+            AnalysisController.loadTranscriptions();
+            AnalysisController.loadSettings();
         }
         window.scrollTo({ top: 0, behavior: 'auto' });
     }
@@ -927,6 +1000,327 @@ document.addEventListener('DOMContentLoaded', () => {
     // ═══════════════════════════════════════════════════════════════════════════
     // Boot
     // ═══════════════════════════════════════════════════════════════════════════
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Analysis Controller
+    // ═══════════════════════════════════════════════════════════════════════════
+    const AnalysisController = (() => {
+        let importedFile = null;
+        let activeTab = 'history'; // 'history' or 'import'
+
+        function init() {
+            // Tab Buttons
+            const historyTabBtn = document.getElementById('analysis-source-history-btn');
+            const importTabBtn = document.getElementById('analysis-source-import-btn');
+            const panelHistory = document.getElementById('analysis-panel-history');
+            const panelImport = document.getElementById('analysis-panel-import');
+
+            historyTabBtn?.addEventListener('click', () => {
+                activeTab = 'history';
+                historyTabBtn.classList.add('tab-mini-btn--active');
+                importTabBtn?.classList.remove('tab-mini-btn--active');
+                panelHistory.style.display = 'block';
+                panelImport.style.display = 'none';
+                validateStartButton();
+            });
+
+            importTabBtn?.addEventListener('click', () => {
+                activeTab = 'import';
+                importTabBtn.classList.add('tab-mini-btn--active');
+                historyTabBtn?.classList.remove('tab-mini-btn--active');
+                panelHistory.style.display = 'none';
+                panelImport.style.display = 'block';
+                validateStartButton();
+            });
+
+            // Provider Select Key toggling
+            const providerSelect = document.getElementById('analysis-provider-select');
+            const keyContainer = document.getElementById('gemini-key-container');
+            providerSelect?.addEventListener('change', () => {
+                if (providerSelect.value === 'gemini') {
+                    keyContainer.style.display = 'block';
+                } else {
+                    keyContainer.style.display = 'none';
+                }
+            });
+
+            // Dropzone setup
+            const dropzone = document.getElementById('analysis-dropzone');
+            const fileInput = document.getElementById('analysis-file-input');
+            const browseBtn = document.getElementById('analysis-browse-btn');
+            const importInfo = document.getElementById('selected-import-info');
+            const importFilename = document.getElementById('analysis-imported-filename');
+            const importFilesize = document.getElementById('analysis-imported-filesize');
+
+            if (dropzone && fileInput && browseBtn) {
+                ['dragenter', 'dragover'].forEach(evt => {
+                    dropzone.addEventListener(evt, (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        dropzone.classList.add('dropzone--dragover');
+                    }, false);
+                });
+
+                ['dragleave', 'drop'].forEach(evt => {
+                    dropzone.addEventListener(evt, (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        dropzone.classList.remove('dropzone--dragover');
+                    }, false);
+                });
+
+                dropzone.addEventListener('drop', (e) => {
+                    const files = e.dataTransfer.files;
+                    if (files.length > 0) handleImportFile(files[0]);
+                });
+
+                browseBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    fileInput.click();
+                });
+
+                fileInput.addEventListener('change', () => {
+                    if (fileInput.files.length > 0) {
+                        handleImportFile(fileInput.files[0]);
+                    }
+                });
+            }
+
+            function handleImportFile(file) {
+                importedFile = file;
+                importFilename.textContent = file.name;
+                importFilesize.textContent = Utils.formatBytes(file.size);
+                importInfo.style.display = 'flex';
+                validateStartButton();
+            }
+
+            // Select change validation
+            const select = document.getElementById('analysis-transcription-select');
+            select?.addEventListener('change', validateStartButton);
+
+            // Start Analysis button
+            const startBtn = document.getElementById('start-analysis-btn');
+            startBtn?.addEventListener('click', runAnalysis);
+
+            // Copy button
+            const copyBtn = document.getElementById('analysis-copy-btn');
+            copyBtn?.addEventListener('click', copyResults);
+        }
+
+        function validateStartButton() {
+            const startBtn = document.getElementById('start-analysis-btn');
+            if (!startBtn) return;
+
+            let valid = false;
+            if (activeTab === 'history') {
+                const select = document.getElementById('analysis-transcription-select');
+                valid = select && select.value !== '';
+            } else if (activeTab === 'import') {
+                valid = importedFile !== null;
+            }
+
+            startBtn.disabled = !valid;
+        }
+
+        async function loadTranscriptions() {
+            const select = document.getElementById('analysis-transcription-select');
+            if (!select) return;
+            select.innerHTML = '<option value="">Caricamento...</option>';
+
+            try {
+                const { items } = await ApiClient.listTranscriptions(1, 100);
+                select.innerHTML = '';
+                if (items.length === 0) {
+                    select.innerHTML = '<option value="">Nessuna trascrizione disponibile nello storico</option>';
+                    return;
+                }
+                const placeholderOpt = document.createElement('option');
+                placeholderOpt.value = '';
+                placeholderOpt.textContent = '-- Seleziona una trascrizione --';
+                select.appendChild(placeholderOpt);
+
+                items.forEach(item => {
+                    const opt = document.createElement('option');
+                    opt.value = item.id;
+                    const dateStr = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(item.timestamp));
+                    const fileBase = item.audio_filename || 'Audio';
+                    const textSnippet = item.text ? item.text.substring(0, 30) + '...' : '(Vuota)';
+                    opt.textContent = `${dateStr} - ${fileBase} (${textSnippet})`;
+                    select.appendChild(opt);
+                });
+            } catch (err) {
+                console.error('Failed to load transcriptions in analysis select:', err);
+                select.innerHTML = '<option value="">Errore nel caricamento storico</option>';
+            }
+        }
+
+        async function loadSettings() {
+            try {
+                const settings = await ApiClient.getSettings();
+                const providerSelect = document.getElementById('analysis-provider-select');
+                const keyInput = document.getElementById('analysis-gemini-key');
+                const keyContainer = document.getElementById('gemini-key-container');
+
+                if (providerSelect && settings.llm_provider) {
+                    providerSelect.value = settings.llm_provider;
+                    if (settings.llm_provider === 'gemini' && keyContainer) {
+                        keyContainer.style.display = 'block';
+                    }
+                }
+                if (keyInput && settings.gemini_api_key) {
+                    keyInput.value = settings.gemini_api_key;
+                }
+            } catch (err) {
+                console.error('Failed to load settings in analysis:', err);
+            }
+        }
+
+        async function runAnalysis() {
+            const startBtn = document.getElementById('start-analysis-btn');
+            const spinner = document.getElementById('analysis-btn-spinner');
+            const processingCard = document.getElementById('analysis-processing-card');
+            const progressStatus = document.getElementById('analysis-progress-status');
+            const emptyCard = document.getElementById('analysis-empty-card');
+            const resultCard = document.getElementById('analysis-result-card');
+
+            const provider = document.getElementById('analysis-provider-select').value;
+            const apiKey = document.getElementById('analysis-gemini-key').value.trim();
+
+            // Lock UI
+            startBtn.disabled = true;
+            spinner.style.display = 'inline-block';
+            emptyCard.style.display = 'none';
+            resultCard.style.display = 'none';
+            processingCard.style.display = 'block';
+
+            try {
+                let payload = {
+                    llm_provider: provider,
+                    gemini_api_key: apiKey
+                };
+
+                if (activeTab === 'history') {
+                    const select = document.getElementById('analysis-transcription-select');
+                    payload.transcription_id = select.value;
+                    progressStatus.textContent = 'Recupero trascrizione ed elaborazione analisi...';
+                } else {
+                    const fileName = importedFile.name.toLowerCase();
+                    if (fileName.endsWith('.txt')) {
+                        progressStatus.textContent = 'Lettura file di testo...';
+                        const text = await readFileAsText(importedFile);
+                        payload.text = text;
+                    } else if (fileName.endsWith('.json')) {
+                        progressStatus.textContent = 'Lettura file JSON...';
+                        const text = await readFileAsText(importedFile);
+                        try {
+                            const parsed = JSON.parse(text);
+                            payload.text = parsed.text || parsed.transcript || text;
+                        } catch {
+                            payload.text = text;
+                        }
+                    } else {
+                        progressStatus.textContent = 'Trascrizione audio in corso (MLX Whisper)...';
+                        const formData = new FormData();
+                        formData.append('file', importedFile);
+                        formData.append('stream', 'false');
+                        
+                        const response = await ApiClient.transcribe(formData);
+                        const data = await response.json();
+                        if (!data.text) {
+                            throw new Error('Nessun testo estratto dall’audio.');
+                        }
+                        payload.text = data.text;
+                    }
+                    progressStatus.textContent = 'Elaborazione analisi con l’LLM selezionato...';
+                }
+
+                const result = await ApiClient.analyze(payload);
+                renderAnalysisResult(result);
+
+                processingCard.style.display = 'none';
+                resultCard.style.display = 'block';
+
+                // Save setting update
+                const settings = await ApiClient.getSettings();
+                await ApiClient.updateSettings(settings.transcriptions_dir, apiKey, provider);
+
+            } catch (err) {
+                console.error('Analysis failed:', err);
+                Toast.show(`Analisi fallita: ${err.message}`, 'error');
+                processingCard.style.display = 'none';
+                emptyCard.style.display = 'block';
+            } finally {
+                spinner.style.display = 'none';
+                validateStartButton();
+            }
+        }
+
+        function readFileAsText(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(new Error('Errore durante la lettura del file.'));
+                reader.readAsText(file);
+            });
+        }
+
+        function renderAnalysisResult(result) {
+            const titleEl = document.getElementById('analysis-result-title');
+            const summaryEl = document.getElementById('analysis-result-summary');
+            const keyPointsUl = document.getElementById('analysis-result-key-points');
+            const actionItemsUl = document.getElementById('analysis-result-action-items');
+
+            titleEl.textContent = result.title || 'Risultato Analisi';
+            summaryEl.textContent = result.summary || '';
+
+            keyPointsUl.innerHTML = '';
+            if (result.key_points && result.key_points.length > 0) {
+                result.key_points.forEach(kp => {
+                    const li = document.createElement('li');
+                    li.textContent = kp;
+                    keyPointsUl.appendChild(li);
+                });
+            } else {
+                keyPointsUl.innerHTML = '<li>Nessun punto chiave identificato.</li>';
+            }
+
+            actionItemsUl.innerHTML = '';
+            if (result.action_items && result.action_items.length > 0) {
+                result.action_items.forEach(ai => {
+                    const li = document.createElement('li');
+                    li.textContent = ai;
+                    actionItemsUl.appendChild(li);
+                });
+            } else {
+                actionItemsUl.innerHTML = '<li>Nessuna azione identificata.</li>';
+            }
+        }
+
+        function copyResults() {
+            const title = document.getElementById('analysis-result-title').textContent;
+            const summary = document.getElementById('analysis-result-summary').textContent;
+            const keyPoints = Array.from(document.getElementById('analysis-result-key-points').querySelectorAll('li')).map(li => `- ${li.textContent}`).join('\n');
+            const actionItems = Array.from(document.getElementById('analysis-result-action-items').querySelectorAll('li')).map(li => `- ${li.textContent}`).join('\n');
+
+            const formatted = `# ${title}\n\n## Riassunto\n${summary}\n\n## Punti Chiave\n${keyPoints}\n\n## Prossimi Passi\n${actionItems}`;
+
+            navigator.clipboard.writeText(formatted).then(() => {
+                Toast.show('Analisi copiata negli appunti!', 'success');
+                const copyText = document.getElementById('analysis-copy-text');
+                const original = copyText.textContent;
+                copyText.textContent = LABELS.copied;
+                setTimeout(() => { copyText.textContent = original; }, 2000);
+            }).catch(() => {
+                Toast.show('Copia fallita', 'error');
+            });
+        }
+
+        return {
+            init,
+            loadTranscriptions,
+            loadSettings
+        };
+    })();
 
     init();
 });

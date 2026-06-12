@@ -6,7 +6,10 @@ from pathlib import Path
 SETTINGS_FILE = Path("~/.config/local-asr/settings.json").expanduser()
 
 DEFAULT_SETTINGS = {
-    "transcriptions_dir": str(Path("~/Transcriptions/local-asr").expanduser())
+    "transcriptions_dir": str(Path("~/Transcriptions/local-asr").expanduser()),
+    "recordings_dir": str(Path("~/Recordings/local-asr").expanduser()),
+    "gemini_api_key": "",
+    "llm_provider": "mock"
 }
 
 def load_settings() -> dict[str, str]:

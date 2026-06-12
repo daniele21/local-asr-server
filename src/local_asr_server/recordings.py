@@ -47,14 +47,28 @@ def _extension_for_mime(mime_type: str) -> str:
 
 
 class RecordingStore:
-    def __init__(self, root: Path):
-        self.root = root.expanduser().resolve()
-        self.root.mkdir(parents=True, exist_ok=True)
-        if not os.access(self.root, os.W_OK):
-            raise PermissionError(f"Recording directory is not writable: {self.root}")
+    def __init__(self, default_root: Path):
+        self._default_root = default_root.expanduser().resolve()
+        # Verify write permission on current root
+        curr_root = self.root
+        curr_root.mkdir(parents=True, exist_ok=True)
+        if not os.access(curr_root, os.W_OK):
+            raise PermissionError(f"Recording directory is not writable: {curr_root}")
         self._locks_guard = threading.Lock()
         self._locks: dict[str, threading.Lock] = {}
         self._mark_interrupted_jobs()
+
+    @property
+    def root(self) -> Path:
+        from local_asr_server.settings import load_settings
+        settings = load_settings()
+        path_str = settings.get("recordings_dir")
+        if path_str:
+            path = Path(path_str).expanduser().resolve()
+        else:
+            path = self._default_root
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
     def create(
         self,

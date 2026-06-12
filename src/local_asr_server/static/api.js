@@ -42,11 +42,30 @@ const ApiClient = (() => {
         return (await request('/v1/settings')).json();
     }
 
-    async function updateSettings(transcriptionsDir) {
+    async function updateSettings(transcriptionsDir, recordingsDir = '', geminiApiKey = '', llmProvider = 'mock') {
         return (await request('/v1/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ transcriptions_dir: transcriptionsDir }),
+            body: JSON.stringify({ 
+                transcriptions_dir: transcriptionsDir,
+                recordings_dir: recordingsDir,
+                gemini_api_key: geminiApiKey,
+                llm_provider: llmProvider
+            }),
+        })).json();
+    }
+
+    async function analyze(payload) {
+        return (await request('/v1/analysis', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        })).json();
+    }
+
+    async function selectDirectory() {
+        return (await request('/v1/system/select-directory', {
+            method: 'POST'
         })).json();
     }
 
@@ -70,6 +89,8 @@ const ApiClient = (() => {
         updateRecording,
         getSettings,
         updateSettings,
+        analyze,
+        selectDirectory,
         listTranscriptions,
         getTranscription,
         deleteTranscription

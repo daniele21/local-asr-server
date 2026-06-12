@@ -201,6 +201,23 @@
                             </div>
                         </section>
                     </section>
+
+                    <!-- Audio Settings Card -->
+                    <section class="card recording-settings-section" style="margin-top: 2rem;">
+                        <div class="history-section__header" style="border-bottom: none; margin-bottom: 0; padding-bottom: 0; align-items: center;">
+                            <div>
+                                <h2>Configurazione salvataggio</h2>
+                                <span style="font-size: 0.85rem; color: var(--text-muted);">Cartella in cui archiviare i file audio registrati</span>
+                            </div>
+                            <div class="history-settings">
+                                <div class="history-settings__group" style="display: flex; gap: 8px;">
+                                    <input type="text" id="recordings-dir-input" placeholder="/Users/.../Recordings/local-asr" style="width: 200px;">
+                                    <button type="button" class="btn btn--secondary btn--sm" id="browse-recordings-dir-btn">Sfoglia</button>
+                                    <button type="button" class="btn btn--primary btn--sm" id="save-recordings-settings-btn">Salva</button>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
                 </div>
             </section>
 
@@ -224,7 +241,7 @@
         </nav>
 
         <main class="main">
-            <section class="section section--active" data-step="upload" id="section-upload">
+            <section class="section section--active" data-step="upload,transcribe" id="section-upload">
                 <div class="workspace-heading workspace-heading--compact">
                     <div>
                         <span class="workspace-heading__eyebrow">SORGENTE AUDIO</span>
@@ -479,9 +496,10 @@
                         <span id="history-count">0 elementi</span>
                     </div>
                     <div class="history-settings">
-                        <label for="transcriptions-dir-input">Cartella salvataggio:</label>
-                        <div class="history-settings__group">
-                            <input type="text" id="transcriptions-dir-input" placeholder="/Users/.../Transcriptions/local-asr">
+                        <label for="transcriptions-dir-input">Cartella salvataggio trascrizioni:</label>
+                        <div class="history-settings__group" style="display: flex; gap: 8px;">
+                            <input type="text" id="transcriptions-dir-input" placeholder="/Users/.../Transcriptions/local-asr" style="width: 200px;">
+                            <button type="button" class="btn btn--secondary btn--sm" id="browse-transcriptions-dir-btn">Sfoglia</button>
                             <button type="button" class="btn btn--primary btn--sm" id="save-settings-btn">Salva</button>
                         </div>
                     </div>
@@ -500,11 +518,137 @@
             </section>
 
             <section class="app-page analysis-page" id="page-analysis" data-app-page="analysis">
-                <div class="analysis-placeholder">
-                    <span class="workspace-heading__eyebrow">ANALISI</span>
-                    <h2>Comprendi le tue trascrizioni.</h2>
-                    <p>Questa sezione ospiterà ricerca, riepiloghi, temi ricorrenti e confronti.</p>
-                    <span class="analysis-placeholder__status">In progettazione</span>
+                <div class="workspace-heading">
+                    <div>
+                        <span class="workspace-heading__eyebrow">INTELLIGENZA E RIEPILOGO</span>
+                        <h2>Analisi del testo e dei contenuti</h2>
+                        <p>Estrai temi chiave, riassunti strutturati e action items dalle tue registrazioni o file importati.</p>
+                    </div>
+                </div>
+
+                <div class="analysis-grid">
+                    <!-- Column 1: Config & Selection -->
+                    <div class="analysis-col analysis-col--setup">
+                        <!-- Select Source Card -->
+                        <div class="card setup-card">
+                            <div class="card__header">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                                <h3>Seleziona la sorgente</h3>
+                            </div>
+
+                            <!-- Tabs for Source Mode -->
+                            <div class="tabs-mini" style="margin-top: 1rem;">
+                                <button type="button" class="tab-mini-btn tab-mini-btn--active" id="analysis-source-history-btn">Storico trascrizioni</button>
+                                <button type="button" class="tab-mini-btn" id="analysis-source-import-btn">Importa file</button>
+                            </div>
+
+                            <!-- Panel 1: History dropdown -->
+                            <div class="analysis-panel" id="analysis-panel-history" style="margin-top: 1rem;">
+                                <div class="form-group">
+                                    <label for="analysis-transcription-select">Scegli una trascrizione esistente</label>
+                                    <select id="analysis-transcription-select" style="width:100%;">
+                                        <option value="">Caricamento...</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Panel 2: Dropzone for imports -->
+                            <div class="analysis-panel" id="analysis-panel-import" style="margin-top: 1rem; display: none;">
+                                <div class="dropzone dropzone--compact" id="analysis-dropzone">
+                                    <input type="file" id="analysis-file-input" accept="audio/*,.txt,.json" class="sr-only">
+                                    <div class="dropzone__content" id="analysis-dropzone-content">
+                                        <div class="dropzone__icon">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="24" height="24">
+                                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                                            </svg>
+                                        </div>
+                                        <p class="dropzone__title" style="font-size:0.95rem;">Trascina audio, JSON o TXT</p>
+                                        <button type="button" class="btn btn--secondary btn--sm" id="analysis-browse-btn" style="margin-top: 0.5rem;">Seleziona file</button>
+                                    </div>
+                                </div>
+                                <div class="selected-import-info" id="selected-import-info" style="display: none; margin-top: 0.75rem;">
+                                    <strong id="analysis-imported-filename">nome.mp3</strong>
+                                    <span id="analysis-imported-filesize" style="font-size:0.8em; opacity:0.7;">0 KB</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- LLM & API Configuration Card -->
+                        <div class="card setup-card" style="margin-top: 1.5rem;">
+                            <div class="card__header">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                                <h3>Configurazione LLM</h3>
+                            </div>
+                            <div class="form-group" style="margin-top: 1rem;">
+                                <label for="analysis-provider-select">Provider LLM</label>
+                                <select id="analysis-provider-select" style="width:100%;">
+                                    <option value="mock">Simulato / Mock (Nessun costo)</option>
+                                    <option value="gemini">Google Gemini (API Key richiesta)</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="gemini-key-container" style="display: none; margin-top: 0.75rem;">
+                                <label for="analysis-gemini-key">Gemini API Key</label>
+                                <input type="password" id="analysis-gemini-key" placeholder="AQ.Ab8RN6LtG...">
+                            </div>
+                        </div>
+
+                        <!-- Action Button -->
+                        <button type="button" class="btn btn--primary btn--lg btn--block" id="start-analysis-btn" style="margin-top: 1.5rem;" disabled>
+                            <span>Avvia Analisi</span>
+                            <div class="btn__spinner" id="analysis-btn-spinner" style="display: none;"></div>
+                        </button>
+                    </div>
+
+                    <!-- Column 2: Results / Output -->
+                    <div class="analysis-col analysis-col--result">
+                        <!-- Loading / Progress State -->
+                        <div class="card processing" id="analysis-processing-card" style="display: none;">
+                            <div class="processing__loader">
+                                <div class="pulse-dots"><div></div><div></div><div></div></div>
+                            </div>
+                            <h3 class="processing__title">Analisi in corso...</h3>
+                            <p class="processing__status" id="analysis-progress-status">Preparazione...</p>
+                        </div>
+
+                        <!-- Empty State -->
+                        <div class="card analysis-empty-card" id="analysis-empty-card">
+                            <div class="analysis-empty-card__icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                            </div>
+                            <h3>In attesa dell'analisi</h3>
+                            <p>Configura la sorgente ed avvia l'analisi per estrarre riepiloghi, punti chiave ed azioni pratiche.</p>
+                        </div>
+
+                        <!-- Analysis Output Card -->
+                        <div class="card analysis-result-card" id="analysis-result-card" style="display: none;">
+                            <div class="analysis-result-card__header">
+                                <h3 id="analysis-result-title">Titolo dell'Analisi</h3>
+                                <button type="button" class="btn btn--ghost btn--sm" id="analysis-copy-btn">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                                    <span id="analysis-copy-text">Copia tutto</span>
+                                </button>
+                            </div>
+
+                            <div class="analysis-result-section">
+                                <h4 class="analysis-section-title">Riassunto</h4>
+                                <p id="analysis-result-summary" class="analysis-summary-text">...</p>
+                            </div>
+
+                            <div class="analysis-result-section">
+                                <h4 class="analysis-section-title">Punti Chiave</h4>
+                                <ul id="analysis-result-key-points" class="analysis-list">
+                                    <!-- Key points list -->
+                                </ul>
+                            </div>
+
+                            <div class="analysis-result-section">
+                                <h4 class="analysis-section-title">Prossimi Passi / Action Items</h4>
+                                <ul id="analysis-result-action-items" class="analysis-list analysis-list--actions">
+                                    <!-- Action items list -->
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
         </main>

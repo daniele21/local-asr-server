@@ -109,8 +109,9 @@ const StepIndicator = (() => {
 
         // Toggle section visibility
         document.querySelectorAll('[data-step]').forEach(section => {
-            const sectionStep = section.getAttribute('data-step');
-            if (sectionStep === stepName) {
+            const sectionStep = section.getAttribute('data-step') || '';
+            const allowedSteps = sectionStep.split(',').map(s => s.trim());
+            if (allowedSteps.includes(stepName)) {
                 section.classList.add('section--active');
                 section.classList.remove('section--hidden');
             } else {
