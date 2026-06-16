@@ -6,6 +6,7 @@ const RecordingsView = (() => {
     let currentPage = 1;
     let selectHandler = null;
     let renameHandler = null;
+    let projectHandler = null;
     let dom = {};
 
     let currentPlayingAudio = null;
@@ -13,7 +14,8 @@ const RecordingsView = (() => {
 
     function formatDate(value) {
         try {
-            return new Intl.DateTimeFormat('it-IT', {
+            const locale = i18n.getLang() === 'it' ? 'it-IT' : 'en-US';
+            return new Intl.DateTimeFormat(locale, {
                 dateStyle: 'medium',
                 timeStyle: 'short',
             }).format(new Date(value));
@@ -32,6 +34,7 @@ const RecordingsView = (() => {
         };
         selectHandler = options.onSelect;
         renameHandler = options.onRename;
+        projectHandler = options.onProject;
         dom.previous.addEventListener('click', () => setPage(currentPage - 1));
         dom.next.addEventListener('click', () => setPage(currentPage + 1));
     }
@@ -59,19 +62,17 @@ const RecordingsView = (() => {
     }
 
     function formatDuration(seconds) {
-        if (!seconds) return 'Durata non disponibile';
+        if (!seconds) return i18n.t('recording.durationNotAvailable');
         const mins = Math.floor(seconds / 60);
         const secs = Math.floor(seconds % 60);
         return `${mins}:${String(secs).padStart(2, '0')}`;
     }
 
     function formatDurationLong(seconds) {
-        if (!seconds) return 'Durata non disponibile';
+        if (!seconds) return i18n.t('recording.durationNotAvailable');
         const mins = Math.floor(seconds / 60);
         const secs = Math.floor(seconds % 60);
-        const minLabel = mins === 1 ? 'minuto' : 'minuti';
-        const secLabel = secs === 1 ? 'secondo' : 'secondi';
-        return `${mins} ${minLabel} ${secs} ${secLabel}`;
+        return i18n.t('recording.durationFormat', { mins, secs });
     }
 
     function getDurationFill(recording) {
@@ -139,7 +140,7 @@ const RecordingsView = (() => {
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
                     <polygon points="5 3 19 12 5 21 5 3"/>
                 </svg>`;
-            currentPlayingBtn.title = 'Ascolta';
+            currentPlayingBtn.title = i18n.t('transcription.listenAudio');
             currentPlayingBtn = null;
         }
     }
@@ -155,14 +156,14 @@ const RecordingsView = (() => {
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
                         <rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>
                     </svg>`;
-                button.title = 'Pausa';
+                button.title = i18n.t('recording.btnPause');
             } else {
                 currentPlayingAudio.pause();
                 button.innerHTML = `
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
                         <polygon points="5 3 19 12 5 21 5 3"/>
                     </svg>`;
-                button.title = 'Ascolta';
+                button.title = i18n.t('transcription.listenAudio');
             }
             return;
         }
@@ -179,11 +180,11 @@ const RecordingsView = (() => {
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
                 <rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>
             </svg>`;
-        button.title = 'Pausa';
+        button.title = i18n.t('recording.btnPause');
 
         audio.play().catch(err => {
             console.error('Audio playback failed:', err);
-            Toast.show('Errore durante la riproduzione audio', 'error');
+            Toast.show(i18n.t('transcription.playError'), 'error');
             stopCurrentAudio();
         });
 
@@ -198,7 +199,7 @@ const RecordingsView = (() => {
         if (recordings.length === 0) {
             const empty = document.createElement('p');
             empty.className = 'recordings-list__empty';
-            empty.textContent = 'Non ci sono ancora registrazioni.';
+            empty.textContent = i18n.t('transcription.noRecentRecordings');
             dom.container.appendChild(empty);
             dom.pagination.hidden = true;
             return;
@@ -217,7 +218,7 @@ const RecordingsView = (() => {
             const playBtn = document.createElement('button');
             playBtn.type = 'button';
             playBtn.className = 'row-play-btn';
-            playBtn.title = 'Ascolta';
+            playBtn.title = i18n.t('transcription.listenAudio');
             playBtn.innerHTML = `
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
                     <polygon points="5 3 19 12 5 21 5 3"/>
@@ -239,7 +240,7 @@ const RecordingsView = (() => {
             const editBtn = document.createElement('button');
             editBtn.type = 'button';
             editBtn.className = 'edit-title-btn';
-            editBtn.title = 'Modifica titolo';
+            editBtn.title = i18n.t('transcription.renameTitle');
             editBtn.innerHTML = `
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
                     <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
@@ -264,7 +265,7 @@ const RecordingsView = (() => {
                 const saveBtn = document.createElement('button');
                 saveBtn.type = 'button';
                 saveBtn.className = 'edit-title-save';
-                saveBtn.title = 'Salva';
+                saveBtn.title = i18n.t('transcription.save');
                 saveBtn.innerHTML = `
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
                         <polyline points="20 6 9 17 4 12"/>
@@ -273,7 +274,7 @@ const RecordingsView = (() => {
                 const cancelBtn = document.createElement('button');
                 cancelBtn.type = 'button';
                 cancelBtn.className = 'edit-title-cancel';
-                cancelBtn.title = 'Annulla';
+                cancelBtn.title = i18n.t('common.cancel');
                 cancelBtn.innerHTML = `
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
                         <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -286,10 +287,10 @@ const RecordingsView = (() => {
                     try {
                         const updated = await ApiClient.updateRecording(recording.id, newTitle);
                         recording.title = updated.title;
-                        Toast.show('Titolo aggiornato con successo', 'success');
+                        Toast.show(i18n.t('transcription.titleSaveSuccess'), 'success');
                         if (renameHandler) renameHandler();
                     } catch (error) {
-                        Toast.show(`Errore durante il salvataggio: ${error.message}`, 'error');
+                        Toast.show(i18n.t('transcription.titleSaveError', { error: error.message }), 'error');
                         // Restore view
                         render();
                     }
@@ -314,9 +315,9 @@ const RecordingsView = (() => {
             metadata.className = 'recording-card__meta';
             const durationSeconds = getDurationSeconds(recording);
             const metaRows = [
-                { icon: '📅', label: 'Data', value: formatDate(recording.created_at) },
-                { icon: '⏱', label: 'Durata', value: formatDurationLong(durationSeconds) },
-                { icon: '💾', label: 'Dimensione', value: Utils.formatBytes(recording.bytes_written) },
+                { icon: '📅', label: i18n.t('recording.metaDate'), value: formatDate(recording.created_at) },
+                { icon: '⏱', label: i18n.t('recording.metaDuration'), value: formatDurationLong(durationSeconds) },
+                { icon: '💾', label: i18n.t('recording.metaSize'), value: Utils.formatBytes(recording.bytes_written) },
             ];
             metaRows.forEach(item => {
                 const rowEl = document.createElement('span');
@@ -330,11 +331,11 @@ const RecordingsView = (() => {
             const statusBadges = document.createElement('div');
             statusBadges.className = 'recording-card__status-badges';
             statusBadges.innerHTML = `
-                <span class="recording-card__status-badge ${hasTranscription ? 'is-ready' : 'is-missing'}" title="${hasTranscription ? 'Trascrizione disponibile' : 'Trascrizione non ancora disponibile'}">
-                    <span aria-hidden="true">📝</span>${hasTranscription ? 'Trascritta' : 'No trascrizione'}
+                <span class="recording-card__status-badge ${hasTranscription ? 'is-ready' : 'is-missing'}" title="${hasTranscription ? i18n.t('recording.tooltipTranscribed') : i18n.t('recording.tooltipNotTranscribed')}">
+                    <span aria-hidden="true">📝</span>${hasTranscription ? i18n.t('recording.statusTranscribed') : i18n.t('recording.statusNotTranscribed')}
                 </span>
-                <span class="recording-card__status-badge ${hasAnalysis ? 'is-ready' : 'is-missing'}" title="${hasAnalysis ? 'Analisi disponibile' : 'Analisi non ancora disponibile'}">
-                    <span aria-hidden="true">🧠</span>${hasAnalysis ? 'Analizzata' : 'No analisi'}
+                <span class="recording-card__status-badge ${hasAnalysis ? 'is-ready' : 'is-missing'}" title="${hasAnalysis ? i18n.t('recording.tooltipAnalyzed') : i18n.t('recording.tooltipNotAnalyzed')}">
+                    <span aria-hidden="true">🧠</span>${hasAnalysis ? i18n.t('recording.statusAnalyzed') : i18n.t('recording.statusNotAnalyzed')}
                 </span>
             `;
             info.appendChild(statusBadges);
@@ -346,7 +347,7 @@ const RecordingsView = (() => {
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'btn btn--ghost btn--sm';
-            button.textContent = 'Apri';
+            button.textContent = i18n.t('transcription.cardOpenBtn');
             button.addEventListener('click', () => {
                 stopCurrentAudio();
                 selectHandler(recording, button, { forceTranscription: false });
@@ -355,8 +356,8 @@ const RecordingsView = (() => {
             const regenerateBtn = document.createElement('button');
             regenerateBtn.type = 'button';
             regenerateBtn.className = 'btn btn--ghost btn--sm recording-card__secondary-action';
-            regenerateBtn.textContent = 'Rigenera';
-            regenerateBtn.title = 'Rigenera la trascrizione';
+            regenerateBtn.textContent = i18n.t('transcription.cardRegenerateBtn');
+            regenerateBtn.title = i18n.t('transcription.tooltipRegenerate');
             regenerateBtn.disabled = !hasTranscription;
             regenerateBtn.addEventListener('click', () => {
                 if (!hasTranscription) return;
@@ -367,11 +368,20 @@ const RecordingsView = (() => {
             const projectBtn = document.createElement('button');
             projectBtn.type = 'button';
             projectBtn.className = 'btn btn--ghost btn--sm recording-card__secondary-action';
-            projectBtn.textContent = 'Progetto';
-            projectBtn.title = 'Apri vista Recording';
-            projectBtn.addEventListener('click', () => {
+            projectBtn.textContent = i18n.t('recording.btnProject');
+            projectBtn.title = i18n.t('recording.tooltipProject');
+            projectBtn.addEventListener('click', async () => {
                 stopCurrentAudio();
-                selectHandler(recording, projectBtn, { openProject: true });
+                if (projectHandler) {
+                    projectBtn.disabled = true;
+                    try {
+                        await projectHandler(recording);
+                    } finally {
+                        projectBtn.disabled = false;
+                    }
+                } else {
+                    selectHandler(recording, projectBtn, { openProject: true });
+                }
             });
 
             const durationBar = document.createElement('span');
@@ -387,7 +397,7 @@ const RecordingsView = (() => {
         dom.pagination.hidden = pageCount <= 1;
         dom.previous.disabled = currentPage === 1;
         dom.next.disabled = currentPage === pageCount;
-        dom.status.textContent = `Pagina ${currentPage} di ${pageCount}`;
+        dom.status.textContent = i18n.t('transcription.paginationStatus', { page: currentPage, total: pageCount });
     }
 
     return { init, setItems, setTranscriptions };

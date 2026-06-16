@@ -46,6 +46,10 @@
 
             <!-- Central Navigation -->
             <nav class="primary-nav" aria-label="Navigazione principale" id="app-nav">
+                <button type="button" class="primary-nav__item tooltip" data-page-target="projects" data-i18n-title="nav.projects">
+                    <span class="nav-icon">🗂️</span>
+                    <span class="nav-label" data-i18n="nav.projects">Progetti</span>
+                </button>
                 <button type="button" class="primary-nav__item tooltip" data-page-target="recording" data-i18n-title="nav.recording">
                     <span class="nav-icon">🎙️</span>
                     <span class="nav-label" data-i18n="nav.recording">Registrazione</span>
@@ -53,10 +57,6 @@
                 <button type="button" class="primary-nav__item tooltip" data-page-target="transcription" data-i18n-title="nav.transcription">
                     <span class="nav-icon">📝</span>
                     <span class="nav-label" data-i18n="nav.transcription">Trascrizione</span>
-                </button>
-                <button type="button" class="primary-nav__item tooltip" data-page-target="projects" title="Progetti">
-                    <span class="nav-icon">🗂️</span>
-                    <span class="nav-label">Progetti</span>
                 </button>
                 <button type="button" class="primary-nav__item tooltip" data-page-target="analysis" data-i18n-title="nav.analysis">
                     <span class="nav-icon">🧠</span>
@@ -74,18 +74,18 @@
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.8 1c0 2-3 2.5-3 4"/><path d="M12 18h.01"/></svg>
                     </button>
                     <div class="help-menu__panel" id="help-menu-panel" hidden>
-                        <strong data-i18n="dashboard.firstStepsTitle">Aiuto e demo</strong>
-                        <button type="button" id="start-tour-btn" style="display:none;">Tour guidato</button>
-                        <button type="button" id="start-showcase-btn" style="display:none;">Showcase automatico</button>
-                        <button type="button" id="start-recording-btn" style="display:none;">Registra demo</button>
+                        <strong data-i18n="help.title">Aiuto e demo</strong>
+                        <button type="button" id="start-tour-btn" style="display:none;" data-i18n="help.tour">Tour guidato</button>
+                        <button type="button" id="start-showcase-btn" style="display:none;" data-i18n="help.showcase">Showcase automatico</button>
+                        <button type="button" id="start-recording-btn" style="display:none;" data-i18n="help.recordDemo">Registra demo</button>
                         <hr class="help-menu__divider">
-                        <strong class="help-menu__section-title">macOS App Bar Widget (🎙️)</strong>
+                        <strong class="help-menu__section-title" data-i18n="help.menuBarTitle">macOS App Bar Widget (🎙️)</strong>
                         <div class="help-menu__body">
-                             <p>ClosedRoom vive nella barra dei menu superiore (icona 🎙️).</p>
-                             <p><strong>Se non la vedi:</strong></p>
+                             <p data-i18n="help.menuBarTitle">ClosedRoom vive nella barra dei menu superiore (icona 🎙️).</p>
+                             <p><strong data-i18n="help.notVisible">Se non la vedi:</strong></p>
                              <ul class="help-menu__list">
-                                 <li><strong>Notch / Spazio ridotto:</strong> macOS nasconde le icone extra a sinistra. Chiudi altre icone per farla comparire.</li>
-                                 <li><strong>Scorciatoie globali:</strong> Assicurati di abilitare l'app in <em>Impostazioni di Sistema ➔ Privacy ➔ Accessibilità</em> per sbloccare le hotkey.</li>
+                                 <li><strong data-i18n="help.notchTitle">Notch / Spazio ridotto:</strong> <span data-i18n="help.notchDesc">macOS nasconde le icone extra a sinistra. Chiudi altre icone per farla comparire.</span></li>
+                                 <li><strong data-i18n="help.shortcutsTitle">Scorciatoie globali:</strong> <span data-i18n="help.shortcutsDesc">Assicurati di abilitare l'app in Impostazioni di Sistema ➔ Privacy ➔ Accessibilità per sbloccare le hotkey.</span></li>
                              </ul>
                         </div>
                     </div>
@@ -112,19 +112,19 @@
             <section class="app-page recording-page" id="page-recording" data-app-page="recording">
                 <div class="workspace-heading">
                     <div>
-                        <span class="workspace-heading__eyebrow">REGISTRAZIONE</span>
-                        <h2>Registra una nuova sorgente.</h2>
-                        <p>Cattura l’audio e salvalo nella libreria locale. La trascrizione è un passaggio separato.</p>
+                        <span class="workspace-heading__eyebrow" data-i18n="recording.title">REGISTRAZIONE</span>
+                        <h2 data-i18n="recording.panelTitle">Registra una nuova sorgente.</h2>
+                        <p data-i18n="recording.panelDesc">Cattura l’audio e salvalo nella libreria locale. La trascrizione è un passaggio separato.</p>
                     </div>
                 </div>
                 <section class="recording-project-detail" id="recording-project-detail" hidden>
                     <div class="recording-project-detail__header">
                         <div>
-                            <span class="workspace-heading__eyebrow">RECORDINGS</span>
+                            <span class="workspace-heading__eyebrow" data-i18n="transcription.recentRecordings">RECORDINGS</span>
                             <h2 id="recording-project-title">Recordings / Recording</h2>
-                            <p id="recording-project-meta">Audio, trascrizione e analisi collegati a questa registrazione.</p>
+                            <p id="recording-project-meta" data-i18n="recording.projectMeta">Audio, trascrizione e analisi collegati a questa registrazione.</p>
                         </div>
-                        <button type="button" class="btn btn--ghost btn--sm" id="recording-project-back">Torna alla registrazione</button>
+                        <button type="button" class="btn btn--ghost btn--sm" id="recording-project-back" data-i18n="recording.btnBackToRecording">Torna alla registrazione</button>
                     </div>
                     <div class="recording-project-grid" id="recording-project-grid"></div>
                 </section>
@@ -132,23 +132,23 @@
                     <section class="recorder-panel" id="view-recording" aria-labelledby="recorder-title" hidden>
                         <div class="recorder-panel__header">
                             <div>
-                                <span class="workspace-heading__eyebrow">REGISTRAZIONE LOCALE</span>
-                                <h3 id="recorder-title">Registra una nuova sorgente</h3>
-                                <p>L’audio viene salvato progressivamente e sarà disponibile qui al termine.</p>
+                                <span class="workspace-heading__eyebrow" data-i18n="recording.recordingLocal">REGISTRAZIONE LOCALE</span>
+                                <h3 id="recorder-title" data-i18n="recording.panelTitle">Registra una nuova sorgente</h3>
+                                <p data-i18n="recording.panelDesc">L’audio viene salvato progressivamente e sarà disponibile qui al termine.</p>
                             </div>
-                            <span class="recorder__status" id="recording-status" role="status">Pronto</span>
+                            <span class="recorder__status" id="recording-status" role="status" data-i18n="recording.statusReady">Pronto</span>
                         </div>
 
                         <div class="recording-stage">
                             <div class="recorder-controls">
                                 <div class="recorder__form">
                                     <div class="form-group">
-                                        <label for="recording-title">Titolo registrazione</label>
-                                        <input id="recording-title" type="text" maxlength="200" placeholder="Titolo Registrazione">
+                                        <label for="recording-title" data-i18n="recording.formTitleLabel">Titolo registrazione</label>
+                                        <input id="recording-title" type="text" maxlength="200" placeholder="Titolo Registrazione" data-i18n="recording.formTitlePlaceholder">
                                     </div>
                                     <div class="form-group">
-                                        <label for="recording-project">Progetto</label>
-                                        <input id="recording-project" type="text" maxlength="200" list="projects-datalist" placeholder="Nome progetto o meeting">
+                                        <label for="recording-project" data-i18n="recording.formProjectLabel">Progetto</label>
+                                        <input id="recording-project" type="text" maxlength="200" list="projects-datalist" placeholder="Nome progetto o meeting" data-i18n="recording.formProjectPlaceholder">
                                         <datalist id="projects-datalist"></datalist>
                                     </div>
                                 </div>
@@ -156,44 +156,44 @@
                                 <div class="recorder__meter">
                                     <span class="recorder__dot" id="recording-dot"></span>
                                     <strong id="recording-timer">00:00</strong>
-                                    <span id="recording-progress">Nessun audio salvato</span>
+                                    <span id="recording-progress" data-i18n="recording.progressNone">Nessun audio salvato</span>
                                 </div>
                                 <div class="audio-readiness" id="audio-readiness" data-state="checking">
                                     <span class="audio-readiness__dot" aria-hidden="true"></span>
                                     <div>
-                                        <strong id="audio-setup-title">Verifica configurazione audio</strong>
-                                        <p id="audio-setup-status" role="status">Controllo dispositivi disponibili...</p>
+                                        <strong id="audio-setup-title" data-i18n="recording.audioSetupTitle">Verifica configurazione audio</strong>
+                                        <p id="audio-setup-status" role="status" data-i18n="recording.audioSetupStatus">Controllo dispositivi disponibili...</p>
                                     </div>
-                                    <button type="button" class="btn btn--ghost btn--sm" id="audio-setup-open" hidden>Configura</button>
+                                    <button type="button" class="btn btn--ghost btn--sm" id="audio-setup-open" hidden data-i18n="recording.btnConfigure">Configura</button>
                                 </div>
 
                                 <div class="recorder__actions">
-                                    <button type="button" class="btn btn--primary btn--lg" id="recording-start">Avvia registrazione</button>
-                                    <button type="button" class="btn btn--secondary btn--lg" id="recording-stop" disabled>Termina e salva</button>
+                                    <button type="button" class="btn btn--primary btn--lg" id="recording-start" data-i18n="recording.btnStart">Avvia registrazione</button>
+                                    <button type="button" class="btn btn--secondary btn--lg" id="recording-stop" disabled data-i18n="recording.btnStop">Termina e salva</button>
                                 </div>
                                 <div class="collapsible recorder-details">
                                     <button type="button" class="collapsible__trigger" data-collapsible-trigger="recording-details-body" id="recording-details-trigger" aria-expanded="false" aria-controls="recording-details-body">
-                                        <span>Configurazione audio avanzata</span>
+                                        <span data-i18n="recording.advancedAudioConfig">Configurazione audio avanzata</span>
                                         <svg class="collapsible__chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
                                     </button>
                                     <div class="collapsible__body" id="recording-details-body">
                                         <div class="recorder-details__content">
                                             <div class="audio-device-grid">
                                                 <div class="form-group">
-                                                    <label for="recording-device">Microfono</label>
+                                                    <label for="recording-device" data-i18n="recording.microphone">Microfono</label>
                                                     <select id="recording-device">
-                                                        <option value="">Automatico (predefinito di sistema)</option>
+                                                        <option value="" data-i18n="recording.deviceAuto">Automatico (predefinito di sistema)</option>
                                                     </select>
                                                 </div>
                                                 <div class="form-group">
-                                                    <label for="recording-system-device">Audio computer</label>
+                                                    <label for="recording-system-device" data-i18n="recording.computerAudio">Audio computer</label>
                                                     <select id="recording-system-device">
-                                                        <option value="">Ricerca BlackHole...</option>
+                                                        <option value="" data-i18n="recording.searchingBlackhole">Ricerca BlackHole...</option>
                                                     </select>
                                                 </div>
                                             </div>
-                                            <button type="button" class="btn btn--ghost btn--sm btn--block" id="test-audio-route">Testa routing audio</button>
-                                            <p class="recorder__note">La voce e l’audio del computer vengono acquisiti come sorgenti separate e miscelati nel browser.</p>
+                                            <button type="button" class="btn btn--ghost btn--sm btn--block" id="test-audio-route" data-i18n="recording.testAudioRoute">Testa routing audio</button>
+                                            <p class="recorder__note" data-i18n="recording.recorderNote">La voce e l’audio del computer vengono acquisiti come sorgenti separate e miscelati nel browser.</p>
                                         </div>
                                     </div>
                                 </div>
@@ -201,7 +201,7 @@
 
                             <div class="signal-panel">
                                 <div class="signal-panel__header">
-                                    <span>SEGNALE IN INGRESSO</span>
+                                    <span data-i18n="recording.signalInput">SEGNALE IN INGRESSO</span>
                                     <span id="signal-level-label">-∞ dB</span>
                                 </div>
                                 <canvas id="audio-level-canvas" class="signal-canvas" width="960" height="240" aria-label="Livello del segnale audio"></canvas>
@@ -213,25 +213,25 @@
                         <section class="audio-setup" id="audio-setup-panel" hidden aria-labelledby="audio-setup-heading">
                             <div class="audio-setup__header">
                                 <div>
-                                    <span class="workspace-heading__eyebrow">ROUTING AUTOMATICO</span>
-                                    <h3 id="audio-setup-heading">Audio del computer</h3>
-                                    <p id="audio-setup-intro">Il routing audio viene configurato automaticamente alla registrazione.</p>
+                                    <span class="workspace-heading__eyebrow" data-i18n="recording.audioSetupTitle">ROUTING AUTOMATICO</span>
+                                    <h3 id="audio-setup-heading" data-i18n="recording.computerAudioHeading">Audio del computer</h3>
+                                    <p id="audio-setup-intro" data-i18n="recording.audioSetupIntro">Il routing audio viene configurato automaticamente alla registrazione.</p>
                                 </div>
                                 <button type="button" class="icon-btn" id="audio-setup-close" aria-label="Chiudi configurazione">×</button>
                             </div>
                             <div class="audio-setup__steps" style="list-style: none; padding: 0;">
-                                <p style="margin: 0; opacity: 0.8;">Quando premi <strong>Avvia registrazione</strong>, il sistema:</p>
+                                <p style="margin: 0; opacity: 0.8;" data-i18n="recording.audioSetupStepsTitle">Quando premi <strong>Avvia registrazione</strong>, il sistema:</p>
                                 <ol style="margin: 0.75rem 0; padding-left: 1.25rem; opacity: 0.7; font-size: 0.9em;">
-                                    <li>Rileva l'uscita audio corrente</li>
-                                    <li>Crea un dispositivo Multi-Output temporaneo</li>
-                                    <li>Registra sia le cuffie che BlackHole</li>
-                                    <li>Ripristina l'uscita originale al termine</li>
+                                    <li data-i18n="recording.audioSetupStep1">Rileva l'uscita audio corrente</li>
+                                    <li data-i18n="recording.audioSetupStep2">Crea un dispositivo Multi-Output temporaneo</li>
+                                    <li data-i18n="recording.audioSetupStep3">Registra sia le cuffie che BlackHole</li>
+                                    <li data-i18n="recording.audioSetupStep4">Ripristina l'uscita originale al termine</li>
                                 </ol>
-                                <p style="margin: 0; opacity: 0.6; font-size: 0.85em;">Requisito: <strong>BlackHole 2ch</strong> installato (<code>brew install blackhole-2ch</code>).</p>
+                                <p style="margin: 0; opacity: 0.6; font-size: 0.85em;" data-i18n="recording.blackholeRequirement">Requisito: <strong>BlackHole 2ch</strong> installato (<code>brew install blackhole-2ch</code>).</p>
                             </div>
                             <div class="audio-setup__actions">
-                                <button type="button" class="btn btn--primary" id="audio-setup-verify">Verifica configurazione</button>
-                                <button type="button" class="btn btn--secondary" id="audio-setup-later">Chiudi</button>
+                                <button type="button" class="btn btn--primary" id="audio-setup-verify" data-i18n="recording.btnVerifyConfig">Verifica configurazione</button>
+                                <button type="button" class="btn btn--secondary" id="audio-setup-later" data-i18n="common.cancel">Chiudi</button>
                             </div>
                         </section>
                     </section>
@@ -240,14 +240,14 @@
                     <section class="card recording-settings-section">
                         <div class="history-section__header recording-settings-section__header">
                             <div>
-                                <h2>Configurazione salvataggio</h2>
-                                <span>Cartella in cui archiviare i file audio registrati</span>
+                                <h2 data-i18n="recording.storageConfigTitle">Configurazione salvataggio</h2>
+                                <span data-i18n="recording.storageConfigDesc">Cartella in cui archiviare i file audio registrati</span>
                             </div>
                             <div class="history-settings">
                                 <div class="history-settings__group">
-                                    <input type="text" id="recordings-dir-input" placeholder="/Users/.../Recordings/local-asr">
-                                    <button type="button" class="btn btn--secondary btn--sm" id="browse-recordings-dir-btn">Sfoglia</button>
-                                    <button type="button" class="btn btn--primary btn--sm" id="save-recordings-settings-btn">Salva</button>
+                                    <input type="text" id="recordings-dir-input" placeholder="/Users/.../Recordings/local-asr" data-i18n="recording.storagePlaceholder">
+                                    <button type="button" class="btn btn--secondary btn--sm" id="browse-recordings-dir-btn" data-i18n="settings.btnBrowse">Sfoglia</button>
+                                    <button type="button" class="btn btn--primary btn--sm" id="save-recordings-settings-btn" data-i18n="transcription.save">Salva</button>
                                 </div>
                             </div>
                         </div>
@@ -587,22 +587,22 @@
             <section class="app-page projects-page" id="page-projects" data-app-page="projects">
                 <div class="workspace-heading">
                     <div>
-                        <span class="workspace-heading__eyebrow">PROGETTI</span>
-                        <h2>Meeting e progetti</h2>
-                        <p>Raggruppa gli audio per progetto e consulta audio, trascrizioni e analisi collegate.</p>
+                        <span class="workspace-heading__eyebrow" data-i18n="projects.title">PROGETTI</span>
+                        <h2 data-i18n="projects.heading">Meeting e progetti</h2>
+                        <p data-i18n="projects.body">Raggruppa gli audio per progetto e consulta audio, trascrizioni e analisi collegate.</p>
                     </div>
                 </div>
                 <div class="projects-view" id="projects-view">
-                    <p class="recordings-list__empty">Caricamento progetti...</p>
+                    <p class="recordings-list__empty" data-i18n="projects.loading">Caricamento progetti...</p>
                 </div>
             </section>
 
             <section class="app-page analysis-page" id="page-analysis" data-app-page="analysis">
                 <div class="workspace-heading">
                     <div>
-                        <span class="workspace-heading__eyebrow">INTELLIGENZA E RIEPILOGO</span>
-                        <h2>Analisi del testo e dei contenuti</h2>
-                        <p>Estrai temi chiave, riassunti strutturati e action items dalle tue registrazioni o file importati.</p>
+                        <span class="workspace-heading__eyebrow" data-i18n="analysis.panelTitle">INTELLIGENZA E RIEPILOGO</span>
+                        <h2 data-i18n="analysis.panelTitle">Analisi del testo e dei contenuti</h2>
+                        <p data-i18n="analysis.panelDesc">Estrai temi chiave, riassunti strutturati e action items dalle tue registrazioni o file importati.</p>
                     </div>
                 </div>
 
@@ -613,21 +613,21 @@
                         <div class="card setup-card">
                             <div class="card__header">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                                <h3>Seleziona la sorgente</h3>
+                                <h3 data-i18n="analysis.selectSource">Seleziona la sorgente</h3>
                             </div>
 
                             <!-- Tabs for Source Mode -->
                             <div class="tabs-mini" style="margin-top: 1rem;">
-                                <button type="button" class="tab-mini-btn tab-mini-btn--active" id="analysis-source-history-btn">Storico trascrizioni</button>
-                                <button type="button" class="tab-mini-btn" id="analysis-source-import-btn">Importa file</button>
+                                <button type="button" class="tab-mini-btn tab-mini-btn--active" id="analysis-source-history-btn" data-i18n="analysis.historyTab">Storico trascrizioni</button>
+                                <button type="button" class="tab-mini-btn" id="analysis-source-import-btn" data-i18n="analysis.importTab">Importa file</button>
                             </div>
 
                             <!-- Panel 1: History dropdown -->
                             <div class="analysis-panel" id="analysis-panel-history" style="margin-top: 1rem;">
                                 <div class="form-group">
-                                    <label for="analysis-transcription-select">Scegli una trascrizione esistente</label>
+                                    <label for="analysis-transcription-select" data-i18n="analysis.chooseExisting">Scegli una trascrizione esistente</label>
                                     <select id="analysis-transcription-select" style="width:100%;">
-                                        <option value="">Caricamento...</option>
+                                        <option value="" data-i18n="common.loading">Caricamento...</option>
                                     </select>
                                 </div>
                             </div>
@@ -642,8 +642,8 @@
                                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
                                             </svg>
                                         </div>
-                                        <p class="dropzone__title" style="font-size:0.95rem;">Trascina audio, JSON o TXT</p>
-                                        <button type="button" class="btn btn--secondary btn--sm" id="analysis-browse-btn" style="margin-top: 0.5rem;">Seleziona file</button>
+                                        <p class="dropzone__title" style="font-size:0.95rem;" data-i18n="analysis.dropzoneImportTitle">Trascina audio, JSON o TXT</p>
+                                        <button type="button" class="btn btn--secondary btn--sm" id="analysis-browse-btn" style="margin-top: 0.5rem;" data-i18n="analysis.selectFile">Seleziona file</button>
                                     </div>
                                 </div>
                                 <div class="selected-import-info" id="selected-import-info" style="display: none; margin-top: 0.75rem;">
@@ -657,24 +657,24 @@
                         <div class="card setup-card" style="margin-top: 1.5rem;">
                             <div class="card__header">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                                <h3>Configurazione LLM</h3>
+                                <h3 data-i18n="analysis.llmConfig">Configurazione LLM</h3>
                             </div>
                             <div class="form-group" style="margin-top: 1rem;">
-                                <label for="analysis-provider-select">Provider LLM</label>
+                                <label for="analysis-provider-select" data-i18n="settings.providerLabel">Provider LLM</label>
                                 <select id="analysis-provider-select" style="width:100%;">
-                                    <option value="mock">Simulato / Mock (Nessun costo)</option>
-                                    <option value="gemini">Google Gemini (API Key richiesta)</option>
+                                    <option value="mock" data-i18n="analysis.providerMock">Simulato / Mock (Nessun costo)</option>
+                                    <option value="gemini" data-i18n="analysis.providerGemini">Google Gemini (API Key richiesta)</option>
                                 </select>
                             </div>
                             <div class="form-group" id="gemini-key-container" style="display: none; margin-top: 0.75rem;">
-                                <label for="analysis-gemini-key">Gemini API Key</label>
+                                <label for="analysis-gemini-key" data-i18n="settings.apiKeyLabel">Gemini API Key</label>
                                 <input type="password" id="analysis-gemini-key" placeholder="AQ.Ab8RN6LtG...">
                             </div>
                         </div>
 
                         <!-- Action Button -->
                         <button type="button" class="btn btn--primary btn--lg btn--block" id="start-analysis-btn" style="margin-top: 1.5rem;" disabled>
-                            <span>Avvia Analisi</span>
+                            <span data-i18n="analysis.btnStartAnalysis">Avvia Analisi</span>
                             <div class="btn__spinner" id="analysis-btn-spinner" style="display: none;"></div>
                         </button>
                     </div>
@@ -686,8 +686,8 @@
                             <div class="processing__loader">
                                 <div class="pulse-dots"><div></div><div></div><div></div></div>
                             </div>
-                            <h3 class="processing__title">Analisi in corso...</h3>
-                            <p class="processing__status" id="analysis-progress-status">Preparazione...</p>
+                            <h3 class="processing__title" data-i18n="analysis.analyzingStatus">Analisi in corso...</h3>
+                            <p class="processing__status" id="analysis-progress-status" data-i18n="analysis.preparing">Preparazione...</p>
                         </div>
 
                         <!-- Empty State -->
@@ -695,34 +695,34 @@
                             <div class="analysis-empty-card__icon">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
                             </div>
-                            <h3>In attesa dell'analisi</h3>
-                            <p>Configura la sorgente ed avvia l'analisi per estrarre riepiloghi, punti chiave ed azioni pratiche.</p>
+                            <h3 data-i18n="analysis.waitingAnalysis">In attesa dell'analisi</h3>
+                            <p data-i18n="analysis.waitingAnalysisDesc">Configura la sorgente ed avvia l'analisi per estrarre riepiloghi, punti chiave ed azioni pratiche.</p>
                         </div>
 
                         <!-- Analysis Output Card -->
                         <div class="card analysis-result-card" id="analysis-result-card" style="display: none;">
                             <div class="analysis-result-card__header">
-                                <h3 id="analysis-result-title">Titolo dell'Analisi</h3>
+                                <h3 id="analysis-result-title" data-i18n="analysis.analysisTitle">Titolo dell'Analisi</h3>
                                 <button type="button" class="btn btn--ghost btn--sm" id="analysis-copy-btn">
                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                                    <span id="analysis-copy-text">Copia tutto</span>
+                                    <span id="analysis-copy-text" data-i18n="analysis.resultCopy">Copia tutto</span>
                                 </button>
                             </div>
 
                             <div class="analysis-result-section">
-                                <h4 class="analysis-section-title">Riassunto</h4>
+                                <h4 class="analysis-section-title" data-i18n="analysis.sectionSummary">Riassunto</h4>
                                 <p id="analysis-result-summary" class="analysis-summary-text">...</p>
                             </div>
 
                             <div class="analysis-result-section">
-                                <h4 class="analysis-section-title">Punti Chiave</h4>
+                                <h4 class="analysis-section-title" data-i18n="analysis.sectionKeyPoints">Punti Chiave</h4>
                                 <ul id="analysis-result-key-points" class="analysis-list">
                                     <!-- Key points list -->
                                 </ul>
                             </div>
 
                             <div class="analysis-result-section">
-                                <h4 class="analysis-section-title">Prossimi Passi / Action Items</h4>
+                                <h4 class="analysis-section-title" data-i18n="analysis.sectionActionItems">Prossimi Passi / Action Items</h4>
                                 <ul id="analysis-result-action-items" class="analysis-list analysis-list--actions">
                                     <!-- Action items list -->
                                 </ul>
@@ -741,7 +741,7 @@
 
     <!-- ─── Footer ──────────────────────────────────────────────────── -->
     <footer class="footer">
-        <p>Powered by <strong>MLX Whisper</strong> & <strong>FastAPI</strong>. Eseguito in locale su Apple Silicon.</p>
+        <p data-i18n="common.powerBy">Powered by <strong>MLX Whisper</strong> & <strong>FastAPI</strong>. Eseguito in locale su Apple Silicon.</p>
     </footer>
 </div>
 
@@ -759,6 +759,7 @@
 <script src="/static/settings-page.js?v=1.0.0"></script>
 <script src="/static/tour.js?v=1.0.2"></script>
 <script src="/static/recorder.js?v=1.0.0"></script>
+<script src="/static/analysis-page.js?v=1.0.0"></script>
 <script src="/static/app.js?v=1.0.4"></script>
 </body>
 </html>

@@ -74,7 +74,7 @@ const LABELS = {
     get dropzoneBrowse() { return i18n.t('settings.btnBrowse'); },
 
     // File preview
-    get changeFile() { return i18n.t('recording.changeFile') || 'Cambia file'; },
+    get changeFile() { return i18n.t('transcription.changeSource'); },
     get transcribeAction() { return i18n.t('transcription.btnTranscribe'); },
     get transcribing() { return i18n.t('transcription.transcribingStatus'); },
 
@@ -83,40 +83,40 @@ const LABELS = {
     get labelModel() { return i18n.t('transcription.modelLabel'); },
     get labelLanguage() { return i18n.t('transcription.languageLabel'); },
     get labelTask() { return i18n.t('transcription.taskLabel'); },
-    get labelFormat() { return 'Formato Output'; },
+    get labelFormat() { return i18n.t('transcription.outputFormatLabel') || 'Formato Output'; },
     get labelTemperature() { return i18n.t('transcription.temperatureLabel'); },
     get labelWordTimestamps() { return i18n.t('transcription.wordTimestampsLabel'); },
     get labelCondition() { return i18n.t('transcription.conditionLabel'); },
 
     // Processing
-    get processingTitle() { return i18n.t('transcription.transcribingStatus'); },
-    get processingPreparing() { return 'Preparazione della trascrizione...'; },
+    get processingTitle() { return i18n.t('transcription.processingTitle') || 'Elaborazione in corso...'; },
+    get processingPreparing() { return i18n.t('transcription.preparing') || 'Preparazione della trascrizione...'; },
     get processingConnecting() { return i18n.t('header.statusConnecting'); },
-    get processingConsoleWaiting() { return 'In attesa del backend...'; },
-    get processingLivePreview() { return 'ANTEPRIMA TESTO LIVE'; },
-    get processingConsoleHeader() { return 'LOG DI TRASCRIZIONE LIVE'; },
-    get processingTimer() { return i18n.t('transcription.processingTimer') || 'Tempo trascorso'; },
+    get processingConsoleWaiting() { return i18n.t('transcription.waitingBackend') || 'In attesa del backend...'; },
+    get processingLivePreview() { return i18n.t('transcription.livePreview') || 'ANTEPRIMA TESTO LIVE'; },
+    get processingConsoleHeader() { return i18n.t('transcription.transcriptionLog') || 'LOG DI TRASCRIZIONE'; },
+    get processingTimer() { return i18n.t('transcription.elapsedTime').replace(': {time}s', '') || 'Tempo trascorso'; },
 
     // Results
-    get resultsTitle() { return i18n.t('transcription.successTitle'); },
-    get tabText() { return 'Testo Unito'; },
-    get tabSegments() { return 'Segmenti'; },
-    get tabRaw() { return 'JSON Grezzo'; },
-    get copy() { return 'Copia'; },
-    get copied() { return 'Copiato!'; },
-    get newTranscription() { return 'Nuova Trascrizione'; },
-    get statTime() { return 'Tempo impiegato'; },
-    get statLanguage() { return 'Lingua rilevata'; },
-    get statModel() { return 'Modello'; },
+    get resultsTitle() { return i18n.t('transcription.resultTitle'); },
+    get tabText() { return i18n.t('transcription.tabText'); },
+    get tabSegments() { return i18n.t('transcription.tabSegments'); },
+    get tabRaw() { return i18n.t('transcription.tabRaw'); },
+    get copy() { return i18n.t('transcription.copy'); },
+    get copied() { return i18n.t('transcription.copied') || 'Copiato!'; },
+    get newTranscription() { return i18n.t('transcription.newTranscription'); },
+    get statTime() { return i18n.t('transcription.statTime'); },
+    get statLanguage() { return i18n.t('transcription.statLanguage'); },
+    get statModel() { return i18n.t('transcription.statModel'); },
 
     // Toasts
-    get toastFileCopied() { return 'Testo copiato negli appunti'; },
-    get toastFileInvalid() { return 'Per favore seleziona un file audio valido.'; },
-    get toastTranscriptionError() { return 'Errore di trascrizione'; },
-    get toastCacheHit() { return 'Risultato caricato dalla cache locale'; },
+    get toastFileCopied() { return i18n.t('transcription.toastFileCopied') || 'Testo copiato negli appunti'; },
+    get toastFileInvalid() { return i18n.t('transcription.toastFileInvalid') || 'Per favore seleziona un file audio valido.'; },
+    get toastTranscriptionError() { return i18n.t('transcription.toastTranscriptionError') || 'Errore di trascrizione'; },
+    get toastCacheHit() { return i18n.t('transcription.toastCacheHit') || 'Risultato caricato dalla cache locale'; },
 
     // Footer
-    get footerText() { return 'Powered by <strong>MLX Whisper</strong> & <strong>FastAPI</strong>. Eseguito in locale su Apple Silicon.'; },
+    get footerText() { return i18n.t('common.powerBy'); },
 };
 
 // ─── Accepted File Types ───────────────────────────────────────────────────────

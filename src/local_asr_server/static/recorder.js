@@ -80,14 +80,14 @@ const RecordingController = (() => {
             const devices = await navigator.mediaDevices.enumerateDevices();
             const current = dom.device.value;
             const inputs = devices.filter(device => device.kind === 'audioinput');
-            dom.device.innerHTML = '<option value="">Automatico (predefinito di sistema)</option>';
+            dom.device.innerHTML = `<option value="">${i18n.t('recording.deviceAuto')}</option>`;
             if (dom.systemDevice) {
-                dom.systemDevice.innerHTML = '<option value="">BlackHole non rilevato</option>';
+                dom.systemDevice.innerHTML = `<option value="">${i18n.t('recording.blackholeNotFound')}</option>`;
             }
             inputs.forEach((device, index) => {
                 const option = document.createElement('option');
                 option.value = device.deviceId;
-                option.textContent = device.label || `Ingresso audio ${index + 1}`;
+                option.textContent = device.label || i18n.t('recording.audioInputLabel', { index: index + 1 });
                 const isBlackHole = option.textContent.toLowerCase().includes('blackhole');
                 const isAggregate = isAggregateInput(option.textContent);
                 if (isBlackHole && dom.systemDevice) {
@@ -111,12 +111,12 @@ const RecordingController = (() => {
 
     async function start() {
         if (!window.MediaRecorder || !navigator.mediaDevices?.getUserMedia) {
-            Toast.show('Registrazione audio non supportata da questo browser.', 'error');
+            Toast.show(i18n.t('recording.unsupportedBrowser'), 'error');
             return;
         }
 
         lockControls(true);
-        setStatus('Configurazione audio...', 'working');
+        setStatus(i18n.t('recording.audioSetupTitle'), 'working');
         try {
             const mode = dom.sourceMode ? dom.sourceMode.value : 'both';
             if (mode !== 'mic_only') {
@@ -126,11 +126,11 @@ const RecordingController = (() => {
                     await loadDevices();
                 } else {
                     openSetupPanel();
-                    throw new Error('Completa il setup dell’audio computer prima di registrare.');
+                    throw new Error(i18n.t('recording.setupAudioError'));
                 }
             }
 
-            setStatus('Accesso alle sorgenti...', 'working');
+            setStatus(i18n.t('recording.accessingSources'), 'working');
             sourceStreams = [];
             let micStream = null;
             if (mode !== 'pc_only') {
@@ -175,7 +175,7 @@ const RecordingController = (() => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    title: dom.title.value || 'Registrazione senza titolo',
+                    title: dom.title.value || i18n.t('recording.untitledRecording'),
                     project_name: dom.project?.value || '',
                     mime_type: mimeType,
                     model: null,
@@ -196,7 +196,7 @@ const RecordingController = (() => {
                 : new MediaRecorder(destNode.stream);
             mediaRecorder.addEventListener('dataavailable', onDataAvailable);
             mediaRecorder.addEventListener('error', event => {
-                Toast.show(`Errore registrazione: ${event.error?.message || 'sconosciuto'}`, 'error');
+                Toast.show(i18n.t('recording.error', { error: event.error?.message || (i18n.getLang() === 'it' ? 'sconosciuto' : 'unknown') }), 'error');
             });
             mediaRecorder.start(RECORDING_CHUNK_INTERVAL_MS);
 
@@ -204,14 +204,14 @@ const RecordingController = (() => {
             timerHandle = setInterval(updateTimer, 250);
             dom.stop.disabled = false;
             dom.dot.classList.add('recorder__dot--active');
-            setStatus('Registrazione', 'recording');
-            dom.progress.textContent = 'Salvataggio in corso...';
+            setStatus(i18n.t('recording.statusRecording'), 'recording');
+            dom.progress.textContent = i18n.t('recording.progressSaving');
         } catch (error) {
             releaseMedia();
             await restoreAudioRoute();
             lockControls(false);
-            setStatus('Errore', 'error');
-            Toast.show(`Impossibile avviare la registrazione: ${error.message}`, 'error');
+            setStatus(i18n.t('common.error'), 'error');
+            Toast.show(i18n.t('recording.startFailed', { error: error.message }), 'error');
         }
     }
 
@@ -220,8 +220,8 @@ const RecordingController = (() => {
         const currentSequence = sequence++;
         uploadChain = uploadChain.then(() => uploadChunk(event.data, currentSequence));
         uploadChain.catch(error => {
-            setStatus('Errore salvataggio', 'error');
-            Toast.show(`Chunk non salvato: ${error.message}`, 'error', 0);
+            setStatus(i18n.t('common.error'), 'error');
+            Toast.show(i18n.t('recording.chunkSaveFailed', { error: error.message }), 'error', 0);
         });
     }
 
@@ -236,13 +236,13 @@ const RecordingController = (() => {
         if (!response.ok) throw new Error(await responseDetail(response));
         const metadata = await response.json();
         bytesSaved = metadata.bytes_written;
-        dom.progress.textContent = `${metadata.chunk_count} blocchi salvati, ${Utils.formatBytes(bytesSaved)}`;
+        dom.progress.textContent = i18n.t('recording.chunksSaved', { count: metadata.chunk_count, size: Utils.formatBytes(bytesSaved) });
     }
 
     async function stop() {
         if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
         dom.stop.disabled = true;
-        setStatus('Finalizzazione...', 'working');
+        setStatus(i18n.t('recording.finalizing'), 'working');
 
         // Flush any buffered audio data before stopping.
         // requestData() triggers an immediate 'dataavailable' event,
@@ -269,14 +269,14 @@ const RecordingController = (() => {
             const recording = await response.json();
             localStorage.removeItem(ACTIVE_SESSION_KEY);
             sessionId = null;
-            setStatus('Salvata', 'success');
-            dom.progress.textContent = 'Audio completo salvato. Disponibile in Trascrizione.';
+            setStatus(i18n.t('recording.saved'), 'success');
+            dom.progress.textContent = i18n.t('recording.audioCompleteSaved');
             lockControls(false);
             if (onSaved) onSaved(recording);
         } catch (error) {
-            setStatus('Errore', 'error');
+            setStatus(i18n.t('common.error'), 'error');
             dom.start.disabled = false;
-            Toast.show(`Finalizzazione fallita: ${error.message}`, 'error', 0);
+            Toast.show(i18n.t('recording.finalizationFailed', { error: error.message }), 'error', 0);
         } finally {
             await restoreAudioRoute();
         }
@@ -290,8 +290,8 @@ const RecordingController = (() => {
             if (!response.ok) throw new Error();
             const recording = await response.json();
             if (recording.status === 'recording') {
-                setStatus('Sessione interrotta', 'error');
-                dom.progress.textContent = 'La pagina è stata chiusa durante la registrazione.';
+                setStatus(i18n.t('recording.sessionInterrupted'), 'error');
+                dom.progress.textContent = i18n.t('recording.pageClosedWarning');
             }
             localStorage.removeItem(ACTIVE_SESSION_KEY);
         } catch {
@@ -459,12 +459,12 @@ const RecordingController = (() => {
                 if (data.success) {
                     isTestRouted = true;
                     routeActivated = true;
-                    dom.testRoute.textContent = 'Ripristina Audio Originale';
+                    dom.testRoute.textContent = i18n.t('recording.btnRestoreOriginalAudio');
                     dom.testRoute.style.background = 'var(--success)';
                     dom.testRoute.style.color = 'white';
-                    Toast.show(`Routing attivo: ${data.output_device} / ${data.input_device}`, 'success');
+                    Toast.show(i18n.t('recording.routingActive', { devices: `${data.output_device} / ${data.input_device}` }), 'success');
                 } else {
-                    Toast.show('Impossibile attivare il routing audio di test.', 'error');
+                    Toast.show(i18n.t('recording.routingActiveFailed'), 'error');
                 }
             } else {
                 const response = await fetch('/v1/system/audio/restore', { method: 'POST' });
@@ -473,16 +473,16 @@ const RecordingController = (() => {
                 if (data.success) {
                     isTestRouted = false;
                     routeActivated = false;
-                    dom.testRoute.textContent = 'Testa Routing Audio';
+                    dom.testRoute.textContent = i18n.t('recording.testAudioRoute');
                     dom.testRoute.style.background = '';
                     dom.testRoute.style.color = '';
-                    Toast.show('Audio originale ripristinato.', 'success');
+                    Toast.show(i18n.t('recording.routingRestoreSuccess'), 'success');
                 } else {
-                    Toast.show('Impossibile ripristinare l\'audio di test.', 'error');
+                    Toast.show(i18n.t('recording.routingRestoreFailed'), 'error');
                 }
             }
         } catch (error) {
-            Toast.show(`Errore test routing: ${error.message}`, 'error');
+            Toast.show(i18n.t('recording.routingTestError', { error: error.message }), 'error');
         } finally {
             dom.testRoute.disabled = false;
         }
@@ -508,7 +508,7 @@ const RecordingController = (() => {
             routeActivated = false;
             isTestRouted = false;
             if (dom.testRoute) {
-                dom.testRoute.textContent = 'Testa routing audio';
+                dom.testRoute.textContent = i18n.t('recording.testAudioRoute');
                 dom.testRoute.style.background = '';
                 dom.testRoute.style.color = '';
             }
@@ -523,7 +523,7 @@ const RecordingController = (() => {
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             renderAudioStatus(await response.json());
         } catch {
-            dom.audioSetupStatus.textContent = 'Stato audio non disponibile.';
+            dom.audioSetupStatus.textContent = i18n.t('recording.audioStatusNotAvailable');
         }
     }
 
@@ -536,15 +536,15 @@ const RecordingController = (() => {
         if (status.ready_to_record) {
             dom.audioReadiness.dataset.state = 'ready';
             if (status.routing_active) {
-                dom.audioSetupTitle.textContent = 'Routing audio attivo';
+                dom.audioSetupTitle.textContent = i18n.t('recording.routingActiveTitle');
                 dom.audioSetupStatus.textContent = status.physical_output
-                    ? `${status.physical_output} + BlackHole · automatico`
-                    : 'Multi-Output temporaneo attivo';
+                    ? i18n.t('recording.routingActiveStatus', { output: status.physical_output })
+                    : i18n.t('recording.tempRoutingActiveStatus');
             } else {
-                dom.audioSetupTitle.textContent = 'Audio computer pronto';
+                dom.audioSetupTitle.textContent = i18n.t('recording.audioSetupTitleReady');
                 dom.audioSetupStatus.textContent = status.physical_output
-                    ? `${status.physical_output} · Multi-Output automatico`
-                    : 'Configurazione automatica disponibile';
+                    ? i18n.t('recording.readyAutoStatus', { output: status.physical_output })
+                    : i18n.t('recording.readyConfigStatus');
             }
             if (dom.setupOpen) dom.setupOpen.hidden = true;
             closeSetupPanel();
@@ -555,21 +555,21 @@ const RecordingController = (() => {
         dom.audioReadiness.dataset.state = 'missing';
         const missingItems = status.missing || [];
         if (missingItems.includes('blackhole')) {
-            dom.audioSetupTitle.textContent = 'BlackHole non installato';
-            dom.audioSetupStatus.textContent = 'Installa BlackHole 2ch: brew install blackhole-2ch';
+            dom.audioSetupTitle.textContent = i18n.t('recording.blackholeNotInstalled');
+            dom.audioSetupStatus.textContent = i18n.t('recording.missingBlackholeStatus');
         } else if (missingItems.includes('audio_helper')) {
-            dom.audioSetupTitle.textContent = 'Audio helper non disponibile';
-            dom.audioSetupStatus.textContent = 'Esegui: local-asr setup-audio';
+            dom.audioSetupTitle.textContent = i18n.t('recording.audioHelperNotAvailable');
+            dom.audioSetupStatus.textContent = i18n.t('recording.missingHelperStatus');
         } else {
-            dom.audioSetupTitle.textContent = 'Configurazione richiesta';
-            dom.audioSetupStatus.textContent = 'Verificare la configurazione audio.';
+            dom.audioSetupTitle.textContent = i18n.t('recording.configRequiredStatus');
+            dom.audioSetupStatus.textContent = i18n.t('recording.verifyConfigRequiredStatus');
         }
         if (dom.setupOpen) dom.setupOpen.hidden = !isAutoRouting;
     }
 
     async function getAudioStream(deviceId, voiceProcessing) {
         if (!deviceId && !voiceProcessing) {
-            throw new Error('BlackHole non è disponibile tra gli ingressi audio.');
+            throw new Error(i18n.t('recording.blackholeInputRequiredError'));
         }
         const constraints = {
             echoCancellation: voiceProcessing,
@@ -595,10 +595,7 @@ const RecordingController = (() => {
     function assertSingleMicrophone(stream) {
         const track = stream.getAudioTracks()[0];
         if (track && isAggregateInput(track.label || '')) {
-            throw new Error(
-                'Il microfono predefinito è un dispositivo aggregato. '
-                + 'Seleziona un solo microfono nelle impostazioni audio.',
-            );
+            throw new Error(i18n.t('recording.aggregateDeviceError'));
         }
     }
 
@@ -625,11 +622,11 @@ const RecordingController = (() => {
 
     async function verifyAudioSetup() {
         dom.setupVerify.disabled = true;
-        dom.setupVerify.textContent = 'Verifica in corso...';
+        dom.setupVerify.textContent = i18n.t('recording.verifyingStatus');
         await loadDevices();
         await refreshAudioStatus();
         dom.setupVerify.disabled = false;
-        dom.setupVerify.textContent = 'Ho creato il profilo, verifica';
+        dom.setupVerify.textContent = i18n.t('recording.verifyDoneStatus');
     }
 
     function delay(milliseconds) {

@@ -124,8 +124,8 @@ const SettingsPageController = (() => {
                         <div class="form-group">
                             <label for="settings-llm-provider" data-i18n="settings.providerLabel">${i18n.t('settings.providerLabel')}</label>
                             <select id="settings-llm-provider" name="llm_provider">
-                                <option value="mock" ${settings.llm_provider === 'mock' ? 'selected' : ''}>Mock (Offline / Demo)</option>
-                                <option value="gemini" ${settings.llm_provider === 'gemini' ? 'selected' : ''}>Google Gemini API</option>
+                                <option value="mock" ${settings.llm_provider === 'mock' ? 'selected' : ''}>${i18n.t('settings.providerMock')}</option>
+                                <option value="gemini" ${settings.llm_provider === 'gemini' ? 'selected' : ''}>${i18n.t('settings.providerGemini')}</option>
                             </select>
                         </div>
 

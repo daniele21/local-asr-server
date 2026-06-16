@@ -3578,11 +3578,13 @@ input[type="number"]:focus {
 }
 
 .transcription-main--detail,
+.transcription-main--source,
 .transcription-main:has(#section-results.section--active) {
     grid-template-columns: 1fr;
 }
 
 .transcription-main--detail #history-section,
+.transcription-main--source #history-section,
 .transcription-main:has(#section-results.section--active) #history-section {
     display: none;
 }
@@ -3976,8 +3978,8 @@ input[type="number"]:focus {
 .project-recording-card {
     display: flex;
     flex-direction: column;
-    gap: 14px;
-    padding: 14px;
+    gap: 8px;
+    padding: 10px 12px;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     background: color-mix(in srgb, var(--bg-surface) 74%, transparent);
@@ -3986,45 +3988,50 @@ input[type="number"]:focus {
 .project-recording-card__top {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 12px;
+    gap: 8px;
     align-items: start;
 }
 
 .project-recording-card h4 {
     margin: 0;
-    font-size: 0.98rem;
+    font-size: 0.95rem;
 }
 
 .project-recording-card p {
-    margin-top: 4px;
+    margin-top: 2px;
     color: var(--text-muted);
-    font-size: 0.8rem;
+    font-size: 0.76rem;
+}
+
+.project-recording-card:hover .edit-title-btn {
+    opacity: 1;
 }
 
 .project-recording-card__status,
 .project-recording-card__actions {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
+    gap: 6px;
 }
 
 .project-recording-card__status span {
-    padding: 8px;
+    padding: 4px 6px;
     border: 1px solid var(--border);
     border-radius: var(--radius-xs);
     color: var(--text-muted);
-    font-size: 0.78rem;
+    font-size: 0.74rem;
     text-align: center;
 }
 
 .project-recording-card__status .is-ready {
     color: var(--success);
     border-color: color-mix(in srgb, var(--success) 34%, var(--border));
+    background: color-mix(in srgb, var(--success) 8%, transparent);
 }
 
 .project-recording-card__actions {
     grid-template-columns: 1fr 1fr;
-    margin-top: auto;
+    margin-top: 4px;
 }
 
 /* Compact recording page layout */

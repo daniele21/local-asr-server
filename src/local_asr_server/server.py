@@ -155,6 +155,8 @@ def create_app(
                 "POST /v1/recordings/{id}/stop",
                 "GET /v1/recordings/{id}",
                 "GET /v1/recordings/{id}/audio",
+                "GET /v1/recordings/{id}/project",
+                "GET /v1/projects",
                 "GET /v1/system/audio/status",
                 "POST /v1/system/audio/activate",
                 "POST /v1/system/audio/restore",

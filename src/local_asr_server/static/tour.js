@@ -83,7 +83,7 @@ const Tour = (() => {
             nextDelay: 4
         },
         {
-            elementId: 'settings-collapsible',
+            elementId: 'transcription-options-body',
             title: 'Impostazioni Avanzate',
             text: 'Da qui puoi personalizzare il modello Whisper, forzare la lingua di trascrizione, abilitare i timestamp a livello di parola e impostare altri parametri avanzati.',
             position: 'top',
@@ -101,9 +101,9 @@ const Tour = (() => {
                 StepIndicator.setStep('transcribe');
 
                 // Open advanced settings if collapsed
-                const body = document.getElementById('settings-body');
+                const body = document.getElementById('transcription-options-body');
                 if (body && body.classList.contains('collapsible--collapsed')) {
-                    document.getElementById('settings-trigger').click();
+                    document.getElementById('transcription-options-trigger').click();
                 }
 
                 // If showcase, pre-populate options
@@ -129,8 +129,8 @@ const Tour = (() => {
             position: 'top',
             onBeforeShow: () => {
                 // Collapse settings
-                const settingsBody = document.getElementById('settings-body');
-                const settingsTrigger = document.getElementById('settings-trigger');
+                const settingsBody = document.getElementById('transcription-options-body');
+                const settingsTrigger = document.getElementById('transcription-options-trigger');
                 if (settingsBody && !settingsBody.classList.contains('collapsible--collapsed')) {
                     settingsTrigger.click();
                 }
@@ -462,9 +462,9 @@ const Tour = (() => {
         }
         
         // Collapse advanced settings if it was opened by the tour
-        const settingsBody = document.getElementById('settings-body');
+        const settingsBody = document.getElementById('transcription-options-body');
         if (settingsBody && !settingsBody.classList.contains('collapsible--collapsed')) {
-            document.getElementById('settings-trigger').click();
+            document.getElementById('transcription-options-trigger').click();
         }
 
         if (mediaRecorder && mediaRecorder.state !== "inactive") {

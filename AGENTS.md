@@ -73,13 +73,28 @@ Il frontend e HTML/CSS/JavaScript statico, senza bundler e senza moduli ES.
 - `src/local_asr_server/static/recorder.js`: MediaRecorder, mix audio, upload
   chunk e routing.
 - `src/local_asr_server/static/recordings-view.js`: lista registrazioni.
+- `src/local_asr_server/static/dashboard.js`: dashboard iniziale e stato vuoto.
+- `src/local_asr_server/static/settings-page.js`: pagina impostazioni.
+- `src/local_asr_server/static/analysis-page.js`: pagina analisi, import file,
+  selezione trascrizioni e rendering risultati LLM.
 - `src/local_asr_server/static/tour.js`: tour e showcase.
 - `src/local_asr_server/static/app.js`: orchestratore, navigazione,
-  trascrizione, storico e analisi.
+  trascrizione, storico e wiring tra controller.
 - `src/local_asr_server/static/styles.css`: stili completi dell'app.
 
 `public/` e `website/` non sono la UI servita normalmente da FastAPI. La UI
 runtime e `src/local_asr_server/static/`.
+
+Hotspot frontend da non far crescere senza motivo:
+
+- `app.js` deve restare un orchestratore. Nuove pagine o workflow importanti
+  vanno in controller dedicati caricati prima di `app.js` ed esposti su
+  `window`, seguendo lo stile dei file statici esistenti.
+- `styles.css` e ancora monolitico. Se aggiungi molte regole per una pagina,
+  raggruppale chiaramente nella sezione della pagina; un futuro split CSS deve
+  preservare l'ordine di cascade.
+- `index.html` e il contratto dei globali frontend: ogni nuovo controller
+  statico deve essere incluso nello stack script prima di `app.js`.
 
 ### Build e test
 
@@ -190,6 +205,11 @@ Per capire una modifica, ricostruisci in ordine:
 - Nel frontend l'ordine degli `<script>` in `index.html` e un contratto:
   i file espongono globali come `ApiClient`, `Workflow` e
   `RecordingController`.
+- Quando estrai logica frontend, non introdurre bundler, moduli ES o import
+  dinamici: questa UI deve restare servibile come asset statico semplice sia in
+  dev sia nel bundle PyInstaller.
+- Per una nuova pagina usa un file `*-page.js` o `*-view.js`, inizializzato da
+  `app.js`, e lascia in `app.js` solo navigazione, routing e coordinamento.
 - Quando aggiungi un asset runtime, aggiorna package data e, se necessario,
   `ClosedRoom.spec`.
 - Mantieni lazy gli import macOS opzionali quando il modulo deve restare
@@ -228,9 +248,17 @@ UV_CACHE_DIR=.cache/uv uv run python -m unittest discover -s test -v
 Test mirati:
 
 ```bash
-UV_CACHE_DIR=.cache/uv uv run python -m unittest test.test_recordings -v
-UV_CACHE_DIR=.cache/uv uv run python -m unittest test.test_recording_api -v
-UV_CACHE_DIR=.cache/uv uv run python -m unittest test.test_audio_router -v
+UV_CACHE_DIR=.cache/uv uv run python -m unittest discover -s test -p 'test_recordings.py' -v
+UV_CACHE_DIR=.cache/uv uv run python -m unittest discover -s test -p 'test_recording_api.py' -v
+UV_CACHE_DIR=.cache/uv uv run python -m unittest discover -s test -p 'test_audio_router.py' -v
+```
+
+Verifica tour/showcase dopo modifiche a `index.html` o `tour.js`:
+
+```bash
+python3 skills/build-guided-product-tours/scripts/check_tour_targets.py \
+  src/local_asr_server/static/tour.js \
+  src/local_asr_server/static/index.html
 ```
 
 Avvio sviluppo:
