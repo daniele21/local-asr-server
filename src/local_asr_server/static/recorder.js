@@ -29,6 +29,7 @@ const RecordingController = (() => {
         onSaved = options.onSaved;
         dom = {
             title: document.getElementById('recording-title'),
+            project: document.getElementById('recording-project'),
             device: document.getElementById('recording-device'),
             systemDevice: document.getElementById('recording-system-device'),
             start: document.getElementById('recording-start'),
@@ -175,6 +176,7 @@ const RecordingController = (() => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     title: dom.title.value || 'Registrazione senza titolo',
+                    project_name: dom.project?.value || '',
                     mime_type: mimeType,
                     model: null,
                     language: dom.language?.value || null,

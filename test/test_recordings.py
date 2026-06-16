@@ -11,7 +11,7 @@ class RecordingStoreTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.temp_dir.name)
-        self.store = RecordingStore(self.root)
+        self.store = RecordingStore(self.root, use_settings_dir=False)
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
@@ -65,7 +65,7 @@ class RecordingStoreTests(unittest.TestCase):
         self.store.append_chunk(recording["id"], 0, b"audio")
         self.store.finalize(recording["id"])
 
-        restored = RecordingStore(self.root).get(recording["id"])
+        restored = RecordingStore(self.root, use_settings_dir=False).get(recording["id"])
 
         self.assertEqual(restored["status"], "recorded")
         self.assertEqual(self.store.audio_path(recording["id"]).read_bytes(), b"audio")

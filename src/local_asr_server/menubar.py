@@ -15,11 +15,23 @@ Usage (bundle):
 
 from __future__ import annotations
 
+import os
+import sys
 import logging
 import threading
 import webbrowser
 from pathlib import Path
 from typing import Optional
+
+# Setup SSL certificates for PyInstaller bundled app on macOS.
+# Without this, downloading models from Hugging Face can fail with SSL handshake/verification errors.
+if getattr(sys, "frozen", False):
+    try:
+        import certifi
+        os.environ["SSL_CERT_FILE"] = certifi.where()
+        os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
+    except ImportError:
+        pass
 
 from local_asr_server.window import ClosedRoomWindowManager
 

@@ -15,17 +15,23 @@ from local_asr_server.paths import get_settings_file, APP_NAME
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
-DEFAULT_SETTINGS: dict[str, str] = {
+DEFAULT_SETTINGS: dict[str, any] = {
     "transcriptions_dir": str(Path(f"~/Transcriptions/{APP_NAME}").expanduser()),
     "recordings_dir": str(Path(f"~/Recordings/{APP_NAME}").expanduser()),
     "gemini_api_key": "",
     "llm_provider": "mock",
+    "default_model": "",
+    "default_language": "it",
+    "default_task": "transcribe",
+    "default_temperature": "",
+    "default_word_timestamps": False,
+    "default_condition_on_previous": True,
 }
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def load_settings() -> dict[str, str]:
+def load_settings() -> dict[str, any]:
     """
     Load settings from disk, merging with defaults for missing keys.
 
@@ -44,7 +50,7 @@ def load_settings() -> dict[str, str]:
         return DEFAULT_SETTINGS.copy()
 
 
-def save_settings(settings: dict[str, str]) -> None:
+def save_settings(settings: dict[str, any]) -> None:
     """
     Persist settings to disk atomically.
 

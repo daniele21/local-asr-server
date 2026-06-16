@@ -89,6 +89,7 @@ const Toast = (() => {
 const StepIndicator = (() => {
     const STEPS = ['upload', 'transcribe', 'results'];
     let currentStep = 'upload';
+    let maxReachableIndex = 0;
 
     /**
      * Set the active step and update DOM classes.
@@ -97,6 +98,7 @@ const StepIndicator = (() => {
     function setStep(stepName) {
         currentStep = stepName;
         const idx = STEPS.indexOf(stepName);
+        maxReachableIndex = Math.max(maxReachableIndex, idx);
 
         STEPS.forEach((name, i) => {
             const el = document.getElementById(`step-${name}`);
@@ -105,6 +107,9 @@ const StepIndicator = (() => {
             el.classList.toggle('step--active', i === idx);
             el.classList.toggle('step--completed', i < idx);
             el.classList.toggle('step--pending', i > idx);
+            el.classList.toggle('stepper__step--clickable', i <= maxReachableIndex);
+            el.classList.toggle('stepper__step--locked', i > maxReachableIndex);
+            el.setAttribute('aria-disabled', String(i > maxReachableIndex));
         });
 
         // Toggle section visibility
@@ -126,7 +131,17 @@ const StepIndicator = (() => {
         return currentStep;
     }
 
-    return { setStep, getStep };
+    function canGoTo(stepName) {
+        const idx = STEPS.indexOf(stepName);
+        return idx >= 0 && idx <= maxReachableIndex;
+    }
+
+    function reset(stepName = 'upload') {
+        maxReachableIndex = STEPS.indexOf(stepName);
+        setStep(stepName);
+    }
+
+    return { setStep, getStep, canGoTo, reset };
 })();
 
 
@@ -294,17 +309,56 @@ const FileDropzone = (() => {
 const SettingsForm = (() => {
     /**
      * Populate all select elements from config data.
-     * Called once on page load.
+     * Called once on page load or when settings are updated.
+     * @param {Object} [settings] - Optional backend settings object
      */
-    function populate() {
-        _populateSelect('model-select', MODELS, '', 'badge');
-        _populateSelect('language-select', LANGUAGES, DEFAULTS.language);
-        _populateSelect('task-select', TASKS, DEFAULTS.task);
-        // Set default checkbox states
+    function populate(settings = null) {
+        const defaults = settings || {};
+
+        // Resolve setting values from backend payload or config defaults
+        const modelVal = defaults.default_model !== undefined ? defaults.default_model : (DEFAULTS.model || '');
+        const langVal = defaults.default_language !== undefined ? defaults.default_language : (DEFAULTS.language || 'it');
+        const taskVal = defaults.default_task !== undefined ? defaults.default_task : (DEFAULTS.task || 'transcribe');
+
+        const localizedModels = MODELS.map(item => item.value === ''
+            ? { ...item, label: i18n.getLang() === 'it' ? 'Predefinito del server' : 'Server default' }
+            : item
+        );
+        const localizedLanguages = LANGUAGES.map(item => {
+            const labels = {
+                it: { it: 'Italiano', en: 'Inglese', es: 'Spagnolo', fr: 'Francese', de: 'Tedesco', '': 'Rilevamento automatico' },
+                en: { it: 'Italian', en: 'English', es: 'Spanish', fr: 'French', de: 'German', '': 'Auto-detect' },
+            };
+            return { ...item, label: labels[i18n.getLang()][item.value] || item.label };
+        });
+        const localizedTasks = TASKS.map(item => {
+            const labels = {
+                it: { transcribe: 'Trascrizione', translate: 'Traduzione in inglese' },
+                en: { transcribe: 'Transcription', translate: 'Translate to English' },
+            };
+            return { ...item, label: labels[i18n.getLang()][item.value] || item.label };
+        });
+
+        _populateSelect('model-select', localizedModels, modelVal, 'badge');
+        _populateSelect('language-select', localizedLanguages, langVal);
+        _populateSelect('task-select', localizedTasks, taskVal);
+
+        // Set checkbox states
         const wordTs = document.getElementById('timestamps-check');
         const condPrev = document.getElementById('condition-check');
-        if (wordTs) wordTs.checked = DEFAULTS.wordTimestamps;
-        if (condPrev) condPrev.checked = DEFAULTS.conditionOnPreviousText;
+
+        const wordTsVal = defaults.default_word_timestamps !== undefined ? defaults.default_word_timestamps : (DEFAULTS.wordTimestamps || false);
+        const condPrevVal = defaults.default_condition_on_previous !== undefined ? defaults.default_condition_on_previous : (DEFAULTS.conditionOnPreviousText || false);
+
+        if (wordTs) wordTs.checked = wordTsVal;
+        if (condPrev) condPrev.checked = condPrevVal;
+
+        // Set temperature if available
+        const tempInput = document.getElementById('temperature-input');
+        if (tempInput) {
+            const tempVal = defaults.default_temperature !== undefined ? defaults.default_temperature : (DEFAULTS.temperature !== undefined ? DEFAULTS.temperature : '');
+            tempInput.value = tempVal !== null && tempVal !== undefined ? tempVal : '';
+        }
     }
 
     /**
@@ -389,4 +443,204 @@ const Utils = (() => {
     }
 
     return { formatBytes, formatTime };
+})();
+
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   NEW UX COMPONENTS (Dashboard, Settings, Navigation Success states)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+const SuccessCard = (() => {
+    /**
+     * Render a success card with CTAs
+     * @param {Object} opts
+     * @param {string} opts.title
+     * @param {string} opts.body
+     * @param {Array<{label: string, action: string|function, primary: boolean}>} opts.ctas
+     */
+    function render(opts) {
+        // Generate CTA buttons
+        const buttonsHtml = opts.ctas.map((cta, index) => {
+            const btnClass = cta.primary ? 'btn--primary' : 'btn--secondary';
+            return `<button type="button" class="btn ${btnClass} cta-btn-${index}">${cta.label}</button>`;
+        }).join('');
+
+        const card = document.createElement('div');
+        card.className = 'success-card card anim-scale-up';
+        card.innerHTML = `
+            <div class="success-card__icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polyline points="20 6 9 17 4 12"/>
+                </svg>
+            </div>
+            <div class="success-card__content">
+                <h4>${opts.title}</h4>
+                <p>${opts.body}</p>
+            </div>
+            <div class="success-card__actions">
+                ${buttonsHtml}
+            </div>
+        `;
+
+        // Bind CTA actions
+        opts.ctas.forEach((cta, index) => {
+            const btn = card.querySelector(`.cta-btn-${index}`);
+            if (!btn) return;
+            btn.addEventListener('click', () => {
+                if (typeof cta.action === 'function') {
+                    cta.action();
+                } else if (typeof cta.action === 'string') {
+                    if (window.App && typeof window.App.switchPage === 'function') {
+                        window.App.switchPage(cta.action);
+                    }
+                }
+            });
+        });
+
+        return card;
+    }
+
+    return { render };
+})();
+
+const EmptyState = (() => {
+    /**
+     * Render an empty state view
+     * @param {Object} opts
+     * @param {string} opts.icon
+     * @param {string} opts.title
+     * @param {string} opts.body
+     * @param {Object} [opts.cta]
+     * @param {string} opts.cta.label
+     * @param {string|function} opts.cta.action
+     */
+    function render(opts) {
+        let ctaHtml = '';
+        if (opts.cta) {
+            ctaHtml = `<button type="button" class="btn btn--primary btn-empty-action">${opts.cta.label}</button>`;
+        }
+
+        const div = document.createElement('div');
+        div.className = 'empty-state-container';
+        div.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state__icon">${opts.icon}</div>
+                <h3 class="empty-state__title">${opts.title}</h3>
+                <p class="empty-state__body">${opts.body}</p>
+                ${ctaHtml}
+            </div>
+        `;
+
+        if (opts.cta) {
+            const btn = div.querySelector('.btn-empty-action');
+            if (btn) {
+                btn.addEventListener('click', () => {
+                    if (typeof opts.cta.action === 'function') {
+                        opts.cta.action();
+                    } else if (typeof opts.cta.action === 'string') {
+                        if (window.App && typeof window.App.switchPage === 'function') {
+                            window.App.switchPage(opts.cta.action);
+                        }
+                    }
+                });
+            }
+        }
+
+        return div;
+    }
+
+    return { render };
+})();
+
+const StatsCard = (() => {
+    /**
+     * Render a stats card
+     * @param {string} label
+     * @param {number|string} value
+     * @param {string} icon
+     */
+    function render(label, value, icon) {
+        return `
+            <div class="stats-card card">
+                <div class="stats-card__header">
+                    <span class="stats-card__label">${label}</span>
+                    <span class="stats-card__icon">${icon}</span>
+                </div>
+                <span class="stats-card__value">${value}</span>
+            </div>
+        `;
+    }
+
+    return { render };
+})();
+
+const ActivityItem = (() => {
+    /**
+     * Render an activity item inside dashboard feed
+     * @param {Object} item
+     */
+    function render(item) {
+        const formattedDate = item.date.toLocaleDateString(i18n.getLang() === 'it' ? 'it-IT' : 'en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+
+        if (item.type === 'recording') {
+            return `
+                <div class="activity-item activity-item--recording">
+                    <div class="activity-item__icon">🎙️</div>
+                    <div class="activity-item__details">
+                        <span class="activity-item__title">${item.title}</span>
+                        <span class="activity-item__meta">${formattedDate} &middot; ${item.status}</span>
+                    </div>
+                    <div class="activity-item__actions">
+                        <button type="button" class="btn btn--secondary btn--sm" onclick="DashboardController.handleRecordingClick('${item.id}')">
+                            ${i18n.t('recording.ctaTranscribe')}
+                        </button>
+                    </div>
+                </div>
+            `;
+        } else {
+            return `
+                <div class="activity-item activity-item--transcription">
+                    <div class="activity-item__icon">📝</div>
+                    <div class="activity-item__details">
+                        <span class="activity-item__title">${item.title}</span>
+                        <span class="activity-item__meta">${formattedDate}</span>
+                    </div>
+                    <div class="activity-item__actions">
+                        <button type="button" class="btn btn--secondary btn--sm" onclick="DashboardController.handleTranscriptionClick('${item.id}')">
+                            ${i18n.t('transcription.ctaAnalyze')}
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+    }
+
+    return { render };
+})();
+
+const SuggestionBanner = (() => {
+    /**
+     * Render a suggestion banner
+     * @param {string} message
+     * @param {string} ctaText
+     * @param {function} ctaAction
+     */
+    function render(message, ctaText, ctaAction) {
+        return `
+            <div class="suggestion-banner card">
+                <div class="suggestion-banner__body">
+                    <span class="suggestion-banner__icon">💡</span>
+                    <span class="suggestion-banner__msg">${message}</span>
+                </div>
+                <button type="button" class="btn btn--primary btn--sm suggestion-banner__btn">${ctaText}</button>
+            </div>
+        `;
+    }
+
+    return { render };
 })();

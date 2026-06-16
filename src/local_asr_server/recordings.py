@@ -47,8 +47,9 @@ def _extension_for_mime(mime_type: str) -> str:
 
 
 class RecordingStore:
-    def __init__(self, default_root: Path):
+    def __init__(self, default_root: Path, use_settings_dir: bool = True):
         self._default_root = default_root.expanduser().resolve()
+        self._use_settings_dir = use_settings_dir
         # Verify write permission on current root
         curr_root = self.root
         curr_root.mkdir(parents=True, exist_ok=True)
@@ -60,13 +61,15 @@ class RecordingStore:
 
     @property
     def root(self) -> Path:
-        from local_asr_server.settings import load_settings
-        settings = load_settings()
-        path_str = settings.get("recordings_dir")
-        if path_str:
-            path = Path(path_str).expanduser().resolve()
-        else:
-            path = self._default_root
+        if self._use_settings_dir:
+            from local_asr_server.settings import load_settings
+            settings = load_settings()
+            path_str = settings.get("recordings_dir")
+            if path_str:
+                path = Path(path_str).expanduser().resolve()
+                path.mkdir(parents=True, exist_ok=True)
+                return path
+        path = self._default_root
         path.mkdir(parents=True, exist_ok=True)
         return path
 
@@ -74,6 +77,7 @@ class RecordingStore:
         self,
         *,
         title: str,
+        project_name: str | None = None,
         mime_type: str,
         model: str,
         language: str | None,
@@ -87,6 +91,7 @@ class RecordingStore:
         metadata = {
             "id": recording_id,
             "title": title.strip()[:200] if title.strip() else default_title,
+            "project_name": (project_name or "").strip()[:200],
             "status": "recording",
             "created_at": _utc_now(),
             "stopped_at": None,
@@ -104,19 +109,25 @@ class RecordingStore:
         self._write_metadata(session_dir, metadata)
         return self.public_metadata(metadata)
 
-    def update_title(self, recording_id: str, title: str) -> dict[str, Any]:
+    def update(self, recording_id: str, title: str | None = None, project_name: str | None = None) -> dict[str, Any]:
         with self._lock_for(recording_id):
             session_dir, metadata = self._load(recording_id)
-            new_title = title.strip()[:200]
-            if not new_title:
-                try:
-                    dt = datetime.fromisoformat(metadata["created_at"])
-                    new_title = dt.strftime("%Y-%m-%d %H:%M:%S")
-                except Exception:
-                    new_title = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            metadata["title"] = new_title
+            if title is not None:
+                new_title = title.strip()[:200]
+                if not new_title:
+                    try:
+                        dt = datetime.fromisoformat(metadata["created_at"])
+                        new_title = dt.strftime("%Y-%m-%d %H:%M:%S")
+                    except Exception:
+                        new_title = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                metadata["title"] = new_title
+            if project_name is not None:
+                metadata["project_name"] = project_name.strip()[:200]
             self._write_metadata(session_dir, metadata)
             return self.public_metadata(metadata)
+
+    def update_title(self, recording_id: str, title: str) -> dict[str, Any]:
+        return self.update(recording_id, title=title)
 
     def append_chunk(self, recording_id: str, sequence: int, content: bytes) -> dict[str, Any]:
         if sequence < 0:

@@ -1,6 +1,8 @@
 const RecordingsView = (() => {
     const PAGE_SIZE = 5;
     let recordings = [];
+    let transcriptionByRecordingId = new Map();
+    let transcriptionByAudioFilename = new Map();
     let currentPage = 1;
     let selectHandler = null;
     let renameHandler = null;
@@ -34,12 +36,86 @@ const RecordingsView = (() => {
         dom.next.addEventListener('click', () => setPage(currentPage + 1));
     }
 
+    function getRecordingTime(recording) {
+        return new Date(recording.created_at || recording.updated_at || 0).getTime() || 0;
+    }
+
+    function getDurationSeconds(recording) {
+        const candidates = [
+            recording.duration_seconds,
+            recording.duration,
+            recording.metadata?.duration_seconds,
+            recording.metadata?.duration,
+        ];
+        const value = candidates.find(candidate => Number.isFinite(Number(candidate)));
+        if (value !== undefined) return Math.max(0, Number(value) || 0);
+
+        const startedAt = new Date(recording.created_at || 0).getTime();
+        const stoppedAt = new Date(recording.stopped_at || recording.completed_at || 0).getTime();
+        if (startedAt && stoppedAt && stoppedAt > startedAt) {
+            return Math.round((stoppedAt - startedAt) / 1000);
+        }
+        return 0;
+    }
+
+    function formatDuration(seconds) {
+        if (!seconds) return 'Durata non disponibile';
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins}:${String(secs).padStart(2, '0')}`;
+    }
+
+    function formatDurationLong(seconds) {
+        if (!seconds) return 'Durata non disponibile';
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        const minLabel = mins === 1 ? 'minuto' : 'minuti';
+        const secLabel = secs === 1 ? 'secondo' : 'secondi';
+        return `${mins} ${minLabel} ${secs} ${secLabel}`;
+    }
+
+    function getDurationFill(recording) {
+        const seconds = getDurationSeconds(recording);
+        if (seconds) return Math.min(100, Math.max(8, (seconds / 3600) * 100));
+        const bytes = Number(recording.bytes_written) || 0;
+        if (!bytes) return 8;
+        return Math.min(100, Math.max(10, (bytes / (25 * 1024 * 1024)) * 100));
+    }
+
     function setItems(items) {
-        recordings = items.filter(item => item.audio_file);
+        recordings = items
+            .filter(item => item.audio_file)
+            .sort((a, b) => getRecordingTime(b) - getRecordingTime(a));
         const pageCount = getPageCount();
         currentPage = Math.min(currentPage, pageCount);
         render();
         return recordings.length;
+    }
+
+    function setTranscriptions(items = []) {
+        transcriptionByRecordingId = new Map();
+        transcriptionByAudioFilename = new Map();
+        items.forEach(item => {
+            if (item.recording_id) transcriptionByRecordingId.set(item.recording_id, item);
+            if (item.audio_filename) transcriptionByAudioFilename.set(item.audio_filename, item);
+        });
+        render();
+    }
+
+    function getLinkedTranscription(recording) {
+        if (transcriptionByRecordingId.has(recording.id)) {
+            return transcriptionByRecordingId.get(recording.id);
+        }
+        const audioName = (recording.audio_file || '').split('/').pop();
+        if (audioName && transcriptionByAudioFilename.has(audioName)) {
+            return transcriptionByAudioFilename.get(audioName);
+        }
+        const extension = audioName && audioName.includes('.') ? `.${audioName.split('.').pop()}` : '';
+        const titleName = extension ? `${recording.title}${extension}` : '';
+        if (titleName && transcriptionByAudioFilename.has(titleName)) {
+            return transcriptionByAudioFilename.get(titleName);
+        }
+        return null;
     }
 
     function getPageCount() {
@@ -130,8 +206,12 @@ const RecordingsView = (() => {
 
         const start = (currentPage - 1) * PAGE_SIZE;
         recordings.slice(start, start + PAGE_SIZE).forEach(recording => {
+            const linkedTranscription = getLinkedTranscription(recording);
+            const hasTranscription = Boolean(linkedTranscription);
+            const hasAnalysis = Boolean(linkedTranscription?.analysis);
             const row = document.createElement('article');
-            row.className = 'recording-row';
+            row.className = 'recording-row recording-card';
+            row.style.setProperty('--duration-fill', `${getDurationFill(recording)}%`);
 
             // 1. Play Button
             const playBtn = document.createElement('button');
@@ -230,22 +310,76 @@ const RecordingsView = (() => {
 
             titleContainer.append(titleSpan, editBtn);
 
-            const metadata = document.createElement('span');
-            metadata.textContent = `${formatDate(recording.created_at)} · ${Utils.formatBytes(recording.bytes_written)}`;
+            const metadata = document.createElement('div');
+            metadata.className = 'recording-card__meta';
+            const durationSeconds = getDurationSeconds(recording);
+            const metaRows = [
+                { icon: '📅', label: 'Data', value: formatDate(recording.created_at) },
+                { icon: '⏱', label: 'Durata', value: formatDurationLong(durationSeconds) },
+                { icon: '💾', label: 'Dimensione', value: Utils.formatBytes(recording.bytes_written) },
+            ];
+            metaRows.forEach(item => {
+                const rowEl = document.createElement('span');
+                rowEl.className = 'recording-card__meta-row';
+                rowEl.innerHTML = `<span class="recording-card__meta-icon" aria-hidden="true">${item.icon}</span><span class="recording-card__meta-label">${item.label}</span><strong>${item.value}</strong>`;
+                metadata.appendChild(rowEl);
+            });
             
             info.append(titleContainer, metadata);
 
-            // 3. Transcribe Button
+            const statusBadges = document.createElement('div');
+            statusBadges.className = 'recording-card__status-badges';
+            statusBadges.innerHTML = `
+                <span class="recording-card__status-badge ${hasTranscription ? 'is-ready' : 'is-missing'}" title="${hasTranscription ? 'Trascrizione disponibile' : 'Trascrizione non ancora disponibile'}">
+                    <span aria-hidden="true">📝</span>${hasTranscription ? 'Trascritta' : 'No trascrizione'}
+                </span>
+                <span class="recording-card__status-badge ${hasAnalysis ? 'is-ready' : 'is-missing'}" title="${hasAnalysis ? 'Analisi disponibile' : 'Analisi non ancora disponibile'}">
+                    <span aria-hidden="true">🧠</span>${hasAnalysis ? 'Analizzata' : 'No analisi'}
+                </span>
+            `;
+            info.appendChild(statusBadges);
+
+            // 3. Project actions
+            const actions = document.createElement('div');
+            actions.className = 'recording-card__actions';
+
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'btn btn--ghost btn--sm';
-            button.textContent = 'Trascrivi';
+            button.textContent = 'Apri';
             button.addEventListener('click', () => {
                 stopCurrentAudio();
-                selectHandler(recording, button);
+                selectHandler(recording, button, { forceTranscription: false });
             });
 
-            row.append(playBtn, info, button);
+            const regenerateBtn = document.createElement('button');
+            regenerateBtn.type = 'button';
+            regenerateBtn.className = 'btn btn--ghost btn--sm recording-card__secondary-action';
+            regenerateBtn.textContent = 'Rigenera';
+            regenerateBtn.title = 'Rigenera la trascrizione';
+            regenerateBtn.disabled = !hasTranscription;
+            regenerateBtn.addEventListener('click', () => {
+                if (!hasTranscription) return;
+                stopCurrentAudio();
+                selectHandler(recording, regenerateBtn, { forceTranscription: true });
+            });
+
+            const projectBtn = document.createElement('button');
+            projectBtn.type = 'button';
+            projectBtn.className = 'btn btn--ghost btn--sm recording-card__secondary-action';
+            projectBtn.textContent = 'Progetto';
+            projectBtn.title = 'Apri vista Recording';
+            projectBtn.addEventListener('click', () => {
+                stopCurrentAudio();
+                selectHandler(recording, projectBtn, { openProject: true });
+            });
+
+            const durationBar = document.createElement('span');
+            durationBar.className = 'recording-card__duration';
+            durationBar.setAttribute('aria-hidden', 'true');
+
+            actions.append(button, regenerateBtn, projectBtn);
+            row.append(playBtn, info, actions, durationBar);
             dom.container.appendChild(row);
         });
 
@@ -256,5 +390,5 @@ const RecordingsView = (() => {
         dom.status.textContent = `Pagina ${currentPage} di ${pageCount}`;
     }
 
-    return { init, setItems };
+    return { init, setItems, setTranscriptions };
 })();

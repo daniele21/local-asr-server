@@ -1,134 +1,134 @@
 from __future__ import annotations
 
-import subprocess
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from local_asr_server.server import AudioRouter
+from local_asr_server.audio_router import AudioRouter
 
 
 class AudioRouterTests(unittest.TestCase):
     def setUp(self) -> None:
-        AudioRouter._original_input = None
-        AudioRouter._original_output = None
+        AudioRouter._state.clear()
+        AudioRouter._helper = None
 
     def tearDown(self) -> None:
-        AudioRouter._original_input = None
-        AudioRouter._original_output = None
+        AudioRouter._state.clear()
+        AudioRouter._helper = None
 
-    def test_prefers_profile_for_current_output(self) -> None:
-        profile, physical, expected = AudioRouter._profile_for_output(
-            ["MacBook Speakers", "Local ASR Output - MacBook Speakers"],
-            "MacBook Speakers",
-        )
+    def test_find_blackhole(self) -> None:
+        devices = [
+            {"name": "MacBook Speakers", "uid": "spk", "is_output": True},
+            {"name": "BlackHole 2ch", "uid": "bh", "is_output": True},
+        ]
+        bh = AudioRouter._find_blackhole(devices)
+        self.assertIsNotNone(bh)
+        self.assertEqual(bh["uid"], "bh")
 
-        self.assertEqual(profile, "Local ASR Output - MacBook Speakers")
-        self.assertEqual(physical, "MacBook Speakers")
-        self.assertEqual(expected, "Local ASR Output - MacBook Speakers")
+    def test_is_virtual_output(self) -> None:
+        self.assertTrue(AudioRouter._is_virtual_output("BlackHole 2ch"))
+        self.assertTrue(AudioRouter._is_virtual_output("Multi-Output Device"))
+        self.assertTrue(AudioRouter._is_virtual_output("Local ASR Temporary Output"))
+        self.assertFalse(AudioRouter._is_virtual_output("MacBook Speakers"))
+        self.assertFalse(AudioRouter._is_virtual_output("AirPods"))
 
-    def test_does_not_use_ambiguous_generic_multi_output(self) -> None:
-        profile, physical, expected = AudioRouter._profile_for_output(
-            ["MacBook Speakers", "Multi-Output Device"],
-            "MacBook Speakers",
-        )
+    def test_find_physical_output(self) -> None:
+        devices = [
+            {"name": "MacBook Speakers", "uid": "spk", "is_output": True},
+            {"name": "BlackHole 2ch", "uid": "bh", "is_output": True},
+        ]
+        current = {"name": "BlackHole 2ch", "uid": "bh", "is_output": True}
+        physical = AudioRouter._find_physical_output(current, devices)
+        self.assertIsNotNone(physical)
+        self.assertEqual(physical["uid"], "spk")
 
-        self.assertIsNone(profile)
-        self.assertEqual(physical, "MacBook Speakers")
-        self.assertEqual(expected, "Local ASR Output - MacBook Speakers")
+    @patch("local_asr_server.audio_router.sys.platform", "darwin")
+    @patch.object(AudioRouter, "_get_helper")
+    def test_status_reports_ready(self, mock_get_helper) -> None:
+        mock_helper = MagicMock()
+        mock_helper.list_devices.return_value = [
+            {"name": "MacBook Speakers", "uid": "spk", "is_output": True},
+            {"name": "BlackHole 2ch", "uid": "bh", "is_output": True},
+        ]
+        mock_helper.get_current_output.return_value = {
+            "name": "MacBook Speakers",
+            "uid": "spk",
+            "is_output": True,
+        }
+        mock_get_helper.return_value = mock_helper
 
-    @patch.object(AudioRouter, "get_current_output", return_value="MacBook Speakers")
-    @patch.object(AudioRouter, "get_current_input", return_value="MacBook Microphone")
-    @patch.object(
-        AudioRouter,
-        "get_available_outputs",
-        return_value=[
-            "BlackHole 2ch",
-            "MacBook Speakers",
-            "Local ASR Output - MacBook Speakers",
-        ],
-    )
-    @patch.object(
-        AudioRouter,
-        "get_available_inputs",
-        return_value=["BlackHole 2ch", "MacBook Microphone"],
-    )
-    @patch.object(AudioRouter, "_get_switch_audio_cmd", return_value="SwitchAudioSource")
-    @patch("local_asr_server.server.sys.platform", "darwin")
-    def test_status_reports_ready(
-        self,
-        _switch_audio,
-        _inputs,
-        _outputs,
-        _current_input,
-        _current_output,
-    ) -> None:
         status = AudioRouter.get_status()
 
         self.assertTrue(status["ready_to_record"])
-        self.assertEqual(status["input_device"], "MacBook Microphone")
-        self.assertEqual(
-            status["output_device"],
-            "Local ASR Output - MacBook Speakers",
-        )
+        self.assertTrue(status["blackhole_installed"])
         self.assertEqual(status["physical_output"], "MacBook Speakers")
         self.assertEqual(status["missing"], [])
 
-    @patch("local_asr_server.server.subprocess.run")
-    @patch.object(AudioRouter, "get_current_output", return_value="MacBook Speakers")
-    @patch.object(AudioRouter, "get_current_input", return_value="MacBook Microphone")
-    @patch.object(AudioRouter, "_get_switch_audio_cmd", return_value="SwitchAudioSource")
-    @patch.object(
-        AudioRouter,
-        "get_status",
-        return_value={
-            "ready_to_record": True,
-            "input_device": "MacBook Microphone",
-            "output_device": "Local ASR Output - MacBook Speakers",
-        },
-    )
-    def test_route_saves_original_devices(
-        self,
-        _status,
-        _switch_audio,
-        _current_input,
-        _current_output,
-        run,
-    ) -> None:
-        self.assertTrue(AudioRouter.route_to_multi_output())
+    @patch("local_asr_server.audio_router.sys.platform", "darwin")
+    @patch.object(AudioRouter, "_get_helper")
+    def test_route_saves_original_devices(self, mock_get_helper) -> None:
+        mock_helper = MagicMock()
+        mock_helper.list_devices.return_value = [
+            {"name": "MacBook Speakers", "uid": "spk", "is_output": True},
+            {"name": "BlackHole 2ch", "uid": "bh", "is_output": True},
+        ]
+        mock_helper.get_current_output.return_value = {
+            "name": "MacBook Speakers",
+            "uid": "spk",
+            "is_output": True,
+        }
+        mock_helper.create_aggregate.return_value = {"device_id": 123, "uid": "temp-uid"}
+        mock_get_helper.return_value = mock_helper
 
-        self.assertIsNone(AudioRouter._original_input)
-        self.assertEqual(AudioRouter._original_output, "MacBook Speakers")
-        self.assertEqual(run.call_count, 1)
+        success = AudioRouter.route_to_multi_output()
 
-    @patch(
-        "local_asr_server.server.subprocess.run",
-        side_effect=subprocess.CalledProcessError(1, "SwitchAudioSource"),
-    )
-    @patch.object(AudioRouter, "get_current_output", return_value="MacBook Speakers")
-    @patch.object(AudioRouter, "get_current_input", return_value="MacBook Microphone")
-    @patch.object(AudioRouter, "_get_switch_audio_cmd", return_value="SwitchAudioSource")
-    @patch.object(
-        AudioRouter,
-        "get_status",
-        return_value={
-            "ready_to_record": True,
-            "input_device": "MacBook Microphone",
-            "output_device": "Local ASR Output - MacBook Speakers",
-        },
-    )
-    def test_route_failure_rolls_back_changed_devices(
-        self,
-        _status,
-        _switch_audio,
-        _current_input,
-        _current_output,
-        run,
-    ) -> None:
-        self.assertFalse(AudioRouter.route_to_multi_output())
+        self.assertTrue(success)
+        self.assertEqual(AudioRouter._state.original_output_uid, "spk")
+        self.assertEqual(AudioRouter._state.original_output_name, "MacBook Speakers")
+        self.assertEqual(AudioRouter._state.status, "active")
+        
+        mock_helper.create_aggregate.assert_called_once()
+        mock_helper.set_default_output.assert_called_once()
 
-        self.assertIsNone(AudioRouter._original_input)
-        self.assertIsNone(AudioRouter._original_output)
-        self.assertEqual(run.call_count, 2)
+    @patch("local_asr_server.audio_router.sys.platform", "darwin")
+    @patch.object(AudioRouter, "_get_helper")
+    def test_route_failure_rolls_back(self, mock_get_helper) -> None:
+        mock_helper = MagicMock()
+        mock_helper.list_devices.return_value = [
+            {"name": "MacBook Speakers", "uid": "spk", "is_output": True},
+            {"name": "BlackHole 2ch", "uid": "bh", "is_output": True},
+        ]
+        mock_helper.get_current_output.return_value = {
+            "name": "MacBook Speakers",
+            "uid": "spk",
+            "is_output": True,
+        }
+        mock_helper.create_aggregate.side_effect = Exception("Failed creation")
+        mock_get_helper.return_value = mock_helper
+
+        success = AudioRouter.route_to_multi_output()
+
+        self.assertFalse(success)
+        self.assertEqual(AudioRouter._state.status, "idle")
+        self.assertIsNone(AudioRouter._state.original_output_uid)
+
+    @patch("local_asr_server.audio_router.sys.platform", "darwin")
+    @patch.object(AudioRouter, "_get_helper")
+    def test_restore_original_output(self, mock_get_helper) -> None:
+        mock_helper = MagicMock()
+        mock_get_helper.return_value = mock_helper
+
+        # Setup active state
+        AudioRouter._state.status = "active"
+        AudioRouter._state.original_output_uid = "spk"
+        AudioRouter._state.original_output_name = "MacBook Speakers"
+        AudioRouter._state.temporary_device_uid = "temp-uid"
+
+        success = AudioRouter.restore_original_output()
+
+        self.assertTrue(success)
+        self.assertEqual(AudioRouter._state.status, "idle")
+        mock_helper.set_default_output.assert_called_once_with("spk")
+        mock_helper.destroy_aggregate.assert_called_once_with("temp-uid")
 
 
 if __name__ == "__main__":

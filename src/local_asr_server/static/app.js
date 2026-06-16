@@ -54,6 +54,13 @@ document.addEventListener('DOMContentLoaded', () => {
         recordingsPageStatus: document.getElementById('recordings-page-status'),
         recorderPanel: document.getElementById('view-recording'),
         recordingPageContent: document.getElementById('recording-page-content'),
+        recordingProjectDetail: document.getElementById('recording-project-detail'),
+        recordingProjectTitle: document.getElementById('recording-project-title'),
+        recordingProjectMeta: document.getElementById('recording-project-meta'),
+        recordingProjectGrid: document.getElementById('recording-project-grid'),
+        recordingProjectBack: document.getElementById('recording-project-back'),
+        projectsView: document.getElementById('projects-view'),
+        projectsDatalist: document.getElementById('projects-datalist'),
         dropzone: document.getElementById('dropzone'),
         browseBtn: document.getElementById('browse-btn'),
         helpMenuToggle: document.getElementById('help-menu-toggle'),
@@ -63,11 +70,14 @@ document.addEventListener('DOMContentLoaded', () => {
         sourceCollapsible: document.getElementById('source-collapsible'),
         sourceSummary: document.getElementById('source-summary'),
         transcribeWorkspace: document.getElementById('transcribe-workspace'),
+        sourceModeButtons: document.querySelectorAll('[data-source-mode]'),
+        sourcePanels: document.querySelectorAll('[data-source-panel]'),
 
         // Transcription History & Settings
         transcriptionsList: document.getElementById('transcriptions-list'),
         transcriptionsDirInput: document.getElementById('transcriptions-dir-input'),
         recordingsDirInput: document.getElementById('recordings-dir-input'),
+        transcriptionRecordingsDir: document.getElementById('transcription-recordings-dir'),
         browseTranscriptionsDirBtn: document.getElementById('browse-transcriptions-dir-btn'),
         browseRecordingsDirBtn: document.getElementById('browse-recordings-dir-btn'),
         saveSettingsBtn: document.getElementById('save-settings-btn'),
@@ -92,7 +102,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let timerInterval = null;
     let timerStart = 0;
     let selectedObjectUrl = null;
+    let selectedRecordingId = null;
     let historyPage = 1;
+    let loadedSettings = null;
 
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -105,16 +117,35 @@ document.addEventListener('DOMContentLoaded', () => {
         const savedTheme = localStorage.getItem('theme') || DEFAULTS.theme;
         document.documentElement.setAttribute('data-theme', savedTheme);
 
-        // Populate settings form from config
-        SettingsForm.populate();
+        // Translate the whole DOM
+        i18n.applyAll();
+
+        // Fetch settings from API to populate defaults
+        ApiClient.getSettings().then(settings => {
+            loadedSettings = settings;
+            SettingsForm.populate(settings);
+            updateModelCacheStatus();
+        }).catch(err => {
+            console.error('Failed to load settings on startup:', err);
+            SettingsForm.populate();
+            updateModelCacheStatus();
+        });
+
+        // Setup model select change listener
+        const modelSelect = document.getElementById('model-select');
+        if (modelSelect) {
+            modelSelect.addEventListener('change', updateModelCacheStatus);
+        }
 
         // Initialize components
         if (dom.recordingPageContent && dom.recorderPanel) {
             dom.recordingPageContent.appendChild(dom.recorderPanel);
             dom.recorderPanel.hidden = false;
         }
+        window.App = { switchPage };
         window.AppNavigation = { switchPage };
         CollapsiblePanel.init();
+        setSourceMode('recordings');
         FileDropzone.init({ onFileSelected: handleFileSelected });
         RecordingsView.init({
             container: dom.recordingsList,
@@ -127,21 +158,64 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         Tour.init();
         RecordingController.init({
-            onSaved: () => {
+            onSaved: (recording) => {
                 loadRecordings();
-                Toast.show('Registrazione salvata. Ora puoi trascriverla dalla pagina Trascrizione.', 'success');
+                updateProjectDatalist();
+                Workflow.update({ lastRecordingId: recording.id });
+                
+                // Show SuccessCard inline
+                const targetContainer = document.getElementById('recording-page-content');
+                if (targetContainer) {
+                    const oldCard = targetContainer.querySelector('.success-card');
+                    if (oldCard) oldCard.remove();
+
+                    const successCard = SuccessCard.render({
+                        title: i18n.t('recording.successTitle'),
+                        body: i18n.t('recording.successBody'),
+                        ctas: [
+                            {
+                                label: i18n.t('recording.ctaTranscribe'),
+                                primary: true,
+                                action: () => {
+                                    Workflow.update({
+                                        navigateContext: {
+                                            preselectedRecording: recording
+                                        }
+                                    });
+                                    switchPage('transcription');
+                                    successCard.remove();
+                                }
+                            },
+                            {
+                                label: i18n.t('common.cancel') || 'Chiudi',
+                                primary: false,
+                                action: () => {
+                                    successCard.remove();
+                                }
+                            }
+                        ]
+                    });
+
+                    targetContainer.insertBefore(successCard, targetContainer.firstChild);
+                    successCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
             },
         });
+
+        // Initialize new page controllers
+        DashboardController.init();
+        SettingsPageController.init();
 
         // Bind event handlers
         bindEvents();
 
         // Set initial step
-        StepIndicator.setStep('upload');
+        StepIndicator.reset('upload');
         switchPage(getInitialPage(), { updateHash: false });
         loadRecordings();
         loadSettings();
         loadHistory();
+        updateProjectDatalist();
 
         // Start server health polling
         checkServerHealth();
@@ -154,11 +228,41 @@ document.addEventListener('DOMContentLoaded', () => {
     // ═══════════════════════════════════════════════════════════════════════════
 
     function bindEvents() {
+        // Language switcher flags in header
+        const btnIt = document.getElementById('lang-btn-it');
+        const btnEn = document.getElementById('lang-btn-en');
+        if (btnIt) btnIt.addEventListener('click', () => i18n.setLang('it'));
+        if (btnEn) btnEn.addEventListener('click', () => i18n.setLang('en'));
+
+        function updateLangSwitcherUI() {
+            const currentLang = i18n.getLang();
+            if (btnIt && btnEn) {
+                if (currentLang === 'it') {
+                    btnIt.classList.add('lang-btn--active');
+                    btnEn.classList.remove('lang-btn--active');
+                } else {
+                    btnIt.classList.remove('lang-btn--active');
+                    btnEn.classList.add('lang-btn--active');
+                }
+            }
+        }
+        window.addEventListener('languagechanged', updateLangSwitcherUI);
+        window.addEventListener('languagechanged', () => {
+            SettingsForm.populate(loadedSettings);
+            dom.transcribeBtnText.textContent = i18n.t('transcription.btnTranscribeAudio');
+        });
+        updateLangSwitcherUI();
+
         // Theme toggle
         dom.themeToggle.addEventListener('click', toggleTheme);
 
         // Change file → go back to upload step
         dom.changeFileBtn.addEventListener('click', goToUploadStep);
+        dom.recordingProjectBack?.addEventListener('click', () => {
+            dom.recordingProjectDetail.hidden = true;
+            dom.recordingPageContent.hidden = false;
+            switchPage('recording');
+        });
 
         // Transcribe button
         dom.transcribeBtn.addEventListener('click', startTranscription);
@@ -168,10 +272,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // New transcription
         dom.newTransBtn.addEventListener('click', goToUploadStep);
+        document.querySelectorAll('[data-step-target]').forEach(step => {
+            step.addEventListener('click', () => navigateToStep(step.dataset.stepTarget));
+            step.addEventListener('keydown', event => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    navigateToStep(step.dataset.stepTarget);
+                }
+            });
+        });
         dom.refreshRecordings.addEventListener('click', loadRecordings);
         dom.helpMenuToggle.addEventListener('click', toggleHelpMenu);
         document.querySelectorAll('[data-page-target]').forEach(button => {
             button.addEventListener('click', () => switchPage(button.dataset.pageTarget));
+        });
+        dom.sourceModeButtons.forEach(button => {
+            button.addEventListener('click', () => setSourceMode(button.dataset.sourceMode));
         });
         window.addEventListener('hashchange', () => {
             switchPage(getInitialPage(), { updateHash: false });
@@ -247,25 +363,57 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const data = await ApiClient.health();
             const modelShort = data.default_model.split('/').pop();
-            setServerStatus(true, `${LABELS.statusOnline} · ${modelShort}`);
+            setServerStatus(true, LABELS.statusOnline, modelShort);
         } catch {
             setServerStatus(false, LABELS.statusOffline);
         }
     }
 
-    function setServerStatus(isOnline, text) {
+    function setServerStatus(isOnline, text, title = '') {
         const dot = dom.serverStatus.querySelector('.status-badge__dot');
         const txt = dom.serverStatus.querySelector('.status-badge__text');
 
         dot.className = `status-badge__dot status-badge__dot--${isOnline ? 'online' : 'offline'}`;
         txt.textContent = text;
+        dom.serverStatus.title = title ? `${text} · ${title}` : text;
+    }
+
+    async function updateModelCacheStatus() {
+        const modelSelect = document.getElementById('model-select');
+        const statusDot = document.querySelector('#model-cache-status .status-badge__dot');
+        const statusText = document.querySelector('#model-cache-status .status-badge__text');
+        if (!modelSelect || !statusDot || !statusText) return;
+
+        const selectedModel = modelSelect.value;
+        statusDot.className = 'status-badge__dot';
+        statusText.textContent = 'Verifica...';
+
+        try {
+            const result = await ApiClient.checkModelCache(selectedModel);
+            if (result.cached) {
+                statusDot.className = 'status-badge__dot status-badge__dot--online';
+                statusText.textContent = 'Modello pronto ✅';
+            } else {
+                statusDot.className = 'status-badge__dot status-badge__dot--offline';
+                statusText.textContent = 'Richiede download 📥';
+            }
+        } catch (err) {
+            console.error('Failed to check model cache:', err);
+            statusDot.className = 'status-badge__dot';
+            statusText.textContent = 'Errore verifica';
+        }
     }
 
     async function loadSettings() {
         if (!dom.transcriptionsDirInput) return;
         try {
             const settings = await ApiClient.getSettings();
+            loadedSettings = settings;
             dom.transcriptionsDirInput.value = settings.transcriptions_dir || '';
+            if (dom.transcriptionRecordingsDir) {
+                dom.transcriptionRecordingsDir.textContent = settings.recordings_dir || i18n.t('common.notAvailable');
+                dom.transcriptionRecordingsDir.title = settings.recordings_dir || '';
+            }
             if (dom.recordingsDirInput) {
                 dom.recordingsDirInput.value = settings.recordings_dir || '';
             }
@@ -318,6 +466,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 current.llm_provider || 'mock'
             );
             dom.recordingsDirInput.value = settings.recordings_dir;
+            if (dom.transcriptionRecordingsDir) {
+                dom.transcriptionRecordingsDir.textContent = settings.recordings_dir;
+                dom.transcriptionRecordingsDir.title = settings.recordings_dir;
+            }
             Toast.show('Cartella audio aggiornata con successo.', 'success');
         } catch (err) {
             Toast.show(`Errore: ${err.message}`, 'error');
@@ -361,10 +513,12 @@ document.addEventListener('DOMContentLoaded', () => {
      * Handle a newly selected file — transition from Upload to Transcribe step.
      * @param {File} file
      */
-    function handleFileSelected(file) {
+    function handleFileSelected(file, options = {}) {
         if (selectedObjectUrl) URL.revokeObjectURL(selectedObjectUrl);
         selectedFile = file;
+        selectedRecordingId = options.recordingId || null;
         Workflow.update({ selectedFile: file, step: 'transcribe', sourcePanel: null });
+        setTranscriptionLayoutMode('detail');
 
         // Update file preview
         dom.previewFilename.textContent = file.name;
@@ -378,6 +532,22 @@ document.addEventListener('DOMContentLoaded', () => {
         StepIndicator.setStep('transcribe');
         collapseSourcePanel();
         switchPage('transcription');
+        setRoute('transcription', 'configure');
+        updateModelCacheStatus();
+    }
+
+    function setSourceMode(mode) {
+        const targetMode = mode === 'file' ? 'file' : 'recordings';
+        dom.sourceModeButtons.forEach(button => {
+            const active = button.dataset.sourceMode === targetMode;
+            button.classList.toggle('source-mode-tabs__btn--active', active);
+            button.setAttribute('aria-selected', String(active));
+        });
+        dom.sourcePanels.forEach(panel => {
+            const active = panel.dataset.sourcePanel === targetMode;
+            panel.classList.toggle('source-panel--active', active);
+            panel.hidden = !active;
+        });
     }
 
     function collapseSourcePanel() {
@@ -418,6 +588,7 @@ document.addEventListener('DOMContentLoaded', () => {
     /** Go back to the upload step (reset state) */
     function goToUploadStep() {
         selectedFile = null;
+        selectedRecordingId = null;
         FileDropzone.reset();
         dom.audioElement.removeAttribute('src');
         if (selectedObjectUrl) URL.revokeObjectURL(selectedObjectUrl);
@@ -426,18 +597,106 @@ document.addEventListener('DOMContentLoaded', () => {
         // Reset processing UI
         dom.processingCard.style.display = 'none';
 
-        StepIndicator.setStep('upload');
+        StepIndicator.reset('upload');
         Workflow.update({ selectedFile: null, step: 'upload', sourcePanel: null });
+        setTranscriptionLayoutMode('split');
         expandSourcePanel();
         switchPage('transcription');
+        setRoute('transcription', 'source');
         loadRecordings();
+    }
+
+    function navigateToStep(stepName) {
+        if (!StepIndicator.canGoTo(stepName)) return;
+        if (stepName === 'upload') {
+            StepIndicator.setStep('upload');
+            setTranscriptionLayoutMode('split');
+            expandSourcePanel();
+            switchPage('transcription');
+            setRoute('transcription', 'source');
+            return;
+        }
+        if (stepName === 'transcribe') {
+            if (!selectedFile) {
+                Toast.show('Seleziona prima una sorgente audio.', 'info');
+                return;
+            }
+            StepIndicator.setStep('transcribe');
+            setTranscriptionLayoutMode('detail');
+            collapseSourcePanel();
+            switchPage('transcription');
+            setRoute('transcription', 'configure');
+            return;
+        }
+        if (stepName === 'results') {
+            if (!dom.transcriptText?.textContent?.trim()) return;
+            StepIndicator.setStep('results');
+            setTranscriptionLayoutMode('detail');
+            switchPage('transcription');
+            setRoute('transcription', 'result');
+        }
+    }
+
+    function setTranscriptionLayoutMode(mode) {
+        const main = document.getElementById('transcription-main');
+        if (!main) return;
+        main.classList.toggle('transcription-main--detail', mode === 'detail');
+        main.classList.toggle('transcription-main--split', mode !== 'detail');
     }
 
     function getInitialPage() {
         const page = window.location.hash.replace('#', '');
-        return ['home', 'recording', 'transcription', 'analysis'].includes(page)
-            ? page
+        const root = page.split('/')[0];
+        const aliases = {
+            record: 'recording',
+            transcribe: 'transcription',
+        };
+        const pageName = aliases[root] || root;
+        return ['home', 'recording', 'transcription', 'projects', 'analysis', 'settings'].includes(pageName)
+            ? pageName
             : 'home';
+    }
+
+    function getRouteParts() {
+        return window.location.hash.replace('#', '').split('/').filter(Boolean);
+    }
+
+    function getRouteForPage(pageName) {
+        const routeMap = {
+            home: 'home',
+            recording: 'record',
+            transcription: `transcribe/${StepIndicator.getStep() === 'upload' ? 'source' : StepIndicator.getStep() === 'results' ? 'result' : 'configure'}`,
+            projects: 'projects',
+            analysis: 'analysis',
+            settings: 'settings',
+        };
+        return routeMap[pageName] || pageName;
+    }
+
+    function setRoute(pageName, detail = null) {
+        const route = detail
+            ? (pageName === 'transcription' ? `transcribe/${detail}` : `${pageName}/${detail}`)
+            : getRouteForPage(pageName);
+        history.replaceState(null, '', `#${route}`);
+    }
+
+    function applyRouteState(pageName) {
+        if (pageName !== 'transcription') return;
+        const [, detail] = getRouteParts();
+        if (detail === 'source') {
+            StepIndicator.setStep('upload');
+            expandSourcePanel();
+        } else if (detail === 'result') {
+            StepIndicator.setStep('results');
+        } else if (detail === 'file') {
+            setSourceMode('file');
+            StepIndicator.setStep('upload');
+            expandSourcePanel();
+        } else if (detail === 'recordings') {
+            setSourceMode('recordings');
+            StepIndicator.setStep('upload');
+            expandSourcePanel();
+        }
     }
 
     function switchPage(pageName, options = {}) {
@@ -451,14 +710,40 @@ document.addEventListener('DOMContentLoaded', () => {
             else button.removeAttribute('aria-current');
         });
         if (options.updateHash !== false) {
-            history.replaceState(null, '', `#${pageName}`);
+            setRoute(pageName);
         }
-        if (pageName === 'transcription') {
+        applyRouteState(pageName);
+        if (pageName === 'home') {
+            DashboardController.render();
+        } else if (pageName === 'recording') {
+            const [root, recordingId] = getRouteParts();
+            if (root === 'record' && recordingId) {
+                openRecordingProject(recordingId, { switchPage: false, updateRoute: false }).catch(err => {
+                    console.error('Failed to open recording project:', err);
+                    Toast.show(`Impossibile aprire il progetto: ${err.message}`, 'error');
+                });
+            } else {
+                if (dom.recordingProjectDetail) dom.recordingProjectDetail.hidden = true;
+                if (dom.recordingPageContent) dom.recordingPageContent.hidden = false;
+            }
+        } else if (pageName === 'transcription') {
             loadRecordings();
             loadHistory();
+            const workflowState = Workflow.getState();
+            if (workflowState.navigateContext && workflowState.navigateContext.preselectedRecording) {
+                const rec = workflowState.navigateContext.preselectedRecording;
+                Workflow.update({
+                    navigateContext: Object.assign({}, workflowState.navigateContext, { preselectedRecording: null })
+                });
+                selectRecording(rec);
+            }
         } else if (pageName === 'analysis') {
             AnalysisController.loadTranscriptions();
             AnalysisController.loadSettings();
+        } else if (pageName === 'projects') {
+            loadProjects();
+        } else if (pageName === 'settings') {
+            SettingsPageController.render();
         }
         window.scrollTo({ top: 0, behavior: 'auto' });
     }
@@ -478,8 +763,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!dom.recordingsList) return;
         dom.recordingsList.innerHTML = '<p class="recordings-list__empty">Caricamento registrazioni...</p>';
         try {
-            const { items } = await ApiClient.listRecordings();
-            const count = RecordingsView.setItems(items);
+            const [recordingsData, transcriptionsData] = await Promise.all([
+                ApiClient.listRecordings(),
+                ApiClient.listTranscriptions(1, 999).catch(() => ({ items: [] })),
+            ]);
+            const count = RecordingsView.setItems(recordingsData.items || []);
+            RecordingsView.setTranscriptions(transcriptionsData.items || []);
             dom.recordingsCount.textContent = `${count} ${count === 1 ? 'elemento' : 'elementi'}`;
         } catch (error) {
             console.error('Unable to load recordings:', error);
@@ -487,10 +776,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function selectRecording(recording, button) {
-        button.disabled = true;
-        button.textContent = 'Caricamento...';
+    async function selectRecording(recording, button = null, options = {}) {
+        if (button) {
+            button.disabled = true;
+            button.textContent = 'Caricamento...';
+        }
         try {
+            if (options.openProject) {
+                await openRecordingProject(recording.id);
+                return;
+            }
+
+            if (!options.forceTranscription) {
+                const project = await ApiClient.recordingProject(recording.id);
+                if (project.analysis?.result) {
+                    Workflow.update({
+                        navigateContext: {
+                            preselectedTranscriptionId: project.transcription?.id || null,
+                            preselectedAnalysis: project.analysis.result,
+                        }
+                    });
+                    switchPage('analysis');
+                    return;
+                }
+                if (project.transcription) {
+                    renderResults(project.transcription);
+                    return;
+                }
+            }
+
             const blob = await ApiClient.recordingAudio(recording.id);
             const extension = recording.audio_file.split('.').pop() || 'webm';
             const file = new File(
@@ -498,11 +812,230 @@ document.addEventListener('DOMContentLoaded', () => {
                 `${recording.title}.${extension}`,
                 { type: recording.mime_type || blob.type },
             );
-            handleFileSelected(file);
+            handleFileSelected(file, { recordingId: recording.id });
         } catch (error) {
             Toast.show(`Audio non disponibile: ${error.message}`, 'error');
-            button.disabled = false;
-            button.textContent = 'Usa audio';
+            if (button) {
+                button.disabled = false;
+                button.textContent = options.forceTranscription ? 'Rigenera' : 'Apri';
+            }
+        }
+    }
+
+    async function openRecordingProject(recordingId, options = {}) {
+        const project = await ApiClient.recordingProject(recordingId);
+        const recording = project.recording;
+        if (options.switchPage !== false) {
+            switchPage('recording');
+        }
+        if (options.updateRoute !== false) {
+            history.replaceState(null, '', `#record/${recording.id}`);
+        }
+        dom.recordingPageContent.hidden = true;
+        dom.recordingProjectDetail.hidden = false;
+        dom.recordingProjectTitle.textContent = `Recordings / ${recording.title}`;
+        dom.recordingProjectMeta.textContent = `${formatProjectDate(recording.created_at)} · ${Utils.formatBytes(recording.bytes_written || 0)}`;
+        renderRecordingProject(project);
+    }
+
+    function formatProjectDate(value) {
+        try {
+            return new Intl.DateTimeFormat(i18n.getLang() === 'it' ? 'it-IT' : 'en-US', {
+                dateStyle: 'medium',
+                timeStyle: 'short',
+            }).format(new Date(value));
+        } catch {
+            return value || '';
+        }
+    }
+
+    function renderRecordingProject(project) {
+        const recording = project.recording;
+        const transcription = project.transcription;
+        const analysis = project.analysis?.result || null;
+        dom.recordingProjectGrid.replaceChildren();
+
+        const audioCard = document.createElement('article');
+        audioCard.className = 'recording-project-card';
+        audioCard.innerHTML = `
+            <div class="recording-project-card__header">
+                <span>01</span>
+                <h3>Audio</h3>
+            </div>
+            <audio controls src="/v1/recordings/${recording.id}/audio"></audio>
+            <p>${recording.audio_file || 'Audio locale'}</p>
+            <p><strong>Progetto:</strong> ${escapeHtml(recording.project_name || 'Senza progetto')}</p>
+        `;
+        const assignProjectBtn = document.createElement('button');
+        assignProjectBtn.type = 'button';
+        assignProjectBtn.className = 'btn btn--secondary btn--sm';
+        assignProjectBtn.textContent = 'Cambia progetto';
+        assignProjectBtn.addEventListener('click', async () => {
+            await assignRecordingProject(recording);
+            openRecordingProject(recording.id);
+        });
+        audioCard.appendChild(assignProjectBtn);
+
+        const transcriptionCard = document.createElement('article');
+        transcriptionCard.className = 'recording-project-card';
+        transcriptionCard.innerHTML = `
+            <div class="recording-project-card__header">
+                <span>02</span>
+                <h3>Trascrizione</h3>
+            </div>
+            <p>${transcription ? escapeHtml((transcription.text || '').slice(0, 220)) : 'Nessuna trascrizione collegata.'}</p>
+        `;
+        const transcriptionAction = document.createElement('button');
+        transcriptionAction.type = 'button';
+        transcriptionAction.className = 'btn btn--secondary btn--sm';
+        transcriptionAction.textContent = transcription ? 'Apri trascrizione' : 'Trascrivi audio';
+        transcriptionAction.addEventListener('click', () => {
+            if (transcription) renderResults(transcription);
+            else selectRecording(recording, transcriptionAction, { forceTranscription: true });
+        });
+        transcriptionCard.appendChild(transcriptionAction);
+
+        const analysisCard = document.createElement('article');
+        analysisCard.className = 'recording-project-card';
+        analysisCard.innerHTML = `
+            <div class="recording-project-card__header">
+                <span>03</span>
+                <h3>Analisi</h3>
+            </div>
+            <p>${analysis ? escapeHtml(analysis.summary || analysis.title || 'Analisi disponibile.') : 'Nessuna analisi collegata.'}</p>
+        `;
+        const analysisAction = document.createElement('button');
+        analysisAction.type = 'button';
+        analysisAction.className = 'btn btn--secondary btn--sm';
+        analysisAction.textContent = analysis ? 'Apri analisi' : 'Genera analisi';
+        analysisAction.disabled = !transcription;
+        analysisAction.addEventListener('click', () => {
+            Workflow.update({
+                navigateContext: {
+                    preselectedTranscriptionId: transcription.id,
+                    preselectedAnalysis: analysis,
+                }
+            });
+            switchPage('analysis');
+        });
+        analysisCard.appendChild(analysisAction);
+
+        dom.recordingProjectGrid.append(audioCard, transcriptionCard, analysisCard);
+    }
+
+    function escapeHtml(value) {
+        return String(value || '').replace(/[&<>"']/g, char => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;',
+        }[char]));
+    }
+
+    async function loadProjects() {
+        if (!dom.projectsView) return;
+        dom.projectsView.innerHTML = '<p class="recordings-list__empty">Caricamento progetti...</p>';
+        try {
+            const { items } = await ApiClient.listProjects();
+            renderProjects(items || []);
+            updateProjectDatalist(items || []);
+        } catch (err) {
+            console.error('Failed to load projects:', err);
+            dom.projectsView.innerHTML = '<p class="recordings-list__empty">Impossibile caricare i progetti.</p>';
+        }
+    }
+
+    async function updateProjectDatalist(items = null) {
+        if (!dom.projectsDatalist) return;
+        try {
+            const projects = items || (await ApiClient.listProjects()).items || [];
+            dom.projectsDatalist.replaceChildren();
+            projects
+                .filter(project => !project.is_unassigned)
+                .forEach(project => {
+                    const option = document.createElement('option');
+                    option.value = project.name;
+                    dom.projectsDatalist.appendChild(option);
+                });
+        } catch (err) {
+            console.warn('Unable to update project suggestions:', err);
+        }
+    }
+
+    function renderProjects(projects) {
+        dom.projectsView.replaceChildren();
+        if (projects.length === 0) {
+            dom.projectsView.innerHTML = '<p class="recordings-list__empty">Nessun audio registrato.</p>';
+            return;
+        }
+
+        projects.forEach(project => {
+            const section = document.createElement('section');
+            section.className = 'project-group';
+            const total = project.items.length;
+            const transcribed = project.items.filter(item => item.transcription).length;
+            const analyzed = project.items.filter(item => item.analysis).length;
+            section.innerHTML = `
+                <div class="project-group__header">
+                    <div>
+                        <span class="workspace-heading__eyebrow">${project.is_unassigned ? 'DA ORGANIZZARE' : 'PROGETTO'}</span>
+                        <h3>${escapeHtml(project.name)}</h3>
+                    </div>
+                    <div class="project-group__stats">
+                        <span>${total} audio</span>
+                        <span>${transcribed} trascrizioni</span>
+                        <span>${analyzed} analisi</span>
+                    </div>
+                </div>
+            `;
+
+            const grid = document.createElement('div');
+            grid.className = 'project-recordings-grid';
+            project.items.forEach(item => {
+                const recording = item.recording;
+                const card = document.createElement('article');
+                card.className = 'project-recording-card';
+                card.innerHTML = `
+                    <div class="project-recording-card__top">
+                        <div>
+                            <h4>${escapeHtml(recording.title)}</h4>
+                            <p>${formatProjectDate(recording.created_at)} · ${Utils.formatBytes(recording.bytes_written || 0)}</p>
+                        </div>
+                        <button type="button" class="btn btn--ghost btn--sm" data-action="assign">Progetto</button>
+                    </div>
+                    <div class="project-recording-card__status">
+                        <span>🎧 Audio</span>
+                        <span class="${item.transcription ? 'is-ready' : ''}">📝 ${item.transcription ? 'Trascritta' : 'Da trascrivere'}</span>
+                        <span class="${item.analysis ? 'is-ready' : ''}">🧠 ${item.analysis ? 'Analizzata' : 'Da analizzare'}</span>
+                    </div>
+                    <div class="project-recording-card__actions">
+                        <button type="button" class="btn btn--secondary btn--sm" data-action="open">Apri vista</button>
+                        <button type="button" class="btn btn--ghost btn--sm" data-action="smart">Vai al prossimo step</button>
+                    </div>
+                `;
+                card.querySelector('[data-action="open"]').addEventListener('click', () => openRecordingProject(recording.id));
+                card.querySelector('[data-action="smart"]').addEventListener('click', () => selectRecording(recording));
+                card.querySelector('[data-action="assign"]').addEventListener('click', () => assignRecordingProject(recording));
+                grid.appendChild(card);
+            });
+            section.appendChild(grid);
+            dom.projectsView.appendChild(section);
+        });
+    }
+
+    async function assignRecordingProject(recording) {
+        const current = recording.project_name || '';
+        const next = prompt('Nome progetto', current);
+        if (next === null) return;
+        try {
+            await ApiClient.updateRecording(recording.id, { project_name: next.trim() });
+            Toast.show('Progetto aggiornato.', 'success');
+            loadProjects();
+            loadRecordings();
+            updateProjectDatalist();
+        } catch (err) {
+            Toast.show(`Aggiornamento progetto fallito: ${err.message}`, 'error');
         }
     }
 
@@ -602,6 +1135,7 @@ document.addEventListener('DOMContentLoaded', () => {
             readBtn.className = 'btn btn--ghost btn--sm';
             readBtn.textContent = 'Leggi';
             readBtn.addEventListener('click', () => {
+                setTranscriptionLayoutMode('detail');
                 renderResults(item);
             });
 
@@ -687,6 +1221,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData();
         formData.append('file', selectedFile);
         formData.append('stream', 'true');
+        if (selectedRecordingId) formData.append('recording_id', selectedRecordingId);
 
         const settings = SettingsForm.getValues();
 
@@ -763,7 +1298,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (event.type === 'progress') {
             dom.progressStatus.textContent = event.message;
 
-            if (event.step === 'downloading' || event.step === 'loading_model') {
+            if (event.step === 'downloading') {
+                if (event.percent !== undefined) {
+                    dom.progressBarFill.classList.remove('progress__fill--indeterminate');
+                    dom.progressBarFill.style.width = `${event.percent}%`;
+                    dom.progressLabel.textContent = `${Math.round(event.percent)}%`;
+                } else {
+                    dom.progressBarFill.classList.add('progress__fill--indeterminate');
+                    dom.progressLabel.textContent = '...';
+                }
+            } else if (event.step === 'loading_model') {
                 dom.progressBarFill.classList.add('progress__fill--indeterminate');
                 dom.progressLabel.textContent = '...';
             } else if (event.step === 'transcribing') {
@@ -776,6 +1320,9 @@ document.addEventListener('DOMContentLoaded', () => {
             dom.progressBarFill.classList.remove('progress__fill--indeterminate');
             dom.progressBarFill.style.width = '100%';
             dom.progressLabel.textContent = '100%';
+
+            // Update model cache status now that it has been downloaded successfully
+            updateModelCacheStatus();
 
             renderResults(event.data);
         }
@@ -836,7 +1383,7 @@ document.addEventListener('DOMContentLoaded', () => {
     /** Re-enable all interactive elements after transcription */
     function unlockUI() {
         dom.transcribeBtn.disabled = false;
-        dom.transcribeBtnText.textContent = LABELS.transcribeAction;
+        dom.transcribeBtnText.textContent = i18n.t('transcription.btnTranscribeAudio');
         dom.btnSpinner.style.display = 'none';
         dom.changeFileBtn.disabled = false;
     }
@@ -879,7 +1426,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
             console.log("[ASR] Transitioning to step 'results'");
             // Transition to Step 3
+            const transId = data.saved_id || data.id;
             StepIndicator.setStep('results');
+            setTranscriptionLayoutMode('detail');
+            setRoute('transcription', transId ? `result/${transId}` : 'result');
+
+            // Show SuccessCard inline
+            const targetContainer = document.getElementById('section-results');
+            if (targetContainer) {
+                const oldCard = targetContainer.querySelector('.success-card');
+                if (oldCard) oldCard.remove();
+
+                if (transId) {
+                    const successCard = SuccessCard.render({
+                        title: i18n.t('transcription.successTitle'),
+                        body: i18n.t('transcription.successBody'),
+                        ctas: [
+                            {
+                                label: i18n.t('transcription.ctaAnalyze'),
+                                primary: true,
+                                action: () => {
+                                    Workflow.update({
+                                        navigateContext: {
+                                            preselectedTranscriptionId: transId
+                                        }
+                                    });
+                                    switchPage('analysis');
+                                    successCard.remove();
+                                }
+                            },
+                            {
+                                label: i18n.t('common.cancel') || 'Chiudi',
+                                primary: false,
+                                action: () => {
+                                    successCard.remove();
+                                }
+                            }
+                        ]
+                    });
+
+                    targetContainer.insertBefore(successCard, targetContainer.firstChild);
+                }
+            }
 
             // Scroll to results
             document.getElementById('section-results').scrollIntoView({ behavior: 'smooth' });
@@ -1148,6 +1736,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     opt.textContent = `${dateStr} - ${fileBase} (${textSnippet})`;
                     select.appendChild(opt);
                 });
+
+                const workflowState = Workflow.getState();
+                if (workflowState.navigateContext && workflowState.navigateContext.preselectedTranscriptionId) {
+                    const transcriptionId = workflowState.navigateContext.preselectedTranscriptionId;
+                    const preselectedAnalysis = workflowState.navigateContext.preselectedAnalysis;
+                    Workflow.update({
+                        navigateContext: Object.assign({}, workflowState.navigateContext, {
+                            preselectedTranscriptionId: null,
+                            preselectedAnalysis: null,
+                        })
+                    });
+                    select.value = transcriptionId;
+                    select.dispatchEvent(new Event('change'));
+                    if (preselectedAnalysis) {
+                        showExistingAnalysis(preselectedAnalysis);
+                    }
+                }
             } catch (err) {
                 console.error('Failed to load transcriptions in analysis select:', err);
                 select.innerHTML = '<option value="">Errore nel caricamento storico</option>';
@@ -1240,9 +1845,51 @@ document.addEventListener('DOMContentLoaded', () => {
                 processingCard.style.display = 'none';
                 resultCard.style.display = 'block';
 
+                // Show SuccessCard inline
+                const targetContainer = document.getElementById('analysis-result-card');
+                if (targetContainer) {
+                    const oldCard = targetContainer.querySelector('.success-card');
+                    if (oldCard) oldCard.remove();
+
+                    const successCard = SuccessCard.render({
+                        title: i18n.t('analysis.successTitle'),
+                        body: i18n.t('analysis.successBody'),
+                        ctas: [
+                            {
+                                label: i18n.t('analysis.btnCopyMarkdown'),
+                                primary: true,
+                                action: () => {
+                                    copyResults();
+                                }
+                            },
+                            {
+                                label: i18n.t('analysis.btnGoDashboard'),
+                                primary: false,
+                                action: () => {
+                                    switchPage('home');
+                                    successCard.remove();
+                                }
+                            }
+                        ]
+                    });
+
+                    targetContainer.insertBefore(successCard, targetContainer.firstChild);
+                }
+
+                // Increment manual analysis count in localStorage
+                try {
+                    const currentCount = parseInt(localStorage.getItem('analyses_count') || '0', 10);
+                    localStorage.setItem('analyses_count', String(currentCount + 1));
+                } catch {}
+                loadTranscriptions();
+
                 // Save setting update
                 const settings = await ApiClient.getSettings();
-                await ApiClient.updateSettings(settings.transcriptions_dir, apiKey, provider);
+                const payloadSettings = Object.assign({}, settings, {
+                    gemini_api_key: apiKey,
+                    llm_provider: provider
+                });
+                await ApiClient.updateSettings(payloadSettings);
 
             } catch (err) {
                 console.error('Analysis failed:', err);
@@ -1296,6 +1943,16 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        function showExistingAnalysis(result) {
+            const processingCard = document.getElementById('analysis-processing-card');
+            const emptyCard = document.getElementById('analysis-empty-card');
+            const resultCard = document.getElementById('analysis-result-card');
+            if (processingCard) processingCard.style.display = 'none';
+            if (emptyCard) emptyCard.style.display = 'none';
+            if (resultCard) resultCard.style.display = 'block';
+            renderAnalysisResult(result);
+        }
+
         function copyResults() {
             const title = document.getElementById('analysis-result-title').textContent;
             const summary = document.getElementById('analysis-result-summary').textContent;
@@ -1318,7 +1975,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return {
             init,
             loadTranscriptions,
-            loadSettings
+            loadSettings,
+            showExistingAnalysis
         };
     })();
 

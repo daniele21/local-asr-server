@@ -1,0 +1,434 @@
+"""
+transcriber.py — Transcription engine wrapper and orchestrator for local-asr-server.
+
+Encapsulates the MLX Whisper runtime execution, stdout capturing, result caching,
+and model caching logic.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+import time
+import math
+import json
+import queue
+import hashlib
+import logging
+import asyncio
+import threading
+import contextlib
+from pathlib import Path
+from typing import Optional, Any, Dict, Generator
+
+from local_asr_server.paths import get_cache_dir
+
+logger = logging.getLogger("uvicorn.error")
+CACHE_DIR = get_cache_dir()
+
+
+# ── Utility Helpers ───────────────────────────────────────────────────────────
+
+def str_to_bool(value: str | bool | None, default: bool = False) -> bool:
+    """Convert a string or boolean configuration value to a real boolean."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return value.lower() in {"1", "true", "yes", "y", "on"}
+
+
+def resolve_model(model_name: str) -> str:
+    """
+    Resolve a model name to a local absolute path if it exists in LM Studio
+    or is already an absolute/relative path.
+    """
+    if not model_name:
+        return model_name
+    if model_name.startswith("/") or model_name.startswith("."):
+        return model_name
+    # Check LM Studio path
+    lm_studio_path = Path(f"~/.lmstudio/models/{model_name}").expanduser()
+    if lm_studio_path.exists():
+        return str(lm_studio_path)
+    return model_name
+
+
+try:
+    from tqdm import tqdm
+    class DownloadProgressTqdm(tqdm):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._report()
+
+        def update(self, n=1):
+            super().update(n)
+            self._report()
+
+        def _report(self):
+            if self.total and self.total > 0:
+                percent = (self.n / self.total) * 100
+                print(f"DOWNLOAD_PROGRESS:{percent:.1f}:{self.n}:{self.total}")
+                sys.stdout.flush()
+except ImportError:
+    class DownloadProgressTqdm:
+        def __init__(self, *args, **kwargs):
+            self.total = kwargs.get("total", 0)
+            self.n = 0
+            self._report()
+        def update(self, n=1):
+            self.n += n
+            self._report()
+        def close(self):
+            pass
+        def _report(self):
+            if self.total and self.total > 0:
+                percent = (self.n / self.total) * 100
+                print(f"DOWNLOAD_PROGRESS:{percent:.1f}:{self.n}:{self.total}")
+                sys.stdout.flush()
+
+
+def is_model_cached(model_name: str) -> bool:
+    """
+    Check if the specified Hugging Face model resides in the local cache,
+    or is a direct local file path.
+    """
+    resolved = resolve_model(model_name)
+    if resolved.startswith("/") or resolved.startswith("."):
+        return Path(resolved).exists()
+    
+    # Hugging Face cache structure check
+    folder_name = "models--" + resolved.replace("/", "--")
+    cache_dir = Path(os.path.expanduser("~/.cache/huggingface/hub")) / folder_name
+    if cache_dir.exists():
+        snapshots_dir = cache_dir / "snapshots"
+        if snapshots_dir.exists():
+            for p in snapshots_dir.iterdir():
+                if p.is_dir():
+                    # Look for model weight files (like weights.npz, model.safetensors, or model.bin)
+                    # and check that their resolved symlink target exists and is not incomplete.
+                    for f in p.iterdir():
+                        if f.name == "weights.npz" or f.suffix in (".npz", ".safetensors", ".bin"):
+                            try:
+                                resolved_sym = f.resolve()
+                                if resolved_sym.exists() and not resolved_sym.name.endswith(".incomplete"):
+                                    return True
+                            except Exception:
+                                pass
+    return False
+
+
+class ThreadStdoutCapture:
+    """Capture stdout line-by-line inside a worker thread and feed it into a Queue."""
+    def __init__(self, q: queue.Queue):
+        self.q = q
+        self.original_stdout = sys.stdout
+
+    def write(self, text: str):
+        self.original_stdout.write(text)
+        self.original_stdout.flush()
+        if text.strip():
+            self.q.put(text.strip())
+
+    def flush(self):
+        self.original_stdout.flush()
+
+
+# ── Caching Layer ─────────────────────────────────────────────────────────────
+
+def _clean_nan_values(val: Any) -> Any:
+    """Recursively clean float('nan') or float('inf') values into None to ensure valid JSON."""
+    if isinstance(val, dict):
+        return {k: _clean_nan_values(v) for k, v in val.items()}
+    elif isinstance(val, list):
+        return [_clean_nan_values(x) for x in val]
+    elif isinstance(val, float):
+        if math.isnan(val) or math.isinf(val):
+            return None
+        return val
+    return val
+
+
+def generate_cache_key(
+    audio_hash: str,
+    model: str,
+    language: Optional[str],
+    task: str,
+    word_timestamps: str | bool,
+    temperature: Optional[float],
+    condition_on_previous_text: str | bool,
+) -> str:
+    """Generate a unique SHA-256 cache key based on the audio hash and run parameters."""
+    param_string = f"{audio_hash}:{model}:{language}:{task}:{word_timestamps}:{temperature}:{condition_on_previous_text}"
+    return hashlib.sha256(param_string.encode("utf-8")).hexdigest()
+
+
+def get_cached_result(cache_key: str) -> Optional[Dict[str, Any]]:
+    """Retrieve and clean cached transcription result from local disk, if present."""
+    cache_file = CACHE_DIR / f"{cache_key}.json"
+    if cache_file.exists():
+        try:
+            with open(cache_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return _clean_nan_values(data)
+        except Exception as e:
+            logger.warning(f"Failed to read cache file {cache_file}: {e}")
+    return None
+
+
+def save_cached_result(cache_key: str, data: Dict[str, Any]) -> None:
+    """Save the transcription result to local disk cache folder."""
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_file = CACHE_DIR / f"{cache_key}.json"
+        cleaned_data = _clean_nan_values(data)
+        with open(cache_file, "w", encoding="utf-8") as f:
+            json.dump(cleaned_data, f, ensure_ascii=False, indent=2)
+        logger.info(f"Saved transcription to cache: {cache_file}")
+    except Exception as e:
+        logger.warning(f"Failed to write cache file {cache_file}: {e}")
+
+
+# ── Whisper API Invocation ────────────────────────────────────────────────────
+
+def _transcribe(
+    *,
+    audio_path: str,
+    model: str,
+    language: Optional[str],
+    task: str,
+    word_timestamps: bool,
+    initial_prompt: Optional[str],
+    temperature: Optional[float],
+    condition_on_previous_text: bool,
+    verbose: Optional[bool],
+) -> dict:
+    """Import and call mlx_whisper.transcribe with explicit parameters."""
+    import mlx_whisper
+
+    if not language:
+        language = None
+
+    resolved_model = resolve_model(model)
+
+    kwargs = {
+        "path_or_hf_repo": resolved_model,
+        "language": language,
+        "task": task,
+        "word_timestamps": word_timestamps,
+        "initial_prompt": initial_prompt,
+        "condition_on_previous_text": condition_on_previous_text,
+        "verbose": verbose,
+    }
+
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+
+    # Filter out None values to let mlx_whisper use its defaults
+    kwargs = {k: v for k, v in kwargs.items() if v is not None}
+
+    return mlx_whisper.transcribe(
+        audio_path,
+        **kwargs,
+    )
+
+
+# ── Transcription Orchestration ───────────────────────────────────────────────
+
+def transcribe_file_sync(
+    audio_path: str,
+    model: str,
+    language: Optional[str],
+    task: str,
+    word_timestamps: bool,
+    initial_prompt: Optional[str],
+    temperature: Optional[float],
+    condition_on_previous_text: bool,
+    verbose: Optional[bool] = None,
+) -> dict:
+    """Run transcription synchronously for the given file."""
+    return _transcribe(
+        audio_path=audio_path,
+        model=model,
+        language=language,
+        task=task,
+        word_timestamps=word_timestamps,
+        initial_prompt=initial_prompt,
+        temperature=temperature,
+        condition_on_previous_text=condition_on_previous_text,
+        verbose=verbose,
+    )
+
+
+async def transcribe_stream_generator(
+    audio_path: str,
+    model: str,
+    language: Optional[str],
+    task: str,
+    word_timestamps: str | bool,
+    initial_prompt: Optional[str],
+    temperature: Optional[float],
+    condition_on_previous_text: str | bool,
+    cache_key: str,
+    audio_filename: Optional[str],
+    recording_id: Optional[str],
+    transcription_store: Any,
+    started_at: float,
+) -> Generator[str, None, None]:
+    """
+    Stream transcription updates using NDJSON. Starts a background worker thread
+    to run mlx-whisper, and yields progress/transcription outputs over an queue.
+    """
+    q: queue.Queue = queue.Queue()
+    
+    # Send initial progress payload
+    model_is_cached = is_model_cached(model)
+    logger.info(f"[Transcriber] Model cache status for {model}: cached={model_is_cached}")
+
+    if model_is_cached:
+        yield json.dumps({
+            "type": "progress",
+            "step": "loading_model",
+            "message": "Caricamento del modello Whisper in memoria..."
+        }) + "\n"
+    else:
+        yield json.dumps({
+            "type": "progress",
+            "step": "downloading",
+            "message": f"Download del modello '{model}' da Hugging Face (~1.6 GB)..."
+        }) + "\n"
+
+    transcribe_result = {}
+    transcribe_error = None
+
+    def worker():
+        nonlocal transcribe_error
+        try:
+            logger.info(f"[Transcriber] [Worker Thread] Starting transcription for {audio_path}")
+            capture = ThreadStdoutCapture(q)
+            with contextlib.redirect_stdout(capture):
+                resolved_model = resolve_model(model)
+                if not resolved_model.startswith("/") and not resolved_model.startswith("."):
+                    if not is_model_cached(resolved_model):
+                        from huggingface_hub import snapshot_download
+                        print(f"DOWNLOAD_START:{model}")
+                        sys.stdout.flush()
+                        try:
+                            snapshot_download(
+                                repo_id=resolved_model,
+                                tqdm_class=DownloadProgressTqdm,
+                            )
+                        except Exception as e:
+                            logger.warning(f"Pre-download failed (will retry in mlx_whisper): {e}")
+                        print(f"DOWNLOAD_COMPLETE:{model}")
+                        sys.stdout.flush()
+
+                res = _transcribe(
+                    audio_path=audio_path,
+                    model=model,
+                    language=language,
+                    task=task,
+                    word_timestamps=str_to_bool(word_timestamps),
+                    initial_prompt=initial_prompt,
+                    temperature=temperature,
+                    condition_on_previous_text=str_to_bool(condition_on_previous_text, True),
+                    verbose=True,
+                )
+                transcribe_result.update(res)
+            logger.info(f"[Transcriber] [Worker Thread] Transcription completed successfully")
+        except Exception as e:
+            logger.error(f"[Transcriber] [Worker Thread] Transcription failed: {e}", exc_info=True)
+            transcribe_error = e
+
+    t = threading.Thread(target=worker)
+    t.start()
+
+    # Poll thread stdout capture queue
+    while t.is_alive() or not q.empty():
+        try:
+            msg = q.get_nowait()
+            logger.info(f"[Transcriber] [Live Segment] {msg}")
+
+            if msg.startswith("DOWNLOAD_PROGRESS:"):
+                parts = msg.split(":")
+                if len(parts) >= 4:
+                    percent_str = parts[1]
+                    downloaded_bytes = int(parts[2])
+                    total_bytes = int(parts[3])
+                    downloaded_mb = downloaded_bytes / (1024 * 1024)
+                    total_mb = total_bytes / (1024 * 1024)
+                    yield json.dumps({
+                        "type": "progress",
+                        "step": "downloading",
+                        "percent": float(percent_str),
+                        "message": f"Download del modello '{model}': {percent_str}% ({downloaded_mb:.1f} MB / {total_mb:.1f} MB)"
+                    }) + "\n"
+                continue
+            elif msg.startswith("DOWNLOAD_START:"):
+                yield json.dumps({
+                    "type": "progress",
+                    "step": "downloading",
+                    "percent": 0.0,
+                    "message": f"Avvio download del modello '{model}' da Hugging Face..."
+                }) + "\n"
+                continue
+            elif msg.startswith("DOWNLOAD_COMPLETE:"):
+                yield json.dumps({
+                    "type": "progress",
+                    "step": "loading_model",
+                    "percent": 100.0,
+                    "message": "Download completato. Caricamento del modello in memoria..."
+                }) + "\n"
+                continue
+
+            yield json.dumps({
+                "type": "progress",
+                "step": "transcribing",
+                "message": msg
+            }) + "\n"
+        except queue.Empty:
+            await asyncio.sleep(0.1)
+
+    t.join()
+
+    # Clean up file
+    try:
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
+            logger.info(f"[Transcriber] Cleaned up temporary file: {audio_path}")
+    except OSError as e:
+        logger.warning(f"[Transcriber] Failed to remove temp file {audio_path}: {e}")
+
+    if transcribe_error:
+        yield json.dumps({
+            "type": "error",
+            "message": f"Transcription failed: {transcribe_error}"
+        }) + "\n"
+        return
+
+    # Success payload formulation
+    elapsed = time.perf_counter() - started_at
+    logger.info(f"[Transcriber] Total processing time (streaming): {elapsed:.2f} seconds")
+    
+    payload = {
+        "text": transcribe_result.get("text", ""),
+        "language": transcribe_result.get("language", language),
+        "segments": transcribe_result.get("segments", []),
+        "model": model,
+        "backend": "mlx-whisper",
+        "recording_id": recording_id or "",
+        "stats": {
+            "time_total_seconds": elapsed,
+        },
+    }
+    payload = _clean_nan_values(payload)
+    save_cached_result(cache_key, payload)
+    
+    saved_meta = transcription_store.save(payload, audio_filename=audio_filename, recording_id=recording_id)
+    payload["saved_id"] = saved_meta["id"]
+    payload["saved_file_path"] = str(transcription_store.root)
+    
+    yield json.dumps({
+        "type": "completed",
+        "data": payload
+    }) + "\n"

@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ASR Whisper Studio</title>
+    <title>ClosedRoom</title>
     <meta name="description" content="Local ASR transcription studio powered by MLX Whisper on Apple Silicon">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/styles.css?v=1.0.2">
+    <link rel="stylesheet" href="/static/styles.css?v=1.0.5">
     <script>
         window.addEventListener('error', function(e) {
             console.error('[ASR Global Error]', e);
@@ -33,86 +33,80 @@
     <div class="app-shell">
         <!-- ─── Header ──────────────────────────────────────────────────── -->
         <header class="header" id="app-header">
-            <div class="header__brand">
+            <button type="button" class="header__brand" data-page-target="home" aria-label="Vai alla dashboard ClosedRoom">
                 <div class="header__logo">
-                    <img src="/static/logo-dark.svg" alt="ASR Whisper Studio Logo" class="logo-img logo-img--dark">
-                    <img src="/static/logo-light.svg" alt="ASR Whisper Studio Logo" class="logo-img logo-img--light">
+                    <img src="/static/logo-dark.svg" alt="ClosedRoom Logo" class="logo-img logo-img--dark">
+                    <img src="/static/logo-light.svg" alt="ClosedRoom Logo" class="logo-img logo-img--light">
                 </div>
                 <div class="header__text">
-                    <h1 id="app-title">ASR Whisper Studio</h1>
-                    <p id="app-subtitle">Trascrizione audio locale e ultrarapida</p>
+                    <h1 id="app-title">ClosedRoom</h1>
+                    <p id="app-subtitle" data-i18n="header.subtitle">Trascrizione audio locale e ultrarapida</p>
                 </div>
-            </div>
+            </button>
+
+            <!-- Central Navigation -->
+            <nav class="primary-nav" aria-label="Navigazione principale" id="app-nav">
+                <button type="button" class="primary-nav__item tooltip" data-page-target="recording" data-i18n-title="nav.recording">
+                    <span class="nav-icon">🎙️</span>
+                    <span class="nav-label" data-i18n="nav.recording">Registrazione</span>
+                </button>
+                <button type="button" class="primary-nav__item tooltip" data-page-target="transcription" data-i18n-title="nav.transcription">
+                    <span class="nav-icon">📝</span>
+                    <span class="nav-label" data-i18n="nav.transcription">Trascrizione</span>
+                </button>
+                <button type="button" class="primary-nav__item tooltip" data-page-target="projects" title="Progetti">
+                    <span class="nav-icon">🗂️</span>
+                    <span class="nav-label">Progetti</span>
+                </button>
+                <button type="button" class="primary-nav__item tooltip" data-page-target="analysis" data-i18n-title="nav.analysis">
+                    <span class="nav-icon">🧠</span>
+                    <span class="nav-label" data-i18n="nav.analysis">Analisi</span>
+                </button>
+            </nav>
+
             <div class="header__actions">
                 <div class="status-badge" id="server-status">
                     <span class="status-badge__dot status-badge__dot--offline"></span>
-                    <span class="status-badge__text">Connessione...</span>
+                    <span class="status-badge__text" data-i18n="header.statusConnecting">Connessione...</span>
                 </div>
                 <div class="help-menu">
-                    <button id="help-menu-toggle" class="icon-btn" aria-label="Apri aiuto" aria-expanded="false" aria-controls="help-menu-panel">
+                    <button id="help-menu-toggle" class="icon-btn tooltip" aria-label="Apri aiuto" aria-expanded="false" aria-controls="help-menu-panel" data-i18n-title="common.help" data-i18n-aria="common.help">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.8 1c0 2-3 2.5-3 4"/><path d="M12 18h.01"/></svg>
                     </button>
                     <div class="help-menu__panel" id="help-menu-panel" hidden>
-                        <strong>Aiuto e demo</strong>
-                        <button type="button" id="start-tour-btn">Tour guidato</button>
-                        <button type="button" id="start-showcase-btn">Showcase automatico</button>
-                        <button type="button" id="start-recording-btn">Registra demo</button>
-                        <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.08); margin: 0.5rem 0;">
-                        <strong style="padding: 2px 10px; display: block; font-size: 0.75rem;">macOS App Bar Widget (🎙️)</strong>
-                        <div style="font-size: 0.72rem; line-height: 1.35; padding: 0 10px 8px; color: var(--text-muted);">
-                            <p style="margin: 0 0 6px 0;">ClosedRoom vive nella barra dei menu superiore (icona 🎙️).</p>
-                            <p style="margin: 0 0 6px 0;"><strong>Se non la vedi:</strong></p>
-                            <ul style="margin: 0; padding-left: 14px; list-style-type: disc;">
-                                <li style="margin-bottom: 3px;"><strong>Notch / Spazio ridotto:</strong> macOS nasconde le icone extra a sinistra. Chiudi altre icone per farla comparire.</li>
-                                <li style="margin-bottom: 0;"><strong>Scorciatoie globali:</strong> Assicurati di abilitare l'app in <em>Impostazioni di Sistema ➔ Privacy ➔ Accessibilità</em> per sbloccare le hotkey.</li>
-                            </ul>
+                        <strong data-i18n="dashboard.firstStepsTitle">Aiuto e demo</strong>
+                        <button type="button" id="start-tour-btn" style="display:none;">Tour guidato</button>
+                        <button type="button" id="start-showcase-btn" style="display:none;">Showcase automatico</button>
+                        <button type="button" id="start-recording-btn" style="display:none;">Registra demo</button>
+                        <hr class="help-menu__divider">
+                        <strong class="help-menu__section-title">macOS App Bar Widget (🎙️)</strong>
+                        <div class="help-menu__body">
+                             <p>ClosedRoom vive nella barra dei menu superiore (icona 🎙️).</p>
+                             <p><strong>Se non la vedi:</strong></p>
+                             <ul class="help-menu__list">
+                                 <li><strong>Notch / Spazio ridotto:</strong> macOS nasconde le icone extra a sinistra. Chiudi altre icone per farla comparire.</li>
+                                 <li><strong>Scorciatoie globali:</strong> Assicurati di abilitare l'app in <em>Impostazioni di Sistema ➔ Privacy ➔ Accessibilità</em> per sbloccare le hotkey.</li>
+                             </ul>
                         </div>
                     </div>
                 </div>
-                <button id="theme-toggle" class="icon-btn" aria-label="Cambia tema">
+                <div class="lang-switcher" aria-label="Lingua interfaccia">
+                    <button type="button" class="lang-btn" id="lang-btn-it" aria-label="Italiano" title="Italiano"><span aria-hidden="true">🇮🇹</span><span>IT</span></button>
+                    <button type="button" class="lang-btn" id="lang-btn-en" aria-label="English" title="English"><span aria-hidden="true">🇬🇧</span><span>EN</span></button>
+                </div>
+                <button type="button" class="icon-btn tooltip" data-page-target="settings" aria-label="Apri impostazioni" title="Impostazioni" data-i18n-title="common.settings" data-i18n-aria="common.settings">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/><path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.04.04a2.1 2.1 0 0 1-2.97 2.97l-.04-.04a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.09 1.65V21a2.1 2.1 0 0 1-4.2 0v-.06a1.8 1.8 0 0 0-1.09-1.65 1.8 1.8 0 0 0-1.98.36l-.04.04a2.1 2.1 0 1 1-2.97-2.97l.04-.04A1.8 1.8 0 0 0 4.6 15a1.8 1.8 0 0 0-1.65-1.09H3a2.1 2.1 0 1 1 0-4.2h.06A1.8 1.8 0 0 0 4.7 8.62a1.8 1.8 0 0 0-.36-1.98l-.04-.04a2.1 2.1 0 1 1 2.97-2.97l.04.04A1.8 1.8 0 0 0 9.3 4.03 1.8 1.8 0 0 0 10.38 2.4V2.1a2.1 2.1 0 0 1 4.2 0v.3a1.8 1.8 0 0 0 1.09 1.63 1.8 1.8 0 0 0 1.98-.36l.04-.04a2.1 2.1 0 0 1 2.97 2.97l-.04.04a1.8 1.8 0 0 0-.36 1.98 1.8 1.8 0 0 0 1.65 1.09H22a2.1 2.1 0 1 1 0 4.2h-.06A1.8 1.8 0 0 0 19.4 15Z"/></svg>
+                </button>
+                <button id="theme-toggle" class="icon-btn tooltip" aria-label="Cambia tema" data-i18n-title="common.theme" data-i18n-aria="common.theme">
                     <svg class="icon--sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
                     <svg class="icon--moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
                 </button>
             </div>
         </header>
 
-        <nav class="primary-nav" aria-label="Navigazione principale">
-            <button type="button" class="primary-nav__item primary-nav__item--active" data-page-target="home">Home</button>
-            <button type="button" class="primary-nav__item" data-page-target="recording">Registrazione</button>
-            <button type="button" class="primary-nav__item" data-page-target="transcription">Trascrizione</button>
-            <button type="button" class="primary-nav__item" data-page-target="analysis">Analisi</button>
-        </nav>
-
         <div class="page-stack">
             <section class="app-page app-page--active home-page" id="page-home" data-app-page="home">
-                <div class="home-hero">
-                    <span class="workspace-heading__eyebrow">AUDIO INTELLIGENCE LOCALE</span>
-                    <h2>Registra, trascrivi e analizza. Tutto sul tuo Mac.</h2>
-                    <p>Trasforma chiamate e file audio in testo senza inviare dati a servizi esterni.</p>
-                    <div class="home-hero__actions">
-                        <button type="button" class="btn btn--primary btn--lg" data-page-target="recording">Inizia una registrazione</button>
-                        <button type="button" class="btn btn--secondary btn--lg" data-page-target="transcription">Trascrivi un audio</button>
-                    </div>
-                    
-                    <!-- macOS Status Bar App Info -->
-                    <div class="card" style="margin-top: 2rem; padding: 1.25rem; background: rgba(139, 92, 246, 0.05); border: 1px solid rgba(139, 92, 246, 0.15); max-width: 680px; text-align: left; display: flex; gap: 14px; align-items: flex-start; border-radius: var(--radius-sm);">
-                        <div style="font-size: 1.5rem; line-height: 1;">🎙️</div>
-                        <div style="font-size: 0.82rem; line-height: 1.5;">
-                            <strong style="color: white; display: block; margin-bottom: 0.25rem;">ClosedRoom è anche nella Barra dei Menu!</strong>
-                            <span style="color: var(--text-secondary);">
-                                Cerca l'icona del microfono 🎙️ nella barra superiore del Mac. Da lì puoi avviare registrazioni rapide, trascinare file audio per trascriverli all'istante o usare le scorciatoie globali.
-                            </span>
-                            <span style="color: var(--text-muted); display: block; margin-top: 0.5rem; font-size: 0.78rem;">
-                                Come risolvere: Vai su Impostazioni di Sistema ➔ Privacy e Sicurezza ➔ Accessibilità e assicurati che ClosedRoom (o il Terminale/Python, se lo lanci da riga di comando) sia abilitato.
-                            </span>
-                        </div>
-                    </div>
-                </div>
-                <div class="feature-list">
-                    <article><span>01</span><h3>Registrazione locale</h3><p>Cattura microfono e audio del computer con salvataggio progressivo.</p></article>
-                    <article><span>02</span><h3>Trascrizione Whisper</h3><p>Usa registrazioni recenti o file audio e configura lingua e modello.</p></article>
-                    <article><span>03</span><h3>Analisi</h3><p>Esplora temi, riepiloghi e informazioni ricorrenti nelle trascrizioni.</p></article>
-                </div>
+                <!-- Renders dynamically from dashboard.js -->
             </section>
 
             <section class="app-page recording-page" id="page-recording" data-app-page="recording">
@@ -123,6 +117,17 @@
                         <p>Cattura l’audio e salvalo nella libreria locale. La trascrizione è un passaggio separato.</p>
                     </div>
                 </div>
+                <section class="recording-project-detail" id="recording-project-detail" hidden>
+                    <div class="recording-project-detail__header">
+                        <div>
+                            <span class="workspace-heading__eyebrow">RECORDINGS</span>
+                            <h2 id="recording-project-title">Recordings / Recording</h2>
+                            <p id="recording-project-meta">Audio, trascrizione e analisi collegati a questa registrazione.</p>
+                        </div>
+                        <button type="button" class="btn btn--ghost btn--sm" id="recording-project-back">Torna alla registrazione</button>
+                    </div>
+                    <div class="recording-project-grid" id="recording-project-grid"></div>
+                </section>
                 <div id="recording-page-content">
                     <section class="recorder-panel" id="view-recording" aria-labelledby="recorder-title" hidden>
                         <div class="recorder-panel__header">
@@ -140,6 +145,11 @@
                                     <div class="form-group">
                                         <label for="recording-title">Titolo registrazione</label>
                                         <input id="recording-title" type="text" maxlength="200" placeholder="Titolo Registrazione">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="recording-project">Progetto</label>
+                                        <input id="recording-project" type="text" maxlength="200" list="projects-datalist" placeholder="Nome progetto o meeting">
+                                        <datalist id="projects-datalist"></datalist>
                                     </div>
                                 </div>
 
@@ -227,15 +237,15 @@
                     </section>
 
                     <!-- Audio Settings Card -->
-                    <section class="card recording-settings-section" style="margin-top: 2rem;">
-                        <div class="history-section__header" style="border-bottom: none; margin-bottom: 0; padding-bottom: 0; align-items: center;">
+                    <section class="card recording-settings-section">
+                        <div class="history-section__header recording-settings-section__header">
                             <div>
                                 <h2>Configurazione salvataggio</h2>
-                                <span style="font-size: 0.85rem; color: var(--text-muted);">Cartella in cui archiviare i file audio registrati</span>
+                                <span>Cartella in cui archiviare i file audio registrati</span>
                             </div>
                             <div class="history-settings">
-                                <div class="history-settings__group" style="display: flex; gap: 8px;">
-                                    <input type="text" id="recordings-dir-input" placeholder="/Users/.../Recordings/local-asr" style="width: 200px;">
+                                <div class="history-settings__group">
+                                    <input type="text" id="recordings-dir-input" placeholder="/Users/.../Recordings/local-asr">
                                     <button type="button" class="btn btn--secondary btn--sm" id="browse-recordings-dir-btn">Sfoglia</button>
                                     <button type="button" class="btn btn--primary btn--sm" id="save-recordings-settings-btn">Salva</button>
                                 </div>
@@ -248,47 +258,64 @@
             <section class="app-page" id="page-transcription" data-app-page="transcription">
         <section class="workspace-view workspace-view--active" id="view-transcription" data-workspace-view="transcription">
         <nav class="stepper" id="stepper" aria-label="Progresso trascrizione">
-            <div class="stepper__step step--active" id="step-upload">
+            <div class="stepper__step step--active" id="step-upload" role="button" tabindex="0" data-step-target="upload" aria-label="Vai allo step Sorgente">
                 <div class="stepper__circle">1</div>
                 <span class="stepper__label">Sorgente</span>
             </div>
             <div class="stepper__connector"></div>
-            <div class="stepper__step step--pending" id="step-transcribe">
+            <div class="stepper__step step--pending" id="step-transcribe" role="button" tabindex="0" data-step-target="transcribe" aria-label="Vai allo step Configura">
                 <div class="stepper__circle">2</div>
                 <span class="stepper__label">Configura</span>
             </div>
             <div class="stepper__connector"></div>
-            <div class="stepper__step step--pending" id="step-results">
+            <div class="stepper__step step--pending" id="step-results" role="button" tabindex="0" data-step-target="results" aria-label="Vai allo step Risultato">
                 <div class="stepper__circle">3</div>
                 <span class="stepper__label">Risultato</span>
             </div>
         </nav>
 
-        <main class="main">
+        <main class="main transcription-main" id="transcription-main">
             <section class="section section--active" data-step="upload,transcribe" id="section-upload">
                 <div class="workspace-heading workspace-heading--compact">
                     <div>
-                        <span class="workspace-heading__eyebrow">SORGENTE AUDIO</span>
-                        <h2>Cosa vuoi trascrivere?</h2>
-                        <p>Scegli una registrazione recente oppure trascrivi un audio dal computer.</p>
+                        <span class="workspace-heading__eyebrow" data-i18n="transcription.sourceEyebrow">SORGENTE AUDIO</span>
+                        <h2 data-i18n="transcription.sourceHeading">Cosa vuoi trascrivere?</h2>
+                        <p data-i18n="transcription.sourceBody">Scegli una registrazione recente oppure importa un audio dal computer.</p>
                     </div>
                 </div>
 
                 <!-- Source Panel Collapsible -->
                 <div class="collapsible collapsible--expanded" id="source-collapsible">
                     <button type="button" class="collapsible__trigger" data-collapsible-trigger="source-collapsible-body" id="source-collapsible-trigger" aria-expanded="true" aria-controls="source-collapsible-body">
-                        <span>Seleziona sorgente audio (Dropzone / Registrazioni)</span>
+                        <span data-i18n="transcription.sourceSelector">Sorgente audio</span>
                         <svg class="collapsible__chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
                     </button>
                     <div class="collapsible__body" id="source-collapsible-body">
-                        <div class="source-grid" style="padding: 1rem 0;">
-                            <section class="recordings-library" aria-labelledby="recordings-title">
+                        <div class="source-toolbar">
+                            <div class="source-mode-tabs" role="tablist" aria-label="Tipo di sorgente audio">
+                                <button type="button" class="source-mode-tabs__btn source-mode-tabs__btn--active" id="source-mode-recordings" data-source-mode="recordings" role="tab" aria-selected="true" aria-controls="source-panel-recordings" data-i18n="transcription.sourceRecordingsTab">Registrazioni</button>
+                                <button type="button" class="source-mode-tabs__btn" id="source-mode-file" data-source-mode="file" role="tab" aria-selected="false" aria-controls="source-panel-file" data-i18n="transcription.sourceFileTab">File audio</button>
+                            </div>
+                            <div class="source-folder-bar">
+                                <div>
+                                    <span data-i18n="transcription.recordingsFolderLabel">Cartella registrazioni</span>
+                                    <strong id="transcription-recordings-dir">-</strong>
+                                </div>
+                                <button type="button" class="icon-btn tooltip source-folder-bar__action" data-page-target="settings" data-i18n-title="transcription.recordingsFolderAction" data-i18n-aria="transcription.recordingsFolderAction">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/><path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.04.04a2.1 2.1 0 0 1-2.97 2.97l-.04-.04a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.09 1.65V21a2.1 2.1 0 0 1-4.2 0v-.06a1.8 1.8 0 0 0-1.09-1.65 1.8 1.8 0 0 0-1.98.36l-.04.04a2.1 2.1 0 1 1-2.97-2.97l.04-.04A1.8 1.8 0 0 0 4.6 15a1.8 1.8 0 0 0-1.65-1.09H3a2.1 2.1 0 1 1 0-4.2h.06A1.8 1.8 0 0 0 4.7 8.62a1.8 1.8 0 0 0-.36-1.98l-.04-.04a2.1 2.1 0 1 1 2.97-2.97l.04.04A1.8 1.8 0 0 0 9.3 4.03 1.8 1.8 0 0 0 10.38 2.4V2.1a2.1 2.1 0 0 1 4.2 0v.3a1.8 1.8 0 0 0 1.09 1.63 1.8 1.8 0 0 0 1.98-.36l.04-.04a2.1 2.1 0 0 1 2.97 2.97l-.04.04a1.8 1.8 0 0 0-.36 1.98 1.8 1.8 0 0 0 1.65 1.09H22a2.1 2.1 0 1 1 0 4.2h-.06A1.8 1.8 0 0 0 19.4 15Z"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="source-grid source-grid--padded">
+                            <section class="recordings-library source-panel source-panel--active" id="source-panel-recordings" data-source-panel="recordings" aria-labelledby="source-mode-recordings" role="tabpanel">
                                 <div class="recordings-library__header">
                                     <div>
-                                        <h3 id="recordings-title">Registrazioni recenti</h3>
+                                        <h3 id="recordings-title" data-i18n="transcription.recentRecordings">Registrazioni recenti</h3>
                                         <span id="recordings-count">0 elementi</span>
                                     </div>
-                                    <button type="button" class="btn btn--ghost btn--sm" id="refresh-recordings">Aggiorna</button>
+                                    <button type="button" class="icon-btn tooltip" id="refresh-recordings" data-i18n-title="common.refresh" data-i18n-aria="common.refresh">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 1-15.3 6.36"/><path d="M3 12A9 9 0 0 1 18.3 5.64"/><path d="M18 2v4h-4"/><path d="M6 22v-4h4"/></svg>
+                                    </button>
                                 </div>
                                 <div class="recordings-list" id="recordings-list">
                                     <p class="recordings-list__empty">Caricamento registrazioni...</p>
@@ -300,12 +327,12 @@
                                 </nav>
                             </section>
 
-                            <section class="audio-import" aria-labelledby="audio-import-title">
+                            <section class="audio-import source-panel" id="source-panel-file" data-source-panel="file" aria-labelledby="source-mode-file" role="tabpanel">
                                 <div class="audio-import__header">
                                     <span class="source-action__index">02</span>
                                     <div>
-                                        <h3 id="audio-import-title">Trascrivi un audio</h3>
-                                        <p>Seleziona o trascina un file dal computer.</p>
+                                        <h3 id="audio-import-title" data-i18n="transcription.fileImportTitle">Trascrivi un audio</h3>
+                                        <p data-i18n="transcription.fileImportBody">Seleziona o trascina un file dal computer.</p>
                                     </div>
                                 </div>
                                 <div class="dropzone dropzone--compact" id="dropzone">
@@ -318,9 +345,9 @@
                                                 <line x1="12" x2="12" y1="3" y2="15"/>
                                             </svg>
                                         </div>
-                                        <h2 class="dropzone__title">Trascina qui il file</h2>
-                                        <p class="dropzone__hint">MP3, WAV, M4A, WEBM, FLAC · Max 25 MB</p>
-                                        <button type="button" class="btn btn--secondary" id="browse-btn">Seleziona audio</button>
+                                        <h2 class="dropzone__title" data-i18n="transcription.dropzoneCompactTitle">Trascina qui il file</h2>
+                                        <p class="dropzone__hint" data-i18n="transcription.dropzoneMaxShort">MP3, WAV, M4A, WEBM, FLAC · Max 25 MB</p>
+                                        <button type="button" class="btn btn--secondary" id="browse-btn" data-i18n="transcription.browseAudio">Seleziona audio</button>
                                     </div>
                                 </div>
                             </section>
@@ -341,7 +368,7 @@
                     </div>
                     <button type="button" class="btn btn--ghost btn--sm" id="change-file-btn">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-                        Cambia sorgente
+                        <span data-i18n="transcription.changeSource">Cambia sorgente</span>
                     </button>
                 </div>
 
@@ -352,36 +379,52 @@
                         <div class="card settings-card">
                             <div class="card__header">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                                <h3>Impostazioni avanzate</h3>
+                                <h3 data-i18n="transcription.transcriptionCardTitle">Trascrizione</h3>
                             </div>
-                            <form id="transcribe-form" class="settings-form" style="margin-top: 1rem;">
+                            <form id="transcribe-form" class="settings-form settings-form--compact">
                                 <div class="form-group">
-                                    <label for="model-select">Modello</label>
-                                    <select id="model-select" name="model"></select>
-                                </div>
-                                <div class="form-group">
-                                    <label for="language-select">Lingua</label>
+                                    <label for="language-select" data-i18n="transcription.languageLabel">Lingua parlata</label>
                                     <select id="language-select" name="language"></select>
                                 </div>
                                 <div class="form-group">
-                                    <label for="task-select">Operazione</label>
+                                    <label for="task-select" data-i18n="transcription.taskLabel">Operazione</label>
                                     <select id="task-select" name="task"></select>
                                 </div>
-                                <div class="form-group">
-                                    <label for="temperature-input">Temperatura</label>
-                                    <input type="number" id="temperature-input" name="temperature" min="0" max="1" step="0.1" placeholder="Auto">
-                                </div>
-                                <div class="settings-form__toggles" style="margin-top: 1rem;">
-                                    <label class="toggle">
-                                        <input type="checkbox" id="timestamps-check" name="word_timestamps">
-                                        <span class="toggle__slider"></span>
-                                        <span class="toggle__label">Timestamp per parola</span>
-                                    </label>
-                                    <label class="toggle">
-                                        <input type="checkbox" id="condition-check" name="condition_on_previous_text" checked>
-                                        <span class="toggle__slider"></span>
-                                        <span class="toggle__label">Condiziona su testo precedente</span>
-                                    </label>
+                                <div class="collapsible transcription-options">
+                                    <button type="button" class="collapsible__trigger" data-collapsible-trigger="transcription-options-body" id="transcription-options-trigger" aria-expanded="false" aria-controls="transcription-options-body">
+                                        <span data-i18n="transcription.advancedOptions">Opzioni avanzate</span>
+                                        <svg class="collapsible__chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
+                                    </button>
+                                    <div class="collapsible__body" id="transcription-options-body">
+                                        <div class="transcription-options__content">
+                                            <div class="form-group">
+                                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                                    <label for="model-select" data-i18n="transcription.modelLabel">Modello Whisper</label>
+                                                    <div id="model-cache-status" class="status-badge" style="border: none; background: transparent; padding: 0; font-size: 0.75rem; gap: 6px; box-shadow: none;">
+                                                        <span class="status-badge__dot"></span>
+                                                        <span class="status-badge__text">...</span>
+                                                    </div>
+                                                </div>
+                                                <select id="model-select" name="model"></select>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="temperature-input" data-i18n="transcription.temperatureLabel">Temperatura (creatività)</label>
+                                                <input type="number" id="temperature-input" name="temperature" min="0" max="1" step="0.1" placeholder="Auto">
+                                            </div>
+                                            <div class="settings-form__toggles" style="margin-top: 1rem;">
+                                                <label class="toggle">
+                                                    <input type="checkbox" id="timestamps-check" name="word_timestamps">
+                                                    <span class="toggle__slider"></span>
+                                                    <span class="toggle__label" data-i18n="transcription.wordTimestampsLabel">Genera timestamp per singola parola</span>
+                                                </label>
+                                                <label class="toggle">
+                                                    <input type="checkbox" id="condition-check" name="condition_on_previous_text" checked>
+                                                    <span class="toggle__slider"></span>
+                                                    <span class="toggle__label" data-i18n="transcription.conditionLabel">Condiziona su testo precedente</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </form>
                         </div>
@@ -392,10 +435,10 @@
                         <div class="card action-card">
                             <div class="card__header">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                                <h3>Traccia audio</h3>
+                                <h3 data-i18n="transcription.audioTrackTitle">Traccia audio</h3>
                             </div>
-                            <div class="file-card__player" style="margin: 1.5rem 0;">
-                                <audio id="audio-element" controls style="width: 100%;"></audio>
+                            <div class="file-card__player file-card__player--action">
+                                <audio id="audio-element" controls></audio>
                             </div>
 
                             <div class="transcribe-action-group">
@@ -407,9 +450,9 @@
                                         <rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>
                                     </svg>
                                 </button>
-                                <button type="button" class="btn btn--primary btn--lg" id="transcribe-btn" style="flex: 1;">
+                                <button type="button" class="btn btn--primary btn--lg" id="transcribe-btn">
                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                    <span id="transcribe-btn-text">Trascrivi audio</span>
+                                    <span id="transcribe-btn-text" data-i18n="transcription.btnTranscribeAudio">Trascrivi audio</span>
                                     <div class="btn__spinner" id="btn-spinner" style="display: none;"></div>
                                 </button>
                             </div>
@@ -418,7 +461,7 @@
                 </div>
 
                 <!-- Processing Card (Live transcription & logs) -->
-                <div class="card processing" id="processing-card" style="display: none; margin-top: 1.5rem;">
+                <div class="card processing flow-card" id="processing-card" style="display: none;">
                     <div class="processing__loader">
                         <div class="pulse-dots"><div></div><div></div><div></div></div>
                     </div>
@@ -461,11 +504,11 @@
                 <div class="card results" id="results-card">
                     <!-- Results Header -->
                     <div class="results__header">
-                        <h2>Risultato Trascrizione</h2>
+                        <h2 data-i18n="transcription.resultTitle">Risultato Trascrizione</h2>
                         <div class="results__actions">
                             <button class="btn btn--ghost btn--sm" id="copy-btn">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                                <span id="copy-btn-text">Copia</span>
+                                <span id="copy-btn-text" data-i18n="transcription.copy">Copia</span>
                             </button>
                         </div>
                     </div>
@@ -473,15 +516,15 @@
                     <!-- Stats Grid -->
                     <div class="stats" id="stats-grid">
                         <div class="stats__card">
-                            <span class="stats__label">Tempo impiegato</span>
+                            <span class="stats__label" data-i18n="transcription.statTime">Tempo impiegato</span>
                             <span class="stats__value" id="stat-time">-</span>
                         </div>
                         <div class="stats__card">
-                            <span class="stats__label">Lingua rilevata</span>
+                            <span class="stats__label" data-i18n="transcription.statLanguage">Lingua rilevata</span>
                             <span class="stats__value" id="stat-lang">-</span>
                         </div>
                         <div class="stats__card">
-                            <span class="stats__label">Modello</span>
+                            <span class="stats__label" data-i18n="transcription.statModel">Modello</span>
                             <span class="stats__value" id="stat-model">-</span>
                         </div>
                     </div>
@@ -489,9 +532,9 @@
                     <!-- Tabs -->
                     <div class="tabs">
                         <div class="tabs__nav" role="tablist">
-                            <button class="tabs__btn tabs__btn--active" data-tab="text-tab" role="tab" aria-selected="true" aria-controls="text-tab" tabindex="0">Testo Unito</button>
-                            <button class="tabs__btn" data-tab="segments-tab" role="tab" id="segments-tab-btn" aria-selected="false" aria-controls="segments-tab" tabindex="-1">Segmenti</button>
-                            <button class="tabs__btn" data-tab="raw-tab" role="tab" aria-selected="false" aria-controls="raw-tab" tabindex="-1">JSON Grezzo</button>
+                            <button class="tabs__btn tabs__btn--active" data-tab="text-tab" role="tab" aria-selected="true" aria-controls="text-tab" tabindex="0" data-i18n="transcription.tabText">Testo Unito</button>
+                            <button class="tabs__btn" data-tab="segments-tab" role="tab" id="segments-tab-btn" aria-selected="false" aria-controls="segments-tab" tabindex="-1" data-i18n="transcription.tabSegments">Segmenti</button>
+                            <button class="tabs__btn" data-tab="raw-tab" role="tab" aria-selected="false" aria-controls="raw-tab" tabindex="-1" data-i18n="transcription.tabRaw">JSON Grezzo</button>
                         </div>
                         <div class="tabs__panel tabs__panel--active" id="text-tab" role="tabpanel">
                             <div class="transcript-box" id="transcript-text">La trascrizione apparirà qui...</div>
@@ -506,39 +549,52 @@
                 </div>
 
                 <!-- New Transcription CTA -->
-                <button type="button" class="btn btn--secondary btn--block" id="new-transcription-btn" style="margin-top: 1rem;">
+                <button type="button" class="btn btn--secondary btn--block flow-action" id="new-transcription-btn">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                    Nuova Trascrizione
+                    <span data-i18n="transcription.newTranscription">Nuova Trascrizione</span>
                 </button>
             </section>
 
             <!-- ═══ STEP 4: Historical Transcriptions ════════════════════ -->
-            <section class="card history-section" id="history-section" style="margin-top: 2rem;">
+            <section class="card history-section flow-section" id="history-section">
                 <div class="history-section__header">
                     <div>
-                        <h2>Storico trascrizioni</h2>
+                        <h2 data-i18n="transcription.historyTitle">Storico trascrizioni</h2>
                         <span id="history-count">0 elementi</span>
                     </div>
                     <div class="history-settings">
-                        <label for="transcriptions-dir-input">Cartella salvataggio trascrizioni:</label>
-                        <div class="history-settings__group" style="display: flex; gap: 8px;">
-                            <input type="text" id="transcriptions-dir-input" placeholder="/Users/.../Transcriptions/local-asr" style="width: 200px;">
-                            <button type="button" class="btn btn--secondary btn--sm" id="browse-transcriptions-dir-btn">Sfoglia</button>
-                            <button type="button" class="btn btn--primary btn--sm" id="save-settings-btn">Salva</button>
+                        <label for="transcriptions-dir-input" data-i18n="transcription.historyFolderLabel">Cartella salvataggio trascrizioni:</label>
+                        <div class="history-settings__group">
+                            <input type="text" id="transcriptions-dir-input" placeholder="/Users/.../Transcriptions/local-asr">
+                            <button type="button" class="btn btn--secondary btn--sm" id="browse-transcriptions-dir-btn" data-i18n="settings.btnBrowse">Sfoglia</button>
+                            <button type="button" class="btn btn--primary btn--sm" id="save-settings-btn" data-i18n="transcription.save">Salva</button>
                         </div>
                     </div>
                 </div>
-                <div class="transcriptions-list" id="transcriptions-list" style="margin-top: 1rem;">
+                <div class="transcriptions-list" id="transcriptions-list">
                     <p class="transcriptions-list__empty">Nessuna trascrizione salvata.</p>
                 </div>
-                <nav class="recordings-pagination" id="history-pagination" aria-label="Paginazione storico" hidden style="margin-top: 1rem;">
-                    <button type="button" class="btn btn--ghost btn--sm" id="history-prev">Precedente</button>
+                <nav class="recordings-pagination flow-pagination" id="history-pagination" aria-label="Paginazione storico" hidden>
+                    <button type="button" class="btn btn--ghost btn--sm" id="history-prev" data-i18n="transcription.previous">Precedente</button>
                     <span id="history-page-status" aria-live="polite">Pagina 1 di 1</span>
-                    <button type="button" class="btn btn--ghost btn--sm" id="history-next">Successiva</button>
+                    <button type="button" class="btn btn--ghost btn--sm" id="history-next" data-i18n="transcription.next">Successiva</button>
                 </nav>
             </section>
         </main>
         </section>
+            </section>
+
+            <section class="app-page projects-page" id="page-projects" data-app-page="projects">
+                <div class="workspace-heading">
+                    <div>
+                        <span class="workspace-heading__eyebrow">PROGETTI</span>
+                        <h2>Meeting e progetti</h2>
+                        <p>Raggruppa gli audio per progetto e consulta audio, trascrizioni e analisi collegate.</p>
+                    </div>
+                </div>
+                <div class="projects-view" id="projects-view">
+                    <p class="recordings-list__empty">Caricamento progetti...</p>
+                </div>
             </section>
 
             <section class="app-page analysis-page" id="page-analysis" data-app-page="analysis">
@@ -674,26 +730,35 @@
                         </div>
                     </div>
                 </div>
-            </section>
-        </main>
+            </main>
+        </section>
 
-        <!-- ─── Footer ──────────────────────────────────────────────────── -->
-        <footer class="footer">
-            <p>Powered by <strong>MLX Whisper</strong> & <strong>FastAPI</strong>. Eseguito in locale su Apple Silicon.</p>
-        </footer>
+        <!-- settings-page section -->
+        <section class="app-page settings-page" id="page-settings" data-app-page="settings">
+            <!-- Renders dynamically from settings-page.js -->
+        </section>
     </div>
 
-    <!-- Toast notification container -->
-    <div class="toast-container" id="toast-container"></div>
+    <!-- ─── Footer ──────────────────────────────────────────────────── -->
+    <footer class="footer">
+        <p>Powered by <strong>MLX Whisper</strong> & <strong>FastAPI</strong>. Eseguito in locale su Apple Silicon.</p>
+    </footer>
+</div>
 
-    <!-- Scripts: config → services → components → views → recorder → app -->
-    <script src="/static/config.js?v=1.0.2"></script>
-    <script src="/static/api.js?v=1.0.0"></script>
-    <script src="/static/workflow.js?v=1.0.0"></script>
-    <script src="/static/components.js?v=1.0.2"></script>
-    <script src="/static/recordings-view.js?v=1.0.0"></script>
-    <script src="/static/tour.js?v=1.0.2"></script>
-    <script src="/static/recorder.js?v=1.0.0"></script>
-    <script src="/static/app.js?v=1.0.2"></script>
+<!-- Toast notification container -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- Scripts: i18n → config → services → components → views → recorder → app -->
+<script src="/static/i18n.js?v=1.0.2"></script>
+<script src="/static/config.js?v=1.0.2"></script>
+<script src="/static/api.js?v=1.0.0"></script>
+<script src="/static/workflow.js?v=1.0.0"></script>
+<script src="/static/components.js?v=1.0.4"></script>
+<script src="/static/recordings-view.js?v=1.0.0"></script>
+<script src="/static/dashboard.js?v=1.0.1"></script>
+<script src="/static/settings-page.js?v=1.0.0"></script>
+<script src="/static/tour.js?v=1.0.2"></script>
+<script src="/static/recorder.js?v=1.0.0"></script>
+<script src="/static/app.js?v=1.0.4"></script>
 </body>
 </html>

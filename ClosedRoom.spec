@@ -78,6 +78,9 @@ for ext in ("*.json", "*.tiktoken", "*.txt"):
 # Modules loaded dynamically (not detected by PyInstaller's static analysis).
 
 hidden_imports = [
+    # SSL/Certificates
+    "certifi",
+
     # FastAPI / Starlette internals
     "fastapi",
     "fastapi.middleware.cors",
@@ -134,14 +137,11 @@ hidden_imports = [
 excludes = [
     "tkinter",
     "test",
-    "unittest",
     "pytest",
     "IPython",
     "jupyter",
     "notebook",
     "matplotlib",
-    "numpy.testing",
-    "pydoc",
 ]
 
 # ── PyInstaller Analysis ───────────────────────────────────────────────────────

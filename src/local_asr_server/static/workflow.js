@@ -5,6 +5,9 @@ const Workflow = (() => {
         sourcePanel: null,
         selectedFile: null,
         isProcessing: false,
+        lastRecordingId: null,
+        lastTranscriptionId: null,
+        navigateContext: null,
     };
 
     function getState() {

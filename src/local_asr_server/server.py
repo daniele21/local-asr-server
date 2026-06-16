@@ -31,6 +31,15 @@ from local_asr_server.recordings import (
 from local_asr_server.settings import load_settings, save_settings
 from local_asr_server.llm import LLMService
 from local_asr_server.paths import get_cache_dir, get_static_dir
+from local_asr_server.transcriber import (
+    str_to_bool,
+    generate_cache_key,
+    get_cached_result,
+    save_cached_result,
+    transcribe_file_sync,
+    transcribe_stream_generator,
+    _clean_nan_values,
+)
 
 class AnalysisRequest(BaseModel):
     transcription_id: Optional[str] = None
@@ -53,13 +62,15 @@ class TranscribePathRequest(BaseModel):
 
 class CreateRecordingRequest(BaseModel):
     title: Optional[str] = None
+    project_name: Optional[str] = ""
     mime_type: str = "audio/webm;codecs=opus"
     model: Optional[str] = None
     language: Optional[str] = "it"
 
 
 class UpdateRecordingRequest(BaseModel):
-    title: str
+    title: Optional[str] = None
+    project_name: Optional[str] = None
 
 
 class SettingsRequest(BaseModel):
@@ -67,125 +78,15 @@ class SettingsRequest(BaseModel):
     recordings_dir: Optional[str] = ""
     gemini_api_key: Optional[str] = ""
     llm_provider: Optional[str] = "mock"
+    default_model: Optional[str] = ""
+    default_language: Optional[str] = "it"
+    default_task: Optional[str] = "transcribe"
+    default_temperature: Optional[str] = ""
+    default_word_timestamps: Optional[bool] = False
+    default_condition_on_previous: Optional[bool] = True
 
 
-def _str_to_bool(value: str | bool | None, default: bool = False) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    return value.lower() in {"1", "true", "yes", "y", "on"}
-
-
-def _transcribe(
-    *,
-    audio_path: str,
-    model: str,
-    language: Optional[str],
-    task: str,
-    word_timestamps: bool,
-    initial_prompt: Optional[str],
-    temperature: Optional[float],
-    condition_on_previous_text: bool,
-    verbose: Optional[bool],
-) -> dict:
-    import mlx_whisper
-
-    if not language:
-        language = None
-
-    kwargs = {
-        "path_or_hf_repo": model,
-        "language": language,
-        "task": task,
-        "word_timestamps": word_timestamps,
-        "initial_prompt": initial_prompt,
-        "condition_on_previous_text": condition_on_previous_text,
-        "verbose": verbose,
-    }
-
-    if temperature is not None:
-        kwargs["temperature"] = temperature
-
-    kwargs = {k: v for k, v in kwargs.items() if v is not None}
-
-    return mlx_whisper.transcribe(
-        audio_path,
-        **kwargs,
-    )
-
-
-class ThreadStdoutCapture:
-    def __init__(self, q: queue.Queue):
-        self.q = q
-        self.original_stdout = sys.stdout
-
-    def write(self, text):
-        self.original_stdout.write(text)
-        self.original_stdout.flush()
-        if text.strip():
-            self.q.put(text.strip())
-
-    def flush(self):
-        self.original_stdout.flush()
-
-
-def _is_model_cached(model_name: str) -> bool:
-    if model_name.startswith("/") or model_name.startswith("."):
-        return Path(model_name).exists()
-    
-    # Hugging Face cache check
-    folder_name = "models--" + model_name.replace("/", "--")
-    cache_dir = Path(os.path.expanduser("~/.cache/huggingface/hub")) / folder_name
-    if cache_dir.exists():
-        snapshots_dir = cache_dir / "snapshots"
-        if snapshots_dir.exists():
-            for p in snapshots_dir.iterdir():
-                if p.is_dir() and any(p.iterdir()):
-                    return True
-    return False
-
-
-
-
-# Cache directory — uses macOS Application Support in bundle mode,
-# or a project-local .cache/ in dev mode.
-CACHE_DIR = get_cache_dir()
-
-import math
-
-def _clean_nan_values(val):
-    if isinstance(val, dict):
-        return {k: _clean_nan_values(v) for k, v in val.items()}
-    elif isinstance(val, list):
-        return [_clean_nan_values(x) for x in val]
-    elif isinstance(val, float):
-        if math.isnan(val) or math.isinf(val):
-            return None
-        return val
-    return val
-
-def _get_cached_result(cache_key: str) -> Optional[dict]:
-    cache_file = CACHE_DIR / f"{cache_key}.json"
-    if cache_file.exists():
-        try:
-            with open(cache_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return _clean_nan_values(data)
-        except Exception as e:
-            logger.warning(f"Failed to read cache file {cache_file}: {e}")
-    return None
-
-def _save_cached_result(cache_key: str, data: dict) -> None:
-    try:
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        cache_file = CACHE_DIR / f"{cache_key}.json"
-        cleaned_data = _clean_nan_values(data)
-        with open(cache_file, "w", encoding="utf-8") as f:
-            json.dump(cleaned_data, f, ensure_ascii=False, indent=2)
-        logger.info(f"Saved transcription to cache: {cache_file}")
-    except Exception as e:
-        logger.warning(f"Failed to write cache file {cache_file}: {e}")
+# (Transcription and caching helper methods have been refactored to local_asr_server.transcriber)
 
 
 
@@ -194,9 +95,9 @@ def create_app(
     recordings_dir: Path | None = None,
 ) -> FastAPI:
     app = FastAPI(
-        title="local-asr-server",
+        title="ClosedRoom",
         version="0.1.0",
-        description="Local ASR server powered by MLX Whisper.",
+        description="Local ASR transcription server powered by MLX Whisper.",
     )
 
     # Enable CORS
@@ -212,7 +113,8 @@ def create_app(
     app.state.is_recording = False
     app.state.is_transcribing = False
     app.state.recording_store = RecordingStore(
-        recordings_dir or Path("~/Recordings/local-asr")
+        recordings_dir or Path("~/Recordings/local-asr"),
+        use_settings_dir=recordings_dir is None
     )
     from local_asr_server.transcriptions import TranscriptionStore
     app.state.transcription_store = TranscriptionStore()
@@ -267,6 +169,7 @@ def create_app(
         try:
             res = store.create(
                 title=request.title,
+                project_name=request.project_name,
                 mime_type=request.mime_type,
                 model=request.model or app.state.default_model,
                 language=request.language,
@@ -379,9 +282,10 @@ def create_app(
         condition_on_previous_text: str = Form("true"),
         verbose: Optional[str] = Form(None),
         stream: str = Form("false"),
+        recording_id: Optional[str] = Form(None),
     ):
         started_at = time.perf_counter()
-        is_streaming = _str_to_bool(stream)
+        is_streaming = str_to_bool(stream)
         target_model = model or app.state.default_model
 
         logger.info(f"[/v1/audio/transcriptions] Received upload request. File: '{file.filename}', Size: {file.size if file.size else 'unknown'} bytes, Model: '{target_model}', Stream: {is_streaming}")
@@ -398,10 +302,17 @@ def create_app(
 
             # Caching mechanism
             audio_hash = hashlib.sha256(content).hexdigest()
-            param_string = f"{audio_hash}:{target_model}:{language}:{task}:{word_timestamps}:{temperature}:{condition_on_previous_text}"
-            cache_key = hashlib.sha256(param_string.encode("utf-8")).hexdigest()
+            cache_key = generate_cache_key(
+                audio_hash=audio_hash,
+                model=target_model,
+                language=language,
+                task=task,
+                word_timestamps=word_timestamps,
+                temperature=temperature,
+                condition_on_previous_text=condition_on_previous_text,
+            )
 
-            cached_res = _get_cached_result(cache_key)
+            cached_res = get_cached_result(cache_key)
             if cached_res is not None:
                 logger.info(f"[/v1/audio/transcriptions] Cache hit! Returning cached result for key: {cache_key}")
                 
@@ -414,7 +325,8 @@ def create_app(
                     logger.warning(f"[/v1/audio/transcriptions] Failed to remove temp file {tmp_path}: {e}")
 
                 # Save to user's transcription folder as well
-                saved_meta = app.state.transcription_store.save(cached_res, audio_filename=file.filename)
+                cached_res["recording_id"] = recording_id or cached_res.get("recording_id", "")
+                saved_meta = app.state.transcription_store.save(cached_res, audio_filename=file.filename, recording_id=recording_id)
                 cached_res["saved_id"] = saved_meta["id"]
                 cached_res["saved_file_path"] = str(app.state.transcription_store.root)
 
@@ -440,126 +352,43 @@ def create_app(
 
             # Cache miss, proceed as normal
             if is_streaming:
-                async def event_generator():
+                async def event_generator_wrapper():
                     app.state.is_transcribing = True
                     try:
-                        q = queue.Queue()
-                        
-                        is_cached = _is_model_cached(target_model)
-                        logger.info(f"[/v1/audio/transcriptions] Model cache status for {target_model}: cached={is_cached}")
-
-                        if is_cached:
-                            yield json.dumps({
-                                "type": "progress",
-                                "step": "loading_model",
-                                "message": "Caricamento del modello Whisper in memoria..."
-                            }) + "\n"
-                        else:
-                            yield json.dumps({
-                                "type": "progress",
-                                "step": "downloading",
-                                "message": f"Download del modello '{target_model}' da Hugging Face (~1.6 GB)..."
-                            }) + "\n"
-
-                        transcribe_result = {}
-                        transcribe_error = None
-
-                        def worker():
-                            nonlocal transcribe_error
-                            try:
-                                logger.info(f"[/v1/audio/transcriptions] [Worker Thread] Starting transcription for {tmp_path}")
-                                capture = ThreadStdoutCapture(q)
-                                with contextlib.redirect_stdout(capture):
-                                    res = _transcribe(
-                                        audio_path=tmp_path,
-                                        model=target_model,
-                                        language=language,
-                                        task=task,
-                                        word_timestamps=_str_to_bool(word_timestamps),
-                                        initial_prompt=initial_prompt,
-                                        temperature=temperature,
-                                        condition_on_previous_text=_str_to_bool(condition_on_previous_text, True),
-                                        verbose=True,
-                                    )
-                                    transcribe_result.update(res)
-                                logger.info(f"[/v1/audio/transcriptions] [Worker Thread] Transcription completed successfully")
-                            except Exception as e:
-                                logger.error(f"[/v1/audio/transcriptions] [Worker Thread] Transcription failed: {e}", exc_info=True)
-                                transcribe_error = e
-
-                        t = threading.Thread(target=worker)
-                        t.start()
-
-                        while t.is_alive() or not q.empty():
-                            try:
-                                msg = q.get_nowait()
-                                logger.info(f"[/v1/audio/transcriptions] [Live Segment] {msg}")
-                                yield json.dumps({
-                                    "type": "progress",
-                                    "step": "transcribing",
-                                    "message": msg
-                                }) + "\n"
-                            except queue.Empty:
-                                await asyncio.sleep(0.1)
-
-                        t.join()
-
-                        try:
-                            if os.path.exists(tmp_path):
-                                os.remove(tmp_path)
-                                logger.info(f"[/v1/audio/transcriptions] Cleaned up temporary file: {tmp_path}")
-                        except OSError as e:
-                            logger.warning(f"[/v1/audio/transcriptions] Failed to remove temp file {tmp_path}: {e}")
-
-                        if transcribe_error:
-                            yield json.dumps({
-                                "type": "error",
-                                "message": f"Transcription failed: {transcribe_error}"
-                            }) + "\n"
-                            return
-
-                        elapsed = time.perf_counter() - started_at
-                        logger.info(f"[/v1/audio/transcriptions] Total processing time (streaming): {elapsed:.2f} seconds")
-                        
-                        payload = {
-                            "text": transcribe_result.get("text", ""),
-                            "language": transcribe_result.get("language", language),
-                            "segments": transcribe_result.get("segments", []),
-                            "model": target_model,
-                            "backend": "mlx-whisper",
-                            "stats": {
-                                "time_total_seconds": elapsed,
-                            },
-                        }
-                        payload = _clean_nan_values(payload)
-                        _save_cached_result(cache_key, payload)
-                        
-                        saved_meta = app.state.transcription_store.save(payload, audio_filename=file.filename)
-                        payload["saved_id"] = saved_meta["id"]
-                        payload["saved_file_path"] = str(app.state.transcription_store.root)
-                        
-                        yield json.dumps({
-                            "type": "completed",
-                            "data": payload
-                        }) + "\n"
+                        async for event in transcribe_stream_generator(
+                            audio_path=tmp_path,
+                            model=target_model,
+                            language=language,
+                            task=task,
+                            word_timestamps=word_timestamps,
+                            initial_prompt=initial_prompt,
+                            temperature=temperature,
+                            condition_on_previous_text=condition_on_previous_text,
+                            cache_key=cache_key,
+                            audio_filename=file.filename,
+                            recording_id=recording_id,
+                            transcription_store=app.state.transcription_store,
+                            started_at=started_at,
+                        ):
+                            yield event
                     finally:
                         app.state.is_transcribing = False
 
-                return StreamingResponse(event_generator(), media_type="application/x-ndjson")
+                return StreamingResponse(event_generator_wrapper(), media_type="application/x-ndjson")
 
             logger.info(f"[/v1/audio/transcriptions] Running non-streaming transcription for {tmp_path} using {target_model}...")
             app.state.is_transcribing = True
             try:
-                result = _transcribe(
+                result = transcribe_file_sync(
                     audio_path=tmp_path,
                     model=target_model,
                     language=language,
                     task=task,
-                    word_timestamps=_str_to_bool(word_timestamps),
+                    word_timestamps=str_to_bool(word_timestamps),
                     initial_prompt=initial_prompt,
                     temperature=temperature,
-                    condition_on_previous_text=_str_to_bool(condition_on_previous_text, True),
-                    verbose=None if verbose is None else _str_to_bool(verbose),
+                    condition_on_previous_text=str_to_bool(condition_on_previous_text, True),
+                    verbose=None if verbose is None else str_to_bool(verbose),
                 )
 
                 elapsed = time.perf_counter() - started_at
@@ -571,14 +400,15 @@ def create_app(
                     "segments": result.get("segments", []),
                     "model": target_model,
                     "backend": "mlx-whisper",
+                    "recording_id": recording_id or "",
                     "stats": {
                         "time_total_seconds": elapsed,
                     },
                 }
                 payload = _clean_nan_values(payload)
-                _save_cached_result(cache_key, payload)
+                save_cached_result(cache_key, payload)
 
-                saved_meta = app.state.transcription_store.save(payload, audio_filename=file.filename)
+                saved_meta = app.state.transcription_store.save(payload, audio_filename=file.filename, recording_id=recording_id)
                 payload["saved_id"] = saved_meta["id"]
                 payload["saved_file_path"] = str(app.state.transcription_store.root)
 
@@ -625,7 +455,7 @@ def create_app(
 
         app.state.is_transcribing = True
         try:
-            result = _transcribe(
+            result = transcribe_file_sync(
                 audio_path=str(audio_path),
                 model=target_model,
                 language=request.language,
@@ -676,13 +506,78 @@ def create_app(
     def update_recording(recording_id: str, request: UpdateRecordingRequest):
         store: RecordingStore = app.state.recording_store
         try:
-            return store.update_title(recording_id, request.title)
+            return store.update(
+                recording_id,
+                title=request.title,
+                project_name=request.project_name,
+            )
         except RecordingNotFound as exc:
             raise HTTPException(status_code=404, detail="Recording not found") from exc
+
+    @app.get("/v1/recordings/{recording_id}/project")
+    def get_recording_project(recording_id: str):
+        try:
+            recording = app.state.recording_store.get(recording_id)
+        except RecordingNotFound as exc:
+            raise HTTPException(status_code=404, detail="Recording not found") from exc
+        audio_name = Path(recording.get("audio_file") or "").name
+        extension = Path(audio_name).suffix or recording.get("extension") or ""
+        title_audio_name = f"{recording.get('title')}{extension}" if extension else ""
+        transcription = app.state.transcription_store.find_for_recording(recording_id, audio_name)
+        if transcription is None and title_audio_name:
+            transcription = app.state.transcription_store.find_for_recording("", title_audio_name)
+        return {
+            "recording": recording,
+            "transcription": transcription,
+            "analysis": transcription.get("analysis") if transcription else None,
+        }
+
+    @app.get("/v1/projects")
+    def list_projects():
+        recordings = app.state.recording_store.list(limit=999)
+        projects: dict[str, dict] = {}
+        unassigned_name = "Senza progetto"
+        for recording in recordings:
+            project_name = (recording.get("project_name") or "").strip() or unassigned_name
+            bucket = projects.setdefault(project_name, {
+                "name": project_name,
+                "is_unassigned": project_name == unassigned_name,
+                "items": [],
+            })
+            audio_name = Path(recording.get("audio_file") or "").name
+            extension = Path(audio_name).suffix or recording.get("extension") or ""
+            title_audio_name = f"{recording.get('title')}{extension}" if extension else ""
+            transcription = app.state.transcription_store.find_for_recording(recording["id"], audio_name)
+            if transcription is None and title_audio_name:
+                transcription = app.state.transcription_store.find_for_recording("", title_audio_name)
+            bucket["items"].append({
+                "recording": recording,
+                "transcription": transcription,
+                "analysis": transcription.get("analysis") if transcription else None,
+            })
+        items = sorted(projects.values(), key=lambda item: (item["is_unassigned"], item["name"].lower()))
+        return {"items": items}
+
+    @app.get("/v1/models/check-cache")
+    def check_model_cache(model: Optional[str] = None):
+        from local_asr_server.transcriber import is_model_cached
+        target = model if model else app.state.default_model
+        return {"model": target, "cached": is_model_cached(target)}
 
     @app.get("/v1/settings")
     def get_settings():
         return load_settings()
+
+    @app.get("/v1/stats")
+    def get_stats():
+        recordings = app.state.recording_store.list(limit=999)
+        transcriptions, trans_total = app.state.transcription_store.list(page=1, limit=999)
+        return {
+            "recordings_count": len(recordings),
+            "transcriptions_count": trans_total,
+            "latest_recording": recordings[0] if recordings else None,
+            "latest_transcription": transcriptions[0] if transcriptions else None,
+        }
 
     @app.post("/v1/settings")
     def update_settings(request: SettingsRequest):
@@ -713,6 +608,12 @@ def create_app(
             
         current["gemini_api_key"] = request.gemini_api_key or ""
         current["llm_provider"] = request.llm_provider or "mock"
+        current["default_model"] = request.default_model or ""
+        current["default_language"] = request.default_language or "it"
+        current["default_task"] = request.default_task or "transcribe"
+        current["default_temperature"] = request.default_temperature or ""
+        current["default_word_timestamps"] = request.default_word_timestamps if request.default_word_timestamps is not None else False
+        current["default_condition_on_previous"] = request.default_condition_on_previous if request.default_condition_on_previous is not None else True
         save_settings(current)
         return current
 
@@ -756,6 +657,8 @@ def create_app(
         try:
             provider = LLMService.get_provider(provider_name, api_key)
             result = provider.analyze(text_to_analyze)
+            if request.transcription_id:
+                app.state.transcription_store.save_analysis(request.transcription_id, result)
             return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))

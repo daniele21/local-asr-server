@@ -23,7 +23,7 @@ class RecordingApiTests(unittest.TestCase):
         self.client.close()
         self.temp_dir.cleanup()
 
-    @patch("local_asr_server.server._transcribe")
+    @patch("local_asr_server.server.transcribe_file_sync")
     def test_stop_only_saves_audio_without_transcribing(self, transcribe) -> None:
         created = self.client.post(
             "/v1/recordings",
@@ -53,7 +53,7 @@ class RecordingApiTests(unittest.TestCase):
         self.assertEqual(audio.content, b"audio-data")
         transcribe.assert_not_called()
 
-    def test_empty_recording_cannot_be_stopped(self) -> None:
+    def test_empty_recording_can_be_stopped(self) -> None:
         created = self.client.post(
             "/v1/recordings",
             json={"title": "Empty", "mime_type": "audio/webm"},
@@ -62,7 +62,8 @@ class RecordingApiTests(unittest.TestCase):
 
         stopped = self.client.post(f"/v1/recordings/{recording_id}/stop")
 
-        self.assertEqual(stopped.status_code, 409)
+        self.assertEqual(stopped.status_code, 202)
+        self.assertEqual(stopped.json()["status"], "recorded")
 
     @patch.object(AudioRouter, "route_to_multi_output")
     def test_create_recording_does_not_change_audio_route(self, route) -> None:

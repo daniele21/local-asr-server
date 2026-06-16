@@ -1,5 +1,5 @@
 /**
- * config.js — UI Configuration for ASR Whisper Studio
+ * config.js — UI Configuration for ClosedRoom
  *
  * All user-facing labels, model lists, language options, default values,
  * and theme overrides are centralised here. Edit this file to customise
@@ -51,72 +51,72 @@ const DEFAULTS = {
     theme: 'dark',
 };
 
-// ─── UI Labels (Italian) ───────────────────────────────────────────────────────
+// ─── UI Labels (Dynamic Translation) ───────────────────────────────────────────
 const LABELS = {
     // Header
-    appTitle: 'ASR Whisper Studio',
-    appSubtitle: 'Trascrizione audio locale e ultrarapida',
+    get appTitle() { return 'ClosedRoom'; },
+    get appSubtitle() { return i18n.t('header.subtitle'); },
 
     // Server status
-    statusConnecting: 'Connessione...',
-    statusOnline: 'Online',
-    statusOffline: 'Offline',
-    statusError: 'Errore Server',
+    get statusConnecting() { return i18n.t('header.statusConnecting'); },
+    get statusOnline() { return i18n.t('header.statusOnline'); },
+    get statusOffline() { return i18n.t('header.statusOffline'); },
+    get statusError() { return i18n.t('common.error') + ' Server'; },
 
     // Step indicator
-    step1: 'Carica Audio',
-    step2: 'Trascrivi',
-    step3: 'Risultati',
+    get step1() { return i18n.t('recording.title'); },
+    get step2() { return i18n.t('transcription.title'); },
+    get step3() { return i18n.t('analysis.title'); },
 
     // Dropzone
-    dropzoneTitle: 'Trascina qui il tuo file audio',
-    dropzoneHint: 'Supporta MP3, WAV, M4A, WEBM, FLAC e altri formati (Max 25MB)',
-    dropzoneBrowse: 'Seleziona File',
+    get dropzoneTitle() { return i18n.t('transcription.dropzoneTitle'); },
+    get dropzoneHint() { return i18n.t('transcription.dropzoneMax'); },
+    get dropzoneBrowse() { return i18n.t('settings.btnBrowse'); },
 
     // File preview
-    changeFile: 'Cambia file',
-    transcribeAction: 'Trascrivi Audio',
-    transcribing: 'Trascrizione in corso...',
+    get changeFile() { return i18n.t('recording.changeFile') || 'Cambia file'; },
+    get transcribeAction() { return i18n.t('transcription.btnTranscribe'); },
+    get transcribing() { return i18n.t('transcription.transcribingStatus'); },
 
     // Advanced settings
-    settingsTitle: 'Impostazioni avanzate',
-    labelModel: 'Modello',
-    labelLanguage: 'Lingua',
-    labelTask: 'Operazione',
-    labelFormat: 'Formato Output',
-    labelTemperature: 'Temperatura',
-    labelWordTimestamps: 'Timestamp per parola',
-    labelCondition: 'Condiziona su testo precedente',
+    get settingsTitle() { return i18n.t('transcription.configureTitle'); },
+    get labelModel() { return i18n.t('transcription.modelLabel'); },
+    get labelLanguage() { return i18n.t('transcription.languageLabel'); },
+    get labelTask() { return i18n.t('transcription.taskLabel'); },
+    get labelFormat() { return 'Formato Output'; },
+    get labelTemperature() { return i18n.t('transcription.temperatureLabel'); },
+    get labelWordTimestamps() { return i18n.t('transcription.wordTimestampsLabel'); },
+    get labelCondition() { return i18n.t('transcription.conditionLabel'); },
 
     // Processing
-    processingTitle: 'Elaborazione in corso...',
-    processingPreparing: 'Preparazione della trascrizione...',
-    processingConnecting: 'Connessione in corso...',
-    processingConsoleWaiting: 'In attesa del backend...',
-    processingLivePreview: 'ANTEPRIMA TESTO LIVE',
-    processingConsoleHeader: 'LOG DI TRASCRIZIONE LIVE',
-    processingTimer: 'Tempo trascorso',
+    get processingTitle() { return i18n.t('transcription.transcribingStatus'); },
+    get processingPreparing() { return 'Preparazione della trascrizione...'; },
+    get processingConnecting() { return i18n.t('header.statusConnecting'); },
+    get processingConsoleWaiting() { return 'In attesa del backend...'; },
+    get processingLivePreview() { return 'ANTEPRIMA TESTO LIVE'; },
+    get processingConsoleHeader() { return 'LOG DI TRASCRIZIONE LIVE'; },
+    get processingTimer() { return i18n.t('transcription.processingTimer') || 'Tempo trascorso'; },
 
     // Results
-    resultsTitle: 'Risultato Trascrizione',
-    tabText: 'Testo Unito',
-    tabSegments: 'Segmenti',
-    tabRaw: 'JSON Grezzo',
-    copy: 'Copia',
-    copied: 'Copiato!',
-    newTranscription: 'Nuova Trascrizione',
-    statTime: 'Tempo impiegato',
-    statLanguage: 'Lingua rilevata',
-    statModel: 'Modello',
+    get resultsTitle() { return i18n.t('transcription.successTitle'); },
+    get tabText() { return 'Testo Unito'; },
+    get tabSegments() { return 'Segmenti'; },
+    get tabRaw() { return 'JSON Grezzo'; },
+    get copy() { return 'Copia'; },
+    get copied() { return 'Copiato!'; },
+    get newTranscription() { return 'Nuova Trascrizione'; },
+    get statTime() { return 'Tempo impiegato'; },
+    get statLanguage() { return 'Lingua rilevata'; },
+    get statModel() { return 'Modello'; },
 
     // Toasts
-    toastFileCopied: 'Testo copiato negli appunti',
-    toastFileInvalid: 'Per favore seleziona un file audio valido.',
-    toastTranscriptionError: 'Errore di trascrizione',
-    toastCacheHit: 'Risultato caricato dalla cache locale',
+    get toastFileCopied() { return 'Testo copiato negli appunti'; },
+    get toastFileInvalid() { return 'Per favore seleziona un file audio valido.'; },
+    get toastTranscriptionError() { return 'Errore di trascrizione'; },
+    get toastCacheHit() { return 'Risultato caricato dalla cache locale'; },
 
     // Footer
-    footerText: 'Powered by <strong>MLX Whisper</strong> & <strong>FastAPI</strong>. Eseguito in locale su Apple Silicon.',
+    get footerText() { return 'Powered by <strong>MLX Whisper</strong> & <strong>FastAPI</strong>. Eseguito in locale su Apple Silicon.'; },
 };
 
 // ─── Accepted File Types ───────────────────────────────────────────────────────
@@ -129,6 +129,9 @@ const API = {
     health: '/health',
     transcribe: '/v1/audio/transcriptions',
     recordings: '/v1/recordings',
+    settings: '/v1/settings',
+    stats: '/v1/stats',
+    selectDirectory: '/v1/system/select-directory'
 };
 
 const RECORDING_CHUNK_INTERVAL_MS = 5000;

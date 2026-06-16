@@ -22,37 +22,62 @@ const ApiClient = (() => {
         return (await request(API.recordings)).json();
     }
 
+    async function listProjects() {
+        return (await request('/v1/projects')).json();
+    }
+
     async function recordingAudio(recordingId) {
         return (await request(`${API.recordings}/${recordingId}/audio`)).blob();
+    }
+
+    async function recordingProject(recordingId) {
+        return (await request(`${API.recordings}/${recordingId}/project`)).json();
     }
 
     function transcribe(formData) {
         return request(API.transcribe, { method: 'POST', body: formData });
     }
 
-    async function updateRecording(recordingId, title) {
+    async function updateRecording(recordingId, titleOrPatch) {
+        const body = typeof titleOrPatch === 'object'
+            ? titleOrPatch
+            : { title: titleOrPatch };
         return (await request(`${API.recordings}/${recordingId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title }),
+            body: JSON.stringify(body),
         })).json();
     }
 
     async function getSettings() {
-        return (await request('/v1/settings')).json();
+        return (await request(API.settings)).json();
     }
 
-    async function updateSettings(transcriptionsDir, recordingsDir = '', geminiApiKey = '', llmProvider = 'mock') {
-        return (await request('/v1/settings', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                transcriptions_dir: transcriptionsDir,
+    async function checkModelCache(modelName) {
+        return (await request(`/v1/models/check-cache?model=${encodeURIComponent(modelName)}`)).json();
+    }
+
+    async function updateSettings(settingsObjOrDir, recordingsDir = '', geminiApiKey = '', llmProvider = 'mock') {
+        let bodyObj = {};
+        if (typeof settingsObjOrDir === 'object') {
+            bodyObj = settingsObjOrDir;
+        } else {
+            bodyObj = {
+                transcriptions_dir: settingsObjOrDir,
                 recordings_dir: recordingsDir,
                 gemini_api_key: geminiApiKey,
                 llm_provider: llmProvider
-            }),
+            };
+        }
+        return (await request(API.settings, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(bodyObj),
         })).json();
+    }
+
+    async function stats() {
+        return (await request(API.stats)).json();
     }
 
     async function analyze(payload) {
@@ -64,7 +89,7 @@ const ApiClient = (() => {
     }
 
     async function selectDirectory() {
-        return (await request('/v1/system/select-directory', {
+        return (await request(API.selectDirectory, {
             method: 'POST'
         })).json();
     }
@@ -84,11 +109,15 @@ const ApiClient = (() => {
     return { 
         health, 
         listRecordings, 
+        listProjects,
         recordingAudio, 
+        recordingProject,
         transcribe,
         updateRecording,
         getSettings,
+        checkModelCache,
         updateSettings,
+        stats,
         analyze,
         selectDirectory,
         listTranscriptions,

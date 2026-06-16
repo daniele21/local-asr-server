@@ -17,7 +17,7 @@ class TranscriptionStore:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    def save(self, payload: dict[str, Any], audio_filename: str = "") -> dict[str, Any]:
+    def save(self, payload: dict[str, Any], audio_filename: str = "", recording_id: str | None = None) -> dict[str, Any]:
         transcription_id = str(uuid.uuid4())
         timestamp = datetime.now(timezone.utc).isoformat()
         
@@ -29,11 +29,13 @@ class TranscriptionStore:
             "id": transcription_id,
             "timestamp": timestamp,
             "audio_filename": audio_filename or "uploaded_audio",
+            "recording_id": recording_id or payload.get("recording_id") or "",
             "model": payload.get("model", "default"),
             "language": payload.get("language", "it"),
             "text": payload.get("text", ""),
             "segments": payload.get("segments", []),
-            "stats": payload.get("stats", {})
+            "stats": payload.get("stats", {}),
+            "analysis": payload.get("analysis")
         }
         
         # Save JSON metadata + full result
@@ -73,6 +75,35 @@ class TranscriptionStore:
                     data = json.load(f)
                     if data.get("id") == transcription_id:
                         return data
+            except Exception:
+                continue
+        raise FileNotFoundError("Transcription not found")
+
+    def find_for_recording(self, recording_id: str, audio_filename: str = "") -> dict[str, Any] | None:
+        items, _ = self.list(page=1, limit=999)
+        for item in items:
+            if recording_id and item.get("recording_id") == recording_id:
+                return item
+        if audio_filename:
+            for item in items:
+                if item.get("audio_filename") == audio_filename:
+                    return item
+        return None
+
+    def save_analysis(self, transcription_id: str, analysis: dict[str, Any]) -> dict[str, Any]:
+        for p in self.root.glob("transcript_*.json"):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if data.get("id") != transcription_id:
+                    continue
+                data["analysis"] = {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "result": analysis,
+                }
+                with open(p, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                return data
             except Exception:
                 continue
         raise FileNotFoundError("Transcription not found")
