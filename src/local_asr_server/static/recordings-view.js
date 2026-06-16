@@ -7,10 +7,12 @@ const RecordingsView = (() => {
     let selectHandler = null;
     let renameHandler = null;
     let projectHandler = null;
+    let projectChangedHandler = null;
     let dom = {};
 
     let currentPlayingAudio = null;
     let currentPlayingBtn = null;
+    let projectsList = [];
 
     function formatDate(value) {
         try {
@@ -35,6 +37,7 @@ const RecordingsView = (() => {
         selectHandler = options.onSelect;
         renameHandler = options.onRename;
         projectHandler = options.onProject;
+        projectChangedHandler = options.onProjectChanged;
         dom.previous.addEventListener('click', () => setPage(currentPage - 1));
         dom.next.addEventListener('click', () => setPage(currentPage + 1));
     }
@@ -214,7 +217,15 @@ const RecordingsView = (() => {
             row.className = 'recording-row recording-card';
             row.style.setProperty('--duration-fill', `${getDurationFill(recording)}%`);
 
-            // 1. Play Button
+            // 1. Play Row (containing Play Button on the left and Project Selector on the same line)
+            const playRow = document.createElement('div');
+            playRow.className = 'recording-card__play-row';
+            playRow.style.display = 'flex';
+            playRow.style.alignItems = 'center';
+            playRow.style.justifyContent = 'space-between';
+            playRow.style.width = '100%';
+            playRow.style.marginBottom = '8px';
+
             const playBtn = document.createElement('button');
             playBtn.type = 'button';
             playBtn.className = 'row-play-btn';
@@ -224,6 +235,18 @@ const RecordingsView = (() => {
                     <polygon points="5 3 19 12 5 21 5 3"/>
                 </svg>`;
             playBtn.addEventListener('click', () => togglePlay(recording, playBtn));
+
+            const projectSelector = ProjectSelector.render({
+                recording,
+                projectsList,
+                onChange: async () => {
+                    if (projectChangedHandler) {
+                        await projectChangedHandler();
+                    }
+                }
+            });
+
+            playRow.append(playBtn, projectSelector);
 
             // 2. Info block (Title and Metadata)
             const info = document.createElement('div');
@@ -340,14 +363,25 @@ const RecordingsView = (() => {
             `;
             info.appendChild(statusBadges);
 
-            // 3. Project actions
+            // 3. Card actions (Apri and Rigenera buttons side-by-side with icons)
             const actions = document.createElement('div');
             actions.className = 'recording-card__actions';
+            actions.style.display = 'flex';
+            actions.style.gap = '8px';
+            actions.style.width = '100%';
 
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'btn btn--ghost btn--sm';
-            button.textContent = i18n.t('transcription.cardOpenBtn');
+            button.style.flex = '1';
+            button.style.display = 'inline-flex';
+            button.style.alignItems = 'center';
+            button.style.justifyContent = 'center';
+            button.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="margin-right: 6px;">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                </svg>${i18n.t('transcription.cardOpenBtn')}`;
             button.addEventListener('click', () => {
                 stopCurrentAudio();
                 selectHandler(recording, button, { forceTranscription: false });
@@ -356,7 +390,17 @@ const RecordingsView = (() => {
             const regenerateBtn = document.createElement('button');
             regenerateBtn.type = 'button';
             regenerateBtn.className = 'btn btn--ghost btn--sm recording-card__secondary-action';
-            regenerateBtn.textContent = i18n.t('transcription.cardRegenerateBtn');
+            regenerateBtn.style.flex = '1';
+            regenerateBtn.style.display = 'inline-flex';
+            regenerateBtn.style.alignItems = 'center';
+            regenerateBtn.style.justifyContent = 'center';
+            regenerateBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="margin-right: 6px;">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                </svg>${i18n.t('transcription.cardRegenerateBtn')}`;
             regenerateBtn.title = i18n.t('transcription.tooltipRegenerate');
             regenerateBtn.disabled = !hasTranscription;
             regenerateBtn.addEventListener('click', () => {
@@ -365,31 +409,12 @@ const RecordingsView = (() => {
                 selectHandler(recording, regenerateBtn, { forceTranscription: true });
             });
 
-            const projectBtn = document.createElement('button');
-            projectBtn.type = 'button';
-            projectBtn.className = 'btn btn--ghost btn--sm recording-card__secondary-action';
-            projectBtn.textContent = i18n.t('recording.btnProject');
-            projectBtn.title = i18n.t('recording.tooltipProject');
-            projectBtn.addEventListener('click', async () => {
-                stopCurrentAudio();
-                if (projectHandler) {
-                    projectBtn.disabled = true;
-                    try {
-                        await projectHandler(recording);
-                    } finally {
-                        projectBtn.disabled = false;
-                    }
-                } else {
-                    selectHandler(recording, projectBtn, { openProject: true });
-                }
-            });
-
             const durationBar = document.createElement('span');
             durationBar.className = 'recording-card__duration';
             durationBar.setAttribute('aria-hidden', 'true');
 
-            actions.append(button, regenerateBtn, projectBtn);
-            row.append(playBtn, info, actions, durationBar);
+            actions.append(button, regenerateBtn);
+            row.append(playRow, info, actions, durationBar);
             dom.container.appendChild(row);
         });
 
@@ -400,5 +425,14 @@ const RecordingsView = (() => {
         dom.status.textContent = i18n.t('transcription.paginationStatus', { page: currentPage, total: pageCount });
     }
 
-    return { init, setItems, setTranscriptions };
+    function setProjects(items) {
+        projectsList = items || [];
+        render();
+    }
+
+    function setProjectsOnly(items) {
+        projectsList = items || [];
+    }
+
+    return { init, setItems, setTranscriptions, setProjects, setProjectsOnly };
 })();

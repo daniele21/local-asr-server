@@ -644,3 +644,180 @@ const SuggestionBanner = (() => {
 
     return { render };
 })();
+
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PROJECT SELECTOR
+   Centralized component to select or create a project.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+const ProjectSelector = (() => {
+    /**
+     * Render a centralized project selection dropdown.
+     * @param {Object} opts
+     * @param {Object} [opts.recording] - The recording object (optional, for edit mode)
+     * @param {string} [opts.initialValue] - Initial project value (optional, for draft mode)
+     * @param {Array} opts.projectsList - All projects
+     * @param {string} [opts.theme='transparent'] - Visual theme: 'transparent' or 'standard'
+     * @param {Function} opts.onChange - Callback when project changes (can return promise)
+     */
+    function render(opts) {
+        const { recording, initialValue, projectsList, theme = 'transparent', onChange } = opts;
+        const isEditMode = !!recording;
+        
+        const wrapper = document.createElement('div');
+        wrapper.className = 'project-selector-wrapper';
+        wrapper.style.display = 'flex';
+        wrapper.style.alignItems = 'center';
+        wrapper.style.gap = '4px';
+        if (theme === 'standard') {
+            wrapper.style.width = '100%';
+        }
+
+        const projectIcon = document.createElement('span');
+        projectIcon.className = 'project-icon';
+        projectIcon.innerHTML = '📁';
+        projectIcon.style.fontSize = '0.9rem';
+        if (theme === 'standard') {
+            projectIcon.style.display = 'none'; // Hide folder icon for standard input group
+        }
+
+        const select = document.createElement('select');
+        if (theme === 'standard') {
+            select.id = 'recording-project';
+            select.style.cursor = 'pointer';
+        } else {
+            select.className = 'project-select-dropdown-transparent';
+            
+            // Style override to make it transparent, borderless, with no background
+            select.style.background = 'transparent';
+            select.style.border = 'none';
+            select.style.outline = 'none';
+            select.style.boxShadow = 'none';
+            select.style.padding = '0';
+            select.style.margin = '0';
+            select.style.fontSize = '0.8rem';
+            select.style.color = 'var(--text-muted)';
+            select.style.fontWeight = '600';
+            select.style.cursor = 'pointer';
+            select.style.width = 'auto';
+            select.style.maxWidth = '180px';
+            select.style.webkitAppearance = 'menulist';
+        }
+
+        let currentProject = isEditMode ? (recording.project_name || '') : (initialValue || '');
+
+        function populateOptions(list) {
+            select.innerHTML = '';
+            
+            const defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.textContent = i18n.t('projects.noProject') || 'Senza progetto';
+            select.appendChild(defaultOption);
+
+            const filteredProjects = list.filter(p => !p.is_unassigned);
+            filteredProjects.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.name;
+                opt.textContent = p.name;
+                select.appendChild(opt);
+            });
+
+            const newProjectOpt = document.createElement('option');
+            newProjectOpt.value = '__NEW_PROJECT__';
+            newProjectOpt.textContent = `+ ${i18n.getLang() === 'it' ? 'Nuovo progetto...' : 'New project...'}`;
+            select.appendChild(newProjectOpt);
+
+            if (currentProject && !filteredProjects.some(p => p.name === currentProject)) {
+                const customOpt = document.createElement('option');
+                customOpt.value = currentProject;
+                customOpt.textContent = currentProject;
+                select.insertBefore(customOpt, newProjectOpt);
+            }
+            select.value = currentProject;
+        }
+
+        populateOptions(projectsList);
+
+        select.addEventListener('change', async () => {
+            const selectedValue = select.value;
+            if (selectedValue === '__NEW_PROJECT__') {
+                const promptMsg = i18n.getLang() === 'it' 
+                    ? 'Inserisci il nome del nuovo progetto:' 
+                    : 'Enter the new project name:';
+                const newProjName = prompt(promptMsg);
+                if (newProjName && newProjName.trim()) {
+                    const trimmedName = newProjName.trim();
+                    
+                    currentProject = trimmedName;
+                    populateOptions(projectsList); // Redraw options to include the new local option
+                    select.value = trimmedName;
+
+                    if (isEditMode) {
+                        select.disabled = true;
+                        try {
+                            await ApiClient.updateRecording(recording.id, { project_name: trimmedName });
+                            recording.project_name = trimmedName;
+                            Toast.show(i18n.t('transcription.projectUpdateSuccess'), 'success');
+                            if (onChange) {
+                                await onChange(trimmedName);
+                            }
+                        } catch (err) {
+                            Toast.show(i18n.t('transcription.projectUpdateError', { error: err.message }), 'error');
+                            select.value = recording.project_name || '';
+                            currentProject = recording.project_name || '';
+                        } finally {
+                            select.disabled = false;
+                        }
+                    } else {
+                        if (onChange) {
+                            onChange(trimmedName);
+                        }
+                    }
+                } else {
+                    select.value = currentProject;
+                }
+            } else {
+                currentProject = selectedValue;
+                if (isEditMode) {
+                    select.disabled = true;
+                    try {
+                        await ApiClient.updateRecording(recording.id, { project_name: selectedValue });
+                        recording.project_name = selectedValue;
+                        Toast.show(i18n.t('transcription.projectUpdateSuccess'), 'success');
+                        if (onChange) {
+                            await onChange(selectedValue);
+                        }
+                    } catch (err) {
+                        Toast.show(i18n.t('transcription.projectUpdateError', { error: err.message }), 'error');
+                        select.value = recording.project_name || '';
+                        currentProject = recording.project_name || '';
+                    } finally {
+                        select.disabled = false;
+                    }
+                } else {
+                    if (onChange) {
+                        onChange(selectedValue);
+                    }
+                }
+            }
+        });
+
+        wrapper.append(projectIcon, select);
+        
+        wrapper.getValue = () => select.value;
+        wrapper.setValue = (val) => {
+            select.value = val;
+            currentProject = val;
+        };
+        wrapper.updateProjects = (newProjectsList) => {
+            populateOptions(newProjectsList);
+        };
+        wrapper.selectElement = select;
+
+        return wrapper;
+    }
+
+    return { render };
+})();
+

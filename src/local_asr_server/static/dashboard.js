@@ -23,11 +23,12 @@ const DashboardController = (() => {
         if (!container) return;
 
         try {
-            // Fetch stats, recent recordings, and recent transcriptions
-            const [statsData, recordingsData, transcriptionsData] = await Promise.all([
+            // Fetch stats, recent recordings, recent transcriptions, and projects
+            const [statsData, recordingsData, transcriptionsData, projectsData] = await Promise.all([
                 ApiClient.stats().catch(() => ({ recordings_count: 0, transcriptions_count: 0 })),
                 ApiClient.listRecordings().catch(() => ({ items: [] })),
-                ApiClient.listTranscriptions(1, 5).catch(() => ({ items: [], total: 0 }))
+                ApiClient.listTranscriptions(1, 5).catch(() => ({ items: [], total: 0 })),
+                ApiClient.listProjects().catch(() => ({ items: [] }))
             ]);
 
             const recordings = recordingsData.items || [];
@@ -35,6 +36,10 @@ const DashboardController = (() => {
             recentRecordings = recordings;
             recentTranscriptions = transcriptions;
             const transTotal = transcriptionsData.total || transcriptions.length;
+
+            const projects = projectsData.items || [];
+            const realProjects = projects.filter(p => !p.is_unassigned);
+            const projectsCount = realProjects.length;
 
             // Total analyses count
             let analysesCount = 0;
@@ -73,22 +78,39 @@ const DashboardController = (() => {
                             ${StatsCard.render(i18n.t('dashboard.statsRecordings'), statsData.recordings_count || recordings.length, '🎙️')}
                             ${StatsCard.render(i18n.t('dashboard.statsTranscriptions'), statsData.transcriptions_count || transTotal, '📝')}
                             ${StatsCard.render(i18n.t('dashboard.statsAnalyses'), analysesCount, '📊')}
+                            ${StatsCard.render(i18n.t('dashboard.statsProjects'), projectsCount, '🗂️')}
                         </div>
                     </div>
 
-                    <!-- Quick Actions -->
-                    <div class="dashboard-section dashboard-section--actions card">
-                        <h3 class="section-title" data-i18n="dashboard.quickActionsTitle">${i18n.t('dashboard.quickActionsTitle')}</h3>
-                        <div class="quick-actions-list">
-                            <button type="button" class="btn btn--primary" data-page-target="recording">
-                                ${i18n.t('dashboard.quickActionRecord')}
-                            </button>
-                            <button type="button" class="btn btn--secondary" data-page-target="transcription">
-                                ${i18n.t('dashboard.quickActionTranscribe')}
-                            </button>
-                            <button type="button" class="btn btn--ghost" data-page-target="settings">
-                                ${i18n.t('dashboard.quickActionSettings')}
-                            </button>
+                    <!-- Left Column: Quick Actions & Recent Projects -->
+                    <div class="dashboard-section dashboard-section--left" style="display: flex; flex-direction: column; gap: 24px;">
+                        <!-- Quick Actions -->
+                        <div class="dashboard-section--actions card">
+                            <h3 class="section-title" data-i18n="dashboard.quickActionsTitle">${i18n.t('dashboard.quickActionsTitle')}</h3>
+                            <div class="quick-actions-list">
+                                <button type="button" class="btn btn--primary" data-page-target="recording">
+                                    ${i18n.t('dashboard.quickActionRecord')}
+                                </button>
+                                <button type="button" class="btn btn--secondary" data-page-target="transcription">
+                                    ${i18n.t('dashboard.quickActionTranscribe')}
+                                </button>
+                                <button type="button" class="btn btn--ghost" data-page-target="settings">
+                                    ${i18n.t('dashboard.quickActionSettings')}
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Recent Projects -->
+                        <div class="dashboard-section--projects card">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                                <h3 class="section-title" style="margin: 0;" data-i18n="dashboard.projectsTitle">${i18n.t('dashboard.projectsTitle')}</h3>
+                                <button type="button" class="btn btn--ghost btn--sm" data-page-target="projects" style="padding: 4px 8px; font-size: 0.8rem;">
+                                    ${i18n.getLang() === 'it' ? 'Vedi tutti →' : 'View all →'}
+                                </button>
+                            </div>
+                            <div class="activity-feed">
+                                ${renderRecentProjects(projects)}
+                            </div>
                         </div>
                     </div>
 
@@ -185,6 +207,62 @@ const DashboardController = (() => {
         });
 
         i18n.applyAll(container);
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/&/g, '&amp;')
+                  .replace(/</g, '&lt;')
+                  .replace(/>/g, '&gt;')
+                  .replace(/"/g, '&quot;')
+                  .replace(/'/g, '&#039;');
+    }
+
+    function renderRecentProjects(projects) {
+        const realProjects = projects.filter(p => !p.is_unassigned);
+        if (realProjects.length === 0) {
+            return `<p class="text-muted" data-i18n="dashboard.noProjects">${i18n.t('dashboard.noProjects')}</p>`;
+        }
+
+        // Sort projects by the latest recording date inside them
+        const sortedProjects = [...realProjects].map(p => {
+            let latestDate = 0;
+            p.items.forEach(item => {
+                const dateStr = item.recording?.created_at;
+                if (dateStr) {
+                    const d = new Date(dateStr).getTime();
+                    if (d > latestDate) latestDate = d;
+                }
+            });
+            return { ...p, latestDate };
+        }).sort((a, b) => b.latestDate - a.latestDate);
+
+        // Limit to 3
+        const recent = sortedProjects.slice(0, 3);
+
+        return recent.map(project => {
+            const audioCount = project.items.length;
+            const transcribedCount = project.items.filter(item => item.transcription).length;
+            
+            const metaText = i18n.getLang() === 'it'
+                ? `${audioCount} audio &middot; ${transcribedCount} trascrizioni`
+                : `${audioCount} audio &middot; ${transcribedCount} transcriptions`;
+
+            return `
+                <div class="activity-item recent-project-item">
+                    <div class="activity-item__icon" style="background: rgba(255, 193, 7, 0.1);">📁</div>
+                    <div class="activity-item__details">
+                        <span class="activity-item__title">${escapeHtml(project.name)}</span>
+                        <span class="activity-item__meta">${metaText}</span>
+                    </div>
+                    <div class="activity-item__actions">
+                        <button type="button" class="btn btn--secondary btn--sm" data-page-target="projects">
+                            ${i18n.t('projects.btnView') || 'Visualizza'}
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
     }
 
     function renderActivityFeed(recordings, transcriptions) {

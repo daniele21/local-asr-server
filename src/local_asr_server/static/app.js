@@ -93,6 +93,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let selectedRecordingId = null;
     let historyPage = 1;
     let loadedSettings = null;
+    let recordingProjectSelector = null;
     // ═══════════════════════════════════════════════════════════════════════════
     // Initialization
     // ═══════════════════════════════════════════════════════════════════════════
@@ -118,6 +119,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (modelSelect) {
             modelSelect.addEventListener('change', updateModelCacheStatus);
         }
+        // Initialize dynamic recording project dropdown
+        ApiClient.listProjects().catch(() => ({ items: [] })).then(projectsData => {
+            const projectsList = projectsData.items || [];
+            const container = document.getElementById('recording-project-container');
+            if (container) {
+                recordingProjectSelector = ProjectSelector.render({
+                    initialValue: '',
+                    projectsList: projectsList,
+                    theme: 'standard'
+                });
+                container.appendChild(recordingProjectSelector);
+            }
+        });
         // Initialize components
         if (dom.recordingPageContent && dom.recorderPanel) {
             dom.recordingPageContent.appendChild(dom.recorderPanel);
@@ -137,6 +151,21 @@ document.addEventListener('DOMContentLoaded', () => {
             onSelect: selectRecording,
             onRename: loadRecordings,
             onProject: assignRecordingProject,
+            onProjectChanged: async () => {
+                await Promise.all([
+                    updateProjectDatalist(),
+                    dom.projectsView ? loadProjects() : Promise.resolve(),
+                ]);
+                try {
+                    const projectsData = await ApiClient.listProjects();
+                    RecordingsView.setProjectsOnly(projectsData.items || []);
+                    if (recordingProjectSelector && typeof recordingProjectSelector.updateProjects === 'function') {
+                        recordingProjectSelector.updateProjects(projectsData.items || []);
+                    }
+                } catch (e) {
+                    console.warn('Failed to update projects list in background:', e);
+                }
+            },
         });
         Tour.init();
         RecordingController.init({
@@ -694,13 +723,18 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!dom.recordingsList) return;
         dom.recordingsList.innerHTML = '<p class="recordings-list__empty">Caricamento registrazioni...</p>';
         try {
-            const [recordingsData, transcriptionsData] = await Promise.all([
+            const [recordingsData, transcriptionsData, projectsData] = await Promise.all([
                 ApiClient.listRecordings(),
                 ApiClient.listTranscriptions(1, 999).catch(() => ({ items: [] })),
+                ApiClient.listProjects().catch(() => ({ items: [] })),
             ]);
             const count = RecordingsView.setItems(recordingsData.items || []);
             RecordingsView.setTranscriptions(transcriptionsData.items || []);
+            RecordingsView.setProjects(projectsData.items || []);
             dom.recordingsCount.textContent = `${count} ${count === 1 ? 'elemento' : 'elementi'}`;
+            if (recordingProjectSelector && typeof recordingProjectSelector.updateProjects === 'function') {
+                recordingProjectSelector.updateProjects(projectsData.items || []);
+            }
         } catch (error) {
             console.error('Unable to load recordings:', error);
             dom.recordingsList.innerHTML = '<p class="recordings-list__empty">Impossibile caricare le registrazioni.</p>';
