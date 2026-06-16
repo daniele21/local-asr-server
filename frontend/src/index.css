@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+
+  /* Map css variables to tailwind utilities */
+  --color-bg-base: var(--bg-base);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-hover: var(--bg-hover);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-focus: var(--border-focus);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-glow: var(--accent-glow);
+  --color-accent-glow-lg: var(--accent-glow-lg);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+}
+
+/* Base custom properties (Space-Violet Dark Theme - Default) */
+:root {
+  --bg-base: #09051f;
+  --bg-surface: #13102d;
+  --bg-elevated: rgba(25, 20, 58, 0.7);
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --border-subtle: rgba(255, 255, 255, 0.11);
+  --border-focus: rgba(159, 116, 255, 0.6);
+
+  --text-primary: #f3f1fd;
+  --text-secondary: #c0b8e5;
+  --text-muted: #78729c;
+
+  --accent: #9f74ff;
+  --accent-hover: #b89aff;
+  --accent-glow: rgba(159, 116, 255, 0.15);
+  --accent-glow-lg: rgba(159, 116, 255, 0.09);
+
+  --success: #66f0e3;
+  --warning: #ffd366;
+  --danger: #ff6685;
+  --info: #58c8ff;
+}
+
+/* Space-Violet Light Theme */
+[data-theme="light"] {
+  --bg-base: #f4f1fa;
+  --bg-surface: #e8e4f5;
+  --bg-elevated: rgba(255, 255, 255, 0.85);
+  --bg-hover: rgba(159, 116, 255, 0.08);
+  --border-subtle: rgba(159, 116, 255, 0.15);
+  --border-focus: rgba(159, 116, 255, 0.6);
+
+  --text-primary: #1b133b;
+  --text-secondary: #5a4f80;
+  --text-muted: #9186b5;
+
+  --accent: #7355ff;
+  --accent-hover: #5b3eff;
+  --accent-glow: rgba(115, 85, 255, 0.1);
+  --accent-glow-lg: rgba(115, 85, 255, 0.06);
+}
+
+/* Custom background glows styling */
+.glow-bg {
+  position: fixed;
+  width: 600px;
+  height: 600px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+  filter: blur(100px);
+  opacity: 0.5;
+}
+
+[data-theme="light"] .glow-bg {
+  opacity: 0.3;
+}
+
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+}
+

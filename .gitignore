@@ -161,3 +161,4 @@ dist/ClosedRoom.dmg
 dist/dmg_staging/
 .vscode/launch.json
 .vscode/tasks.json
+*/node_modules/*

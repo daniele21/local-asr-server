@@ -67,6 +67,17 @@ fi
 
 mkdir -p "$BUILD_ASSETS"
 
+# ── Step 0: Build React frontend ──────────────────────────────────────────────
+log "Step 0/5: Building React + Tailwind v4 frontend with pnpm..."
+if ! command -v pnpm &> /dev/null; then
+    die "pnpm not found. Please install it: npm install -g pnpm"
+fi
+cd "$SCRIPT_DIR/frontend"
+pnpm install
+pnpm run build
+cd "$SCRIPT_DIR"
+ok "React frontend built successfully"
+
 # ── Step 1: Compile Swift audio helper ────────────────────────────────────────
 log "Step 1/5: Compiling Swift audio helper..."
 
