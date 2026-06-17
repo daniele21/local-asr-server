@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
 import { ApiClient, Transcription, TranscriptionSegment } from '../../../api/apiClient';
 import { useTranslation } from '../../../i18n/i18n';
 import { formatTime } from '../../../utils/formatters';
 import { useToast } from '../../../context/ToastContext';
+import { ProjectPromptModal } from '../../../components/ui/ProjectPromptModal';
 
 interface ResultsStepProps {
   transcriptionResult: Transcription;
@@ -28,6 +29,75 @@ export default function ResultsStep({
   const { t, lang } = useTranslation();
   const { showToast } = useToast();
   const [isSplitting, setIsSplitting] = useState(false);
+  const [projectName, setProjectName] = useState<string>('');
+  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  const [projectsList, setProjectsList] = useState<string[]>([]);
+  const [recordingTitles, setRecordingTitles] = useState<Map<string, string>>(new Map());
+
+  const loadProjectInfo = async () => {
+    try {
+      // 1. Fetch all projects to build the suggestion list
+      const projsData = await ApiClient.listProjects();
+      const list = (projsData.items || [])
+        .filter((p) => !p.is_unassigned)
+        .map((p) => p.name);
+      setProjectsList(list);
+
+      // 2. Determine current project and fetch merged recording titles
+      if (transcriptionResult.recording_id) {
+        const rec = await ApiClient.getRecording(transcriptionResult.recording_id);
+        setProjectName(rec.project_name || '');
+      } else if (transcriptionResult.merged_sources && transcriptionResult.merged_sources.length > 0) {
+        // Find the first source that has a recording_id
+        const firstRecSource = transcriptionResult.merged_sources.find(src => src.recording_id);
+        if (firstRecSource?.recording_id) {
+          const rec = await ApiClient.getRecording(firstRecSource.recording_id);
+          setProjectName(rec.project_name || '');
+        }
+
+        const titlesMap = new Map<string, string>();
+        await Promise.all(
+          transcriptionResult.merged_sources.map(async (src) => {
+            if (src.recording_id) {
+              try {
+                const rec = await ApiClient.getRecording(src.recording_id);
+                titlesMap.set(src.recording_id, rec.title);
+              } catch (err) {
+                console.error(`Error loading recording ${src.recording_id}:`, err);
+              }
+            }
+          })
+        );
+        setRecordingTitles(titlesMap);
+      }
+    } catch (err) {
+      console.error('Error loading project info:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadProjectInfo();
+  }, [transcriptionResult]);
+
+  const handleConfirmProject = async (newProjName: string) => {
+    try {
+      if (transcriptionResult.recording_id) {
+        await ApiClient.updateRecording(transcriptionResult.recording_id, { project_name: newProjName });
+      }
+      if (transcriptionResult.merged_sources && transcriptionResult.merged_sources.length > 0) {
+        // Update all recordings in the merged sources
+        const updatePromises = transcriptionResult.merged_sources
+          .filter(src => src.recording_id)
+          .map(src => ApiClient.updateRecording(src.recording_id!, { project_name: newProjName }));
+        await Promise.all(updatePromises);
+      }
+      setProjectName(newProjName);
+      showToast(t('transcription.projectUpdateSuccess') || 'Progetto aggiornato!', 'success');
+      setIsProjectModalOpen(false);
+    } catch (err: any) {
+      showToast(t('transcription.projectUpdateError', { error: err.message }) || 'Errore', 'error');
+    }
+  };
 
   const handleSplit = async () => {
     const confirmMsg = lang === 'it' 
@@ -63,6 +133,18 @@ export default function ResultsStep({
           <h2 className="text-xl font-bold text-text-primary mt-1">
             {transcriptionResult.audio_filename}
           </h2>
+          <div className="flex items-center gap-2 mt-1.5 text-xs text-text-secondary">
+            <span>📁 {t('recording.formProjectLabel') || 'Progetto'}:</span>
+            <span className="font-semibold text-text-primary">{projectName || t('projects.empty') || 'Senza progetto'}</span>
+            {(transcriptionResult.recording_id || (transcriptionResult.merged_sources && transcriptionResult.merged_sources.length > 0)) && (
+              <button
+                onClick={() => setIsProjectModalOpen(true)}
+                className="text-accent hover:text-accent-hover font-semibold transition-colors cursor-pointer ml-1"
+              >
+                ({lang === 'it' ? 'modifica' : 'edit'})
+              </button>
+            )}
+          </div>
         </div>
         <div className="flex gap-2">
           {transcriptionResult.merged_sources && transcriptionResult.merged_sources.length > 0 && (
@@ -135,12 +217,16 @@ export default function ResultsStep({
             </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {transcriptionResult.merged_sources.map((src, index) => (
-              <div key={src.id} className="p-3 bg-bg-surface border border-border-subtle/70 rounded-xl flex flex-col gap-2">
-                <div className="flex items-center justify-between text-xs font-bold text-text-primary">
-                  <span className="truncate pr-2" title={src.audio_filename}>
-                    🎵 Part {index + 1}: {src.audio_filename}
-                  </span>
+            {transcriptionResult.merged_sources.map((src, index) => {
+              const displayTitle = src.recording_id && recordingTitles.has(src.recording_id)
+                ? recordingTitles.get(src.recording_id)
+                : src.audio_filename;
+              return (
+                <div key={src.id} className="p-3 bg-bg-surface border border-border-subtle/70 rounded-xl flex flex-col gap-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-text-primary">
+                    <span className="truncate pr-2" title={displayTitle}>
+                      🎵 Part {index + 1}: {displayTitle}
+                    </span>
                   {src.recording_id ? (
                     <span className="text-[9px] bg-accent/10 text-accent border border-accent/20 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0">
                       Audio
@@ -162,8 +248,9 @@ export default function ResultsStep({
                     {t('transcription.mergeAudioUnavailable') || 'Audio non riproducibile (importato)'}
                   </p>
                 )}
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         </Card>
       )}
@@ -299,6 +386,13 @@ export default function ResultsStep({
           </div>
         )}
       </Card>
+      <ProjectPromptModal
+        isOpen={isProjectModalOpen}
+        initialValue={projectName}
+        onConfirm={handleConfirmProject}
+        onCancel={() => setIsProjectModalOpen(false)}
+        existingProjects={projectsList}
+      />
     </div>
   );
 }

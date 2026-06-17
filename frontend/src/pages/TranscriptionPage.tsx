@@ -74,6 +74,16 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
     }
   };
 
+  const handleCardTitleChange = async (recordingId: string, newTitle: string) => {
+    try {
+      await ApiClient.updateRecording(recordingId, { title: newTitle });
+      showToast(t('transcription.titleSaveSuccess') || 'Titolo aggiornato!', 'success');
+      loadRecordings();
+    } catch (err: any) {
+      showToast(t('transcription.titleSaveError', { error: err.message }) || 'Errore', 'error');
+    }
+  };
+
   const [step, setStep] = useState<'upload' | 'transcribe' | 'results'>('upload');
   const [sourceMode, setSourceMode] = useState<'recordings' | 'file' | 'merge'>('recordings');
   const [isMerging, setIsMerging] = useState(false);
@@ -475,6 +485,7 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
           playingAudioId={playingAudioId}
           togglePlayAudio={togglePlayAudio}
           handleCardProjectChange={handleCardProjectChange}
+          handleCardTitleChange={handleCardTitleChange}
           selectRecording={selectRecording}
           handleSelectAudioFile={handleSelectAudioFile}
           fileInputRef={fileInputRef}

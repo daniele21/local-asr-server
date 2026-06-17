@@ -22,6 +22,8 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
 
   const [projectDetail, setProjectDetail] = useState<ProjectItem | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editTitleValue, setEditTitleValue] = useState('');
 
   // New Recording Form State
   const [title, setTitle] = useState('');
@@ -94,6 +96,24 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
     }
   };
 
+  const handleSaveTitle = async () => {
+    if (!projectDetail) return;
+    const cleanTitle = editTitleValue.trim();
+    if (!cleanTitle) {
+      showToast(t('transcription.titleEmptyError') || 'Il titolo non può essere vuoto', 'error');
+      return;
+    }
+    try {
+      await ApiClient.updateRecording(projectDetail.recording.id, { title: cleanTitle });
+      showToast(t('transcription.titleSaveSuccess') || 'Titolo aggiornato!', 'success');
+      setIsEditingTitle(false);
+      const updated = await ApiClient.recordingProject(projectDetail.recording.id);
+      setProjectDetail(updated);
+    } catch (err: any) {
+      showToast(t('transcription.titleSaveError', { error: err.message }) || 'Impossibile salvare il titolo', 'error');
+    }
+  };
+
   const handleSaveSettings = async () => {
     try {
       await ApiClient.updateSettings({ recordings_dir: recordingsDir.trim() });
@@ -128,7 +148,39 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
         <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-border-subtle pb-3 gap-2">
           <div>
             <span className="text-[10px] font-bold text-accent tracking-wider uppercase">RECORDINGS</span>
-            <h2 className="text-2xl font-bold text-text-primary mt-1">{recording.title}</h2>
+            {isEditingTitle ? (
+              <div className="flex items-center gap-2 mt-1">
+                <input
+                  type="text"
+                  className="px-3 py-1.5 bg-bg-surface border border-border-focus rounded-lg text-sm focus:outline-none text-text-primary font-bold text-xl"
+                  value={editTitleValue}
+                  onChange={(e) => setEditTitleValue(e.target.value)}
+                  maxLength={200}
+                />
+                <Button size="sm" onClick={handleSaveTitle}>
+                  Salva
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setIsEditingTitle(false)}>
+                  {t('common.cancel')}
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 mt-1">
+                <h2 className="text-2xl font-bold text-text-primary">{recording.title}</h2>
+                <button
+                  onClick={() => {
+                    setIsEditingTitle(true);
+                    setEditTitleValue(recording.title);
+                  }}
+                  className="text-text-muted hover:text-text-primary transition-colors cursor-pointer"
+                  title="Rinomina"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
+                    <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                  </svg>
+                </button>
+              </div>
+            )}
             <p className="text-xs text-text-secondary mt-1">
               {formatProjectDate(recording.created_at, lang)} · {formatBytes(recording.bytes_written || 0)}
             </p>

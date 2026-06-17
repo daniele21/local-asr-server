@@ -19,6 +19,7 @@ interface SourceStepProps {
   playingAudioId: string | null;
   togglePlayAudio: (e: React.MouseEvent, recId: string) => void;
   handleCardProjectChange: (recordingId: string, newProjName: string) => void;
+  handleCardTitleChange: (recordingId: string, newTitle: string) => void;
   selectRecording: (recording: Recording) => void;
   handleSelectAudioFile: (file: File) => void;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
@@ -38,6 +39,7 @@ export default function SourceStep({
   playingAudioId,
   togglePlayAudio,
   handleCardProjectChange,
+  handleCardTitleChange,
   selectRecording,
   handleSelectAudioFile,
   fileInputRef,
@@ -57,6 +59,20 @@ export default function SourceStep({
 
   // Card multi-select state (Cmd/Ctrl + Click)
   const [selectedRecordingIds, setSelectedRecordingIds] = useState<string[]>([]);
+
+  // Inline title editing state
+  const [editingRecordingId, setEditingRecordingId] = useState<string | null>(null);
+  const [editingTitleValue, setEditingTitleValue] = useState('');
+
+  const handleSaveTitle = (recordingId: string) => {
+    const trimmed = editingTitleValue.trim();
+    if (!trimmed) {
+      showToast(t('transcription.titleEmptyError') || 'Il titolo non può essere vuoto', 'error');
+      return;
+    }
+    handleCardTitleChange(recordingId, trimmed);
+    setEditingRecordingId(null);
+  };
 
   // Fetch transcriptions when merge tab is active
   useEffect(() => {
@@ -261,10 +277,75 @@ export default function SourceStep({
                       </div>
 
                       {/* Info Block */}
-                      <div className="flex flex-col gap-1 min-w-0">
-                        <h4 className="text-sm font-bold text-text-primary truncate" title={rec.title}>
-                          {rec.title}
-                        </h4>
+                      <div className="flex flex-col gap-1 min-w-0" onClick={(e) => {
+                        if (editingRecordingId === rec.id) {
+                          e.stopPropagation();
+                        }
+                      }}>
+                        {editingRecordingId === rec.id ? (
+                          <div className="flex items-center gap-1.5 w-full" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="text"
+                              className="w-full px-2 py-1 bg-bg-surface border border-border-focus rounded text-xs focus:outline-none text-text-primary font-bold"
+                              value={editingTitleValue}
+                              onChange={(e) => setEditingTitleValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  handleSaveTitle(rec.id);
+                                } else if (e.key === 'Escape') {
+                                  setEditingRecordingId(null);
+                                }
+                              }}
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSaveTitle(rec.id);
+                              }}
+                              className="text-success hover:text-success/80 transition-colors p-1 cursor-pointer shrink-0"
+                              title="Salva"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5">
+                                <path d="M20 6L9 17l-5-5" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingRecordingId(null);
+                              }}
+                              className="text-text-muted hover:text-text-primary transition-colors p-1 cursor-pointer shrink-0"
+                              title="Annulla"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5">
+                                <path d="M18 6L6 18M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between gap-2 group/title">
+                            <h4 className="text-sm font-bold text-text-primary truncate" title={rec.title}>
+                              {rec.title}
+                            </h4>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingRecordingId(rec.id);
+                                setEditingTitleValue(rec.title);
+                              }}
+                              className="text-text-muted hover:text-text-primary opacity-0 group-hover/title:opacity-100 transition-opacity p-0.5 cursor-pointer shrink-0"
+                              title="Rinomina"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5">
+                                <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                              </svg>
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       {/* Metadata Grid */}
