@@ -110,6 +110,7 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressStatus, setProgressStatus] = useState('');
   const [progressPercent, setProgressPercent] = useState(0);
+  const [audioDuration, setAudioDuration] = useState<number>(0);
   const [liveConsoleLines, setLiveConsoleLines] = useState<string[]>([]);
   const [livePreviewText, setLivePreviewText] = useState('');
   const [elapsedTime, setElapsedTime] = useState('0.0s');
@@ -126,17 +127,14 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
 
   const loadRecordings = async () => {
     try {
-      const [recordingsData, projectsData] = await Promise.all([
-        ApiClient.listRecordings(),
-        ApiClient.listProjects().catch(() => ({ items: [] }))
-      ]);
-      const list = recordingsData.items || [];
+      const sourceData = await ApiClient.transcriptionSourceData();
+      const list = sourceData.recordings || [];
       setRecordings(list);
       setRecordingsCountText(`${list.length} ${list.length === 1 ? 'elemento' : 'elementi'}`);
 
       const map = new Map<string, { transcription: any; analysis: any }>();
       const projs: string[] = [];
-      (projectsData.items || []).forEach((proj: any) => {
+      (sourceData.projects || []).forEach((proj: any) => {
         if (!proj.is_unassigned && proj.name) {
           projs.push(proj.name);
         }
@@ -152,7 +150,7 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
       setProjectItemsMap(map);
       setProjectsList(projs);
       
-      const settings = await ApiClient.getSettings();
+      const settings = sourceData.settings || {};
       setRecordingsFolder(settings.recordings_dir || '-');
       if (!targetModel) setTargetModel(settings.default_model || '');
       if (!targetLanguage) setTargetLanguage(settings.default_language || 'it');
@@ -221,6 +219,15 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
     setSelectedFile(file);
     const objectUrl = URL.createObjectURL(file);
     setSelectedObjectUrl(objectUrl);
+    
+    // Load duration dynamically using a temporary Audio element
+    const tempAudio = new Audio(objectUrl);
+    tempAudio.addEventListener('loadedmetadata', () => {
+      if (!isNaN(tempAudio.duration) && isFinite(tempAudio.duration)) {
+        setAudioDuration(tempAudio.duration);
+      }
+    });
+
     if (audioRef.current) {
       audioRef.current.src = objectUrl;
     }
@@ -301,6 +308,7 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
     setSelectedFile(null);
     setSelectedRecordingId(null);
     setTranscriptionResult(null);
+    setAudioDuration(0);
     if (selectedObjectUrl) {
       URL.revokeObjectURL(selectedObjectUrl);
       setSelectedObjectUrl(null);
@@ -340,7 +348,7 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
     formData.append('condition_on_previous_text', String(conditionOnPrevious));
     if (temperature) formData.append('temperature', temperature);
 
-    const duration = audioRef.current?.duration || 0;
+    const duration = audioDuration || audioRef.current?.duration || 0;
     abortControllerRef.current = new AbortController();
 
     try {

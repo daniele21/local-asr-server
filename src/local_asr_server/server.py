@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from local_asr_server.audio_router import AudioRouter
+from local_asr_server.catalog import CatalogStore
 from local_asr_server.recordings import (
     RecordingConflict,
     RecordingNotFound,
@@ -91,6 +92,31 @@ class MergeTranscriptionsRequest(BaseModel):
     title: Optional[str] = None
 
 
+def _build_projects(app: FastAPI) -> dict:
+    recordings = app.state.recording_store.list(limit=999)
+    projects: dict[str, dict] = {}
+    unassigned_name = "Senza progetto"
+    for recording in recordings:
+        project_name = (recording.get("project_name") or "").strip() or unassigned_name
+        bucket = projects.setdefault(project_name, {
+            "name": project_name,
+            "is_unassigned": project_name == unassigned_name,
+            "items": [],
+        })
+        audio_name = Path(recording.get("audio_file") or "").name
+        extension = Path(audio_name).suffix or recording.get("extension") or ""
+        title_audio_name = f"{recording.get('title')}{extension}" if extension else ""
+        transcription = app.state.transcription_store.find_for_recording(recording["id"], audio_name)
+        if transcription is None and title_audio_name:
+            transcription = app.state.transcription_store.find_for_recording("", title_audio_name)
+        bucket["items"].append({
+            "recording": recording,
+            "transcription": transcription,
+            "analysis": transcription.get("analysis") if transcription else None,
+        })
+    items = sorted(projects.values(), key=lambda item: (item["is_unassigned"], item["name"].lower()))
+    return {"items": items}
+
 
 # (Transcription and caching helper methods have been refactored to local_asr_server.transcriber)
 
@@ -118,12 +144,25 @@ def create_app(
     app.state.default_model = default_model
     app.state.is_recording = False
     app.state.is_transcribing = False
+    from local_asr_server import transcriptions as transcriptions_module
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    transcriptions_root = Path(
+        transcriptions_module.load_settings()["transcriptions_dir"]
+    ).expanduser().resolve()
+    if temp_root in transcriptions_root.parents or transcriptions_root == temp_root:
+        catalog_path = transcriptions_root / "closedroom.db"
+    elif recordings_dir is not None and temp_root in recordings_dir.expanduser().resolve().parents:
+        catalog_path = recordings_dir.expanduser().resolve() / "closedroom.db"
+    else:
+        catalog_path = CatalogStore.default_db_path()
+    app.state.catalog_store = CatalogStore(catalog_path)
     app.state.recording_store = RecordingStore(
         recordings_dir or Path("~/Recordings/local-asr"),
-        use_settings_dir=recordings_dir is None
+        use_settings_dir=recordings_dir is None,
+        catalog=app.state.catalog_store,
     )
     from local_asr_server.transcriptions import TranscriptionStore
-    app.state.transcription_store = TranscriptionStore()
+    app.state.transcription_store = TranscriptionStore(catalog=app.state.catalog_store)
 
     # Clean up any orphan aggregate devices from previous runs/crashes
     AudioRouter.cleanup_orphans()
@@ -276,6 +315,25 @@ def create_app(
     @app.get("/v1/recordings")
     def list_recordings(limit: int = 20):
         return {"items": app.state.recording_store.list(limit)}
+
+    @app.get("/v1/transcription/source-data")
+    def transcription_source_data(limit: int = 100):
+        recordings = app.state.recording_store.list(limit=max(1, min(limit, 200)))
+        projects = _build_projects(app)
+        settings = load_settings()
+        return {
+            "recordings": recordings,
+            "recordings_count": len(recordings),
+            "projects": projects["items"],
+            "settings": {
+                "recordings_dir": settings.get("recordings_dir", ""),
+                "default_model": settings.get("default_model", ""),
+                "default_language": settings.get("default_language", "it"),
+                "default_task": settings.get("default_task", "transcribe"),
+                "default_word_timestamps": settings.get("default_word_timestamps", False),
+                "default_condition_on_previous": settings.get("default_condition_on_previous", True),
+            },
+        }
 
     @app.post("/v1/audio/transcriptions")
     async def transcribe_upload(
@@ -542,29 +600,7 @@ def create_app(
 
     @app.get("/v1/projects")
     def list_projects():
-        recordings = app.state.recording_store.list(limit=999)
-        projects: dict[str, dict] = {}
-        unassigned_name = "Senza progetto"
-        for recording in recordings:
-            project_name = (recording.get("project_name") or "").strip() or unassigned_name
-            bucket = projects.setdefault(project_name, {
-                "name": project_name,
-                "is_unassigned": project_name == unassigned_name,
-                "items": [],
-            })
-            audio_name = Path(recording.get("audio_file") or "").name
-            extension = Path(audio_name).suffix or recording.get("extension") or ""
-            title_audio_name = f"{recording.get('title')}{extension}" if extension else ""
-            transcription = app.state.transcription_store.find_for_recording(recording["id"], audio_name)
-            if transcription is None and title_audio_name:
-                transcription = app.state.transcription_store.find_for_recording("", title_audio_name)
-            bucket["items"].append({
-                "recording": recording,
-                "transcription": transcription,
-                "analysis": transcription.get("analysis") if transcription else None,
-            })
-        items = sorted(projects.values(), key=lambda item: (item["is_unassigned"], item["name"].lower()))
-        return {"items": items}
+        return _build_projects(app)
 
     @app.get("/v1/models/check-cache")
     def check_model_cache(model: Optional[str] = None):
@@ -578,14 +614,11 @@ def create_app(
 
     @app.get("/v1/stats")
     def get_stats():
-        recordings = app.state.recording_store.list(limit=999)
-        transcriptions, trans_total = app.state.transcription_store.list(page=1, limit=999)
-        return {
-            "recordings_count": len(recordings),
-            "transcriptions_count": trans_total,
-            "latest_recording": recordings[0] if recordings else None,
-            "latest_transcription": transcriptions[0] if transcriptions else None,
-        }
+        stats = app.state.catalog_store.stats()
+        if stats["latest_recording"] is None:
+            recordings = app.state.recording_store.list(limit=1)
+            stats["latest_recording"] = recordings[0] if recordings else None
+        return stats
 
     @app.post("/v1/settings")
     def update_settings(request: SettingsRequest):

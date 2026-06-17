@@ -37,6 +37,13 @@ export interface Project {
   items: ProjectItem[];
 }
 
+export interface TranscriptionSourceData {
+  recordings: Recording[];
+  recordings_count: number;
+  projects: Project[];
+  settings: Partial<Settings>;
+}
+
 export interface TranscriptionSegment {
   id: number;
   start: number;
@@ -119,6 +126,10 @@ export const ApiClient = {
 
   async recordingProject(recordingId: string): Promise<ProjectItem> {
     return (await request(`/v1/recordings/${recordingId}/project`)).json();
+  },
+
+  async transcriptionSourceData(limit = 100): Promise<TranscriptionSourceData> {
+    return (await request(`/v1/transcription/source-data?limit=${limit}`)).json();
   },
 
   transcribe(formData: FormData): Promise<Response> {

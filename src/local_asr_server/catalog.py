@@ -1,0 +1,306 @@
+from __future__ import annotations
+
+import contextlib
+import json
+import sqlite3
+import tempfile
+from pathlib import Path
+from typing import Any
+
+from local_asr_server.paths import get_app_support_dir
+from local_asr_server.settings import load_settings
+
+
+def _json_dump(value: Any) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _json_load(value: str | None, default: Any) -> Any:
+    if not value:
+        return default
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return default
+
+
+class CatalogStore:
+    """Central SQLite catalog for queryable ClosedRoom metadata."""
+
+    def __init__(self, db_path: Path | None = None) -> None:
+        self.db_path = db_path or self.default_db_path()
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.connection() as conn:
+            self._init_db(conn)
+
+    @staticmethod
+    def default_db_path() -> Path:
+        settings = load_settings()
+        transcriptions_dir = Path(settings["transcriptions_dir"]).expanduser().resolve()
+        recordings_dir = Path(settings["recordings_dir"]).expanduser().resolve()
+        temp_root = Path(tempfile.gettempdir()).resolve()
+        if temp_root in transcriptions_dir.parents or temp_root in recordings_dir.parents:
+            transcriptions_dir.mkdir(parents=True, exist_ok=True)
+            return transcriptions_dir / "closedroom.db"
+        return get_app_support_dir() / "closedroom.db"
+
+    @contextlib.contextmanager
+    def connection(self):
+        conn = sqlite3.connect(self.db_path, timeout=10.0)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def _init_db(self, conn: sqlite3.Connection) -> None:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS recordings (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                project_name TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                stopped_at TEXT,
+                completed_at TEXT,
+                mime_type TEXT,
+                extension TEXT,
+                chunk_count INTEGER DEFAULT 0,
+                bytes_written INTEGER DEFAULT 0,
+                model TEXT,
+                language TEXT,
+                error TEXT,
+                relative_dir TEXT,
+                audio_file TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS transcriptions (
+                id TEXT PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                audio_filename TEXT,
+                recording_id TEXT,
+                model TEXT,
+                language TEXT,
+                text TEXT,
+                segments TEXT,
+                stats TEXT,
+                analysis TEXT,
+                merged_sources TEXT,
+                hidden INTEGER DEFAULT 0,
+                merged_into TEXT,
+                file_name TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_recordings_created_at ON recordings(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_recordings_project ON recordings(project_name);
+            CREATE INDEX IF NOT EXISTS idx_recordings_status ON recordings(status);
+            CREATE INDEX IF NOT EXISTS idx_transcriptions_recording_id ON transcriptions(recording_id);
+            CREATE INDEX IF NOT EXISTS idx_transcriptions_audio_filename ON transcriptions(audio_filename);
+            CREATE INDEX IF NOT EXISTS idx_transcriptions_visible ON transcriptions(hidden, merged_into, timestamp DESC);
+            CREATE INDEX IF NOT EXISTS idx_transcriptions_timestamp ON transcriptions(timestamp DESC);
+            """
+        )
+
+    def upsert_recording(self, metadata: dict[str, Any], audio_file: str | None = None) -> None:
+        with self.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO recordings (
+                    id, title, project_name, status, created_at, stopped_at, completed_at,
+                    mime_type, extension, chunk_count, bytes_written, model, language, error,
+                    relative_dir, audio_file
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    title = excluded.title,
+                    project_name = excluded.project_name,
+                    status = excluded.status,
+                    stopped_at = excluded.stopped_at,
+                    completed_at = excluded.completed_at,
+                    mime_type = excluded.mime_type,
+                    extension = excluded.extension,
+                    chunk_count = excluded.chunk_count,
+                    bytes_written = excluded.bytes_written,
+                    model = excluded.model,
+                    language = excluded.language,
+                    error = excluded.error,
+                    relative_dir = excluded.relative_dir,
+                    audio_file = excluded.audio_file
+                """,
+                (
+                    metadata["id"],
+                    metadata.get("title") or "",
+                    metadata.get("project_name") or "",
+                    metadata.get("status") or "",
+                    metadata.get("created_at") or "",
+                    metadata.get("stopped_at"),
+                    metadata.get("completed_at"),
+                    metadata.get("mime_type"),
+                    metadata.get("extension"),
+                    metadata.get("chunk_count") or 0,
+                    metadata.get("bytes_written") or 0,
+                    metadata.get("model"),
+                    metadata.get("language"),
+                    metadata.get("error"),
+                    metadata.get("relative_dir"),
+                    audio_file,
+                ),
+            )
+
+    def upsert_transcription(self, data: dict[str, Any], file_name: str | None = None) -> None:
+        with self.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO transcriptions (
+                    id, timestamp, audio_filename, recording_id, model, language, text,
+                    segments, stats, analysis, merged_sources, hidden, merged_into, file_name
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    timestamp = excluded.timestamp,
+                    audio_filename = excluded.audio_filename,
+                    recording_id = excluded.recording_id,
+                    model = excluded.model,
+                    language = excluded.language,
+                    text = excluded.text,
+                    segments = excluded.segments,
+                    stats = excluded.stats,
+                    analysis = excluded.analysis,
+                    merged_sources = excluded.merged_sources,
+                    hidden = excluded.hidden,
+                    merged_into = excluded.merged_into,
+                    file_name = excluded.file_name
+                """,
+                (
+                    data["id"],
+                    data.get("timestamp") or "",
+                    data.get("audio_filename"),
+                    data.get("recording_id") or "",
+                    data.get("model"),
+                    data.get("language"),
+                    data.get("text") or "",
+                    _json_dump(data.get("segments", [])),
+                    _json_dump(data.get("stats", {})),
+                    _json_dump(data.get("analysis")) if data.get("analysis") is not None else None,
+                    _json_dump(data.get("merged_sources")) if data.get("merged_sources") is not None else None,
+                    1 if data.get("hidden") else 0,
+                    data.get("merged_into"),
+                    file_name or data.get("file_name"),
+                ),
+            )
+
+    def row_to_transcription(self, row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "timestamp": row["timestamp"],
+            "audio_filename": row["audio_filename"],
+            "recording_id": row["recording_id"],
+            "model": row["model"],
+            "language": row["language"],
+            "text": row["text"],
+            "segments": _json_load(row["segments"], []),
+            "stats": _json_load(row["stats"], {}),
+            "analysis": _json_load(row["analysis"], None),
+            "merged_sources": _json_load(row["merged_sources"], None),
+            "hidden": bool(row["hidden"]),
+            "merged_into": row["merged_into"],
+        }
+
+    def update_transcription_flags(self, transcription_id: str, *, hidden: bool, merged_into: str | None) -> None:
+        with self.connection() as conn:
+            conn.execute(
+                "UPDATE transcriptions SET hidden = ?, merged_into = ? WHERE id = ?",
+                (1 if hidden else 0, merged_into, transcription_id),
+            )
+
+    def update_analysis(self, transcription_id: str, analysis: dict[str, Any]) -> None:
+        with self.connection() as conn:
+            conn.execute(
+                "UPDATE transcriptions SET analysis = ? WHERE id = ?",
+                (_json_dump(analysis), transcription_id),
+            )
+
+    def delete_transcription(self, transcription_id: str) -> None:
+        with self.connection() as conn:
+            conn.execute("DELETE FROM transcriptions WHERE id = ?", (transcription_id,))
+
+    def import_transcriptions_dir(self, root: Path) -> None:
+        with self.connection() as conn:
+            rows = conn.execute("SELECT id, file_name FROM transcriptions").fetchall()
+            db_ids = {row["id"] for row in rows}
+            db_files = {row["file_name"] for row in rows if row["file_name"]}
+        for path in root.glob("transcript_*.json"):
+            if path.name in db_files:
+                continue
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if data.get("id") and data["id"] not in db_ids:
+                self.upsert_transcription(data, file_name=path.name)
+
+    def list_transcriptions(self, page: int = 1, limit: int = 10) -> tuple[list[dict[str, Any]], int]:
+        offset = max(0, page - 1) * limit
+        with self.connection() as conn:
+            total = conn.execute(
+                "SELECT COUNT(*) FROM transcriptions WHERE hidden = 0 AND merged_into IS NULL"
+            ).fetchone()[0]
+            rows = conn.execute(
+                """
+                SELECT * FROM transcriptions
+                WHERE hidden = 0 AND merged_into IS NULL
+                ORDER BY timestamp DESC
+                LIMIT ? OFFSET ?
+                """,
+                (limit, offset),
+            ).fetchall()
+        return [self.row_to_transcription(row) for row in rows], total
+
+    def get_transcription(self, transcription_id: str) -> dict[str, Any] | None:
+        with self.connection() as conn:
+            row = conn.execute("SELECT * FROM transcriptions WHERE id = ?", (transcription_id,)).fetchone()
+        return self.row_to_transcription(row) if row else None
+
+    def find_transcription_for_recording(self, recording_id: str, audio_filename: str = "") -> dict[str, Any] | None:
+        with self.connection() as conn:
+            row = None
+            if recording_id:
+                row = conn.execute(
+                    "SELECT * FROM transcriptions WHERE recording_id = ? ORDER BY timestamp DESC LIMIT 1",
+                    (recording_id,),
+                ).fetchone()
+            if row is None and audio_filename:
+                row = conn.execute(
+                    "SELECT * FROM transcriptions WHERE audio_filename = ? ORDER BY timestamp DESC LIMIT 1",
+                    (audio_filename,),
+                ).fetchone()
+        if row is None:
+            return None
+        item = self.row_to_transcription(row)
+        if item.get("merged_into"):
+            return self.get_transcription(item["merged_into"]) or item
+        return item
+
+    def stats(self) -> dict[str, Any]:
+        with self.connection() as conn:
+            recordings_count = conn.execute("SELECT COUNT(*) FROM recordings").fetchone()[0]
+            transcriptions_count = conn.execute(
+                "SELECT COUNT(*) FROM transcriptions WHERE hidden = 0 AND merged_into IS NULL"
+            ).fetchone()[0]
+            latest_recording = conn.execute("SELECT * FROM recordings ORDER BY created_at DESC LIMIT 1").fetchone()
+            latest_transcription = conn.execute(
+                "SELECT * FROM transcriptions WHERE hidden = 0 AND merged_into IS NULL ORDER BY timestamp DESC LIMIT 1"
+            ).fetchone()
+        return {
+            "recordings_count": recordings_count,
+            "transcriptions_count": transcriptions_count,
+            "latest_recording": dict(latest_recording) if latest_recording else None,
+            "latest_transcription": self.row_to_transcription(latest_transcription) if latest_transcription else None,
+        }

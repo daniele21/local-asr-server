@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from local_asr_server.catalog import CatalogStore
+
 
 VALID_STATUSES = {
     "recording",
@@ -47,9 +49,15 @@ def _extension_for_mime(mime_type: str) -> str:
 
 
 class RecordingStore:
-    def __init__(self, default_root: Path, use_settings_dir: bool = True):
+    def __init__(
+        self,
+        default_root: Path,
+        use_settings_dir: bool = True,
+        catalog: CatalogStore | None = None,
+    ):
         self._default_root = default_root.expanduser().resolve()
         self._use_settings_dir = use_settings_dir
+        self.catalog = catalog
         # Verify write permission on current root
         curr_root = self.root
         curr_root.mkdir(parents=True, exist_ok=True)
@@ -58,6 +66,7 @@ class RecordingStore:
         self._locks_guard = threading.Lock()
         self._locks: dict[str, threading.Lock] = {}
         self._mark_interrupted_jobs()
+        self.sync_catalog()
 
     @property
     def root(self) -> Path:
@@ -107,6 +116,7 @@ class RecordingStore:
         }
         (session_dir / f"recording{extension}.part").touch()
         self._write_metadata(session_dir, metadata)
+        self._upsert_catalog(metadata)
         return self.public_metadata(metadata)
 
     def update(self, recording_id: str, title: str | None = None, project_name: str | None = None) -> dict[str, Any]:
@@ -124,6 +134,7 @@ class RecordingStore:
             if project_name is not None:
                 metadata["project_name"] = project_name.strip()[:200]
             self._write_metadata(session_dir, metadata)
+            self._upsert_catalog(metadata)
             return self.public_metadata(metadata)
 
     def update_title(self, recording_id: str, title: str) -> dict[str, Any]:
@@ -154,6 +165,7 @@ class RecordingStore:
             metadata["chunk_count"] += 1
             metadata["bytes_written"] += len(content)
             self._write_metadata(session_dir, metadata)
+            self._upsert_catalog(metadata)
             return self.public_metadata(metadata)
 
     def finalize(self, recording_id: str) -> tuple[dict[str, Any], bool]:
@@ -171,6 +183,7 @@ class RecordingStore:
             metadata["status"] = "finalizing"
             metadata["stopped_at"] = _utc_now()
             self._write_metadata(session_dir, metadata)
+            self._upsert_catalog(metadata)
 
             part_path = self._part_path(session_dir, metadata)
             audio_path = self._audio_path(session_dir, metadata)
@@ -182,6 +195,7 @@ class RecordingStore:
 
             metadata["status"] = "recorded"
             self._write_metadata(session_dir, metadata)
+            self._upsert_catalog(metadata)
             return self.public_metadata(metadata), False
 
     def get(self, recording_id: str, include_result: bool = True) -> dict[str, Any]:
@@ -225,6 +239,7 @@ class RecordingStore:
             metadata["completed_at"] = _utc_now()
             metadata["error"] = None
             self._write_metadata(session_dir, metadata)
+            self._upsert_catalog(metadata)
 
     def fail(self, recording_id: str, error: str) -> None:
         with self._lock_for(recording_id):
@@ -233,6 +248,7 @@ class RecordingStore:
             metadata["completed_at"] = _utc_now()
             metadata["error"] = error[:2000]
             self._write_metadata(session_dir, metadata)
+            self._upsert_catalog(metadata)
 
     def public_metadata(self, metadata: dict[str, Any]) -> dict[str, Any]:
         audio_path = self._audio_path(self._session_dir(metadata), metadata)
@@ -309,5 +325,22 @@ class RecordingStore:
                     metadata["completed_at"] = _utc_now()
                     metadata["error"] = "Server restarted before processing completed"
                     self._write_metadata(metadata_path.parent, metadata)
+                    self._upsert_catalog(metadata)
             except (OSError, json.JSONDecodeError, KeyError):
                 continue
+
+    def sync_catalog(self) -> None:
+        if self.catalog is None:
+            return
+        for metadata_path in self.root.glob("*/*/metadata.json"):
+            try:
+                with metadata_path.open("r", encoding="utf-8") as metadata_file:
+                    self._upsert_catalog(json.load(metadata_file))
+            except (OSError, json.JSONDecodeError, KeyError):
+                continue
+
+    def _upsert_catalog(self, metadata: dict[str, Any]) -> None:
+        if self.catalog is None:
+            return
+        public = self.public_metadata(metadata)
+        self.catalog.upsert_recording(metadata, audio_file=public.get("audio_file"))
