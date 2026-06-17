@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ApiClient, ProjectItem, Recording } from '../api/apiClient';
 import { useTranslation } from '../i18n/i18n';
 import { useToast } from '../context/ToastContext';
-import { useRecorder } from '../hooks/useRecorder';
+import { useRecorder, openBrowserPopup } from '../hooks/useRecorder';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -367,23 +367,59 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
             {/* Controls Actions */}
             <div className="flex flex-wrap gap-4 mt-2">
               {!recorder.isRecording ? (
-                <Button
-                  size="lg"
-                  className="flex-1"
-                  onClick={() => recorder.startRecording(title, projectName, '', sourceMode)}
-                  disabled={recorder.isVerifying}
-                >
-                  🎙️ {t('recording.btnStart')}
-                </Button>
+                <>
+                  <Button
+                    size="lg"
+                    className="flex-1 min-w-[200px]"
+                    onClick={() => recorder.startRecording(title, projectName, '', sourceMode)}
+                    disabled={recorder.isVerifying}
+                  >
+                    🎙️ {t('recording.btnStart')}
+                  </Button>
+                   <Button
+                    size="lg"
+                    variant="secondary"
+                    className="px-4"
+                    onClick={async () => {
+                      try {
+                        const res = await ApiClient.toggleOverlay(true);
+                        if (!res.success) openBrowserPopup();
+                      } catch {
+                        openBrowserPopup();
+                      }
+                    }}
+                    title="Mostra la miniatura fluttuante di registrazione"
+                  >
+                    🖥️ {t('recording.btnShowOverlay') || 'Miniatura'}
+                  </Button>
+                </>
               ) : (
-                <Button
-                  size="lg"
-                  variant="danger"
-                  className="flex-1"
-                  onClick={recorder.stopRecording}
-                >
-                  ⏹ {t('recording.btnStop')}
-                </Button>
+                <>
+                  <Button
+                    size="lg"
+                    variant="danger"
+                    className="flex-1 min-w-[200px]"
+                    onClick={recorder.stopRecording}
+                  >
+                    ⏹ {t('recording.btnStop')}
+                  </Button>
+                   <Button
+                    size="lg"
+                    variant="secondary"
+                    className="px-4"
+                    onClick={async () => {
+                      try {
+                        const res = await ApiClient.toggleOverlay(true);
+                        if (!res.success) openBrowserPopup();
+                      } catch {
+                        openBrowserPopup();
+                      }
+                    }}
+                    title="Mostra la miniatura fluttuante di registrazione"
+                  >
+                    🖥️ {t('recording.btnShowOverlay') || 'Miniatura'}
+                  </Button>
+                </>
               )}
             </div>
 

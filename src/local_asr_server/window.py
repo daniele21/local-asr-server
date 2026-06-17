@@ -27,6 +27,12 @@ from AppKit import (
     NSWindowStyleMaskMiniaturizable,
     NSWindowStyleMaskResizable,
     NSWindowStyleMaskTitled,
+    NSPanel,
+    NSWindowStyleMaskBorderless,
+    NSWindowStyleMaskNonactivatingPanel,
+    NSFloatingWindowLevel,
+    NSWindowCollectionBehaviorCanJoinAllSpaces,
+    NSColor,
 )
 from Foundation import NSURL, NSURLRequest
 
@@ -86,6 +92,8 @@ class ClosedRoomWindowManager:
         self.url = url
         self.window: Optional[NSWindow] = None
         self.webview: Optional[objc.objc_object] = None
+        self.overlay_window: Optional[NSPanel] = None
+        self.overlay_webview: Optional[objc.objc_object] = None
         self._delegate: Optional[ClosedRoomWindowDelegate] = None
         self._observer: Optional[ClosedRoomActivationObserver] = None
 
@@ -244,8 +252,77 @@ class ClosedRoomWindowManager:
             None,
         )
 
+    def show_overlay(self) -> None:
+        """Create and show the floating recording overlay panel."""
+        if not _WEBKIT_AVAILABLE or WKWebView is None:
+            logger.error("Cannot show overlay: WebKit is not available.")
+            return
+
+        if not self.overlay_window:
+            self._create_overlay_window()
+
+        if self.overlay_window:
+            self.overlay_window.makeKeyAndOrderFront_(None)
+            logger.info("Showing overlay window.")
+
+    def hide_overlay(self) -> None:
+        """Hide the floating recording overlay panel."""
+        if self.overlay_window:
+            self.overlay_window.orderOut_(None)
+            logger.info("Hiding overlay window.")
+
+    def _create_overlay_window(self) -> None:
+        """Initialize the floating NSPanel for recording status monitoring."""
+        logger.info("Creating native recording overlay window...")
+
+        # Non-activating panel, borderless, always on top
+        style_mask = NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
+
+        # Place the panel at the top-right of the screen by default
+        screen = NSScreen.mainScreen()
+        screen_frame = screen.frame()
+        screen_w = screen_frame.size.width
+        screen_h = screen_frame.size.height
+
+        width = 290
+        height = 110
+        # Position: 40px from top of screen, 40px from right edge
+        rect = ((screen_w - width - 40, screen_h - height - 80), (width, height))
+
+        # Create overlay window (NSPanel)
+        self.overlay_window = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+            rect, style_mask, NSBackingStoreBuffered, False
+        )
+        
+        # Configure floating panel behavior
+        self.overlay_window.setLevel_(NSFloatingWindowLevel)
+        self.overlay_window.setCollectionBehavior_(NSWindowCollectionBehaviorCanJoinAllSpaces)
+        self.overlay_window.setHidesOnDeactivate_(False)
+        self.overlay_window.setMovableByWindowBackground_(True) # Allow dragging from anywhere
+        self.overlay_window.setHasShadow_(True)
+        
+        # Make the panel background transparent to support CSS glassmorphism and rounded corners
+        self.overlay_window.setOpaque_(False)
+        self.overlay_window.setBackgroundColor_(NSColor.clearColor())
+
+        # Create WKWebView
+        content_rect = self.overlay_window.contentView().frame()
+        self.overlay_webview = WKWebView.alloc().initWithFrame_(content_rect)
+        self.overlay_webview.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
+        
+        # Set transparent webview background (works for WebKit)
+        self.overlay_webview.setValue_forKey_(False, "drawsBackground")
+
+        self.overlay_window.setContentView_(self.overlay_webview)
+
+        # Load overlay hash route
+        ns_url = NSURL.URLWithString_(f"{self.url}/#overlay")
+        request = NSURLRequest.requestWithURL_(ns_url)
+        self.overlay_webview.loadRequest_(request)
+        logger.info("Overlay WebView loading URL: %s/#overlay", self.url)
+
     def close(self) -> None:
-        """Deallocate window and clean up observers."""
+        """Deallocate windows and clean up observers."""
         if self._observer:
             NSNotificationCenter.defaultCenter().removeObserver_(self._observer)
             self._observer = None
@@ -253,8 +330,12 @@ class ClosedRoomWindowManager:
             self.window.setDelegate_(None)
             self.window.close()
             self.window = None
+        if self.overlay_window:
+            self.overlay_window.close()
+            self.overlay_window = None
         self._delegate = None
         self.webview = None
+        self.overlay_webview = None
 
 
 class MainThreadHelper(NSObject):

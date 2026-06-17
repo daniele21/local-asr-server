@@ -92,6 +92,10 @@ class MergeTranscriptionsRequest(BaseModel):
     title: Optional[str] = None
 
 
+class OverlayRequest(BaseModel):
+    show: bool
+
+
 def _build_projects(app: FastAPI) -> dict:
     recordings = app.state.recording_store.list(limit=999)
     projects: dict[str, dict] = {}
@@ -657,6 +661,21 @@ def create_app(
         current["default_condition_on_previous"] = request.default_condition_on_previous if request.default_condition_on_previous is not None else True
         save_settings(current)
         return current
+
+    @app.post("/v1/system/window/overlay")
+    def toggle_overlay_window(request: OverlayRequest):
+        window_manager = getattr(app.state, "window_manager", None)
+        if not window_manager:
+            return {"success": False, "error": "Native window manager not available"}
+            
+        from local_asr_server.window import run_on_main_thread
+        
+        if request.show:
+            run_on_main_thread(window_manager.show_overlay)
+        else:
+            run_on_main_thread(window_manager.hide_overlay)
+            
+        return {"success": True}
 
     @app.post("/v1/system/select-directory")
     def select_directory():

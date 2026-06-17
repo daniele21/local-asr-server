@@ -9,6 +9,7 @@ import TranscriptionPage from './pages/TranscriptionPage';
 import ProjectsPage from './pages/ProjectsPage';
 import AnalysisPage from './pages/AnalysisPage';
 import SettingsPage from './pages/SettingsPage';
+import RecordingOverlayPage from './pages/RecordingOverlayPage';
 import { Badge } from './components/ui/Badge';
 import { Tooltip } from './components/ui/Tooltip';
 
@@ -40,6 +41,7 @@ function MainApp() {
         projects: 'projects',
         analysis: 'analysis',
         settings: 'settings',
+        overlay: 'overlay',
       };
 
       const targetPage = pageMap[pageName] || 'home';
@@ -134,6 +136,10 @@ function MainApp() {
         return <DashboardPage navigateTo={navigateTo} />;
     }
   };
+
+  if (activePage === 'overlay') {
+    return <RecordingOverlayPage />;
+  }
 
   return (
     <div className="relative min-h-screen z-10 w-full max-w-[1440px] px-4 md:px-10 py-6 mx-auto flex flex-col gap-6">

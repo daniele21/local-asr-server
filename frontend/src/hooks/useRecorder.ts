@@ -17,6 +17,20 @@ export interface AudioRouteStatus {
   missing?: string[];
 }
 
+export const openBrowserPopup = () => {
+  const width = 295;
+  const height = 135;
+  const left = window.screen.width - width - 40;
+  const top = 80;
+  
+  const popup = window.open(
+    `${window.location.origin}/#overlay`,
+    'ClosedRoomOverlay',
+    `width=${width},height=${height},left=${left},top=${top},status=no,menubar=no,toolbar=no,location=no`
+  );
+  if (popup) popup.focus();
+};
+
 export function useRecorder(onSaved?: (recording: Recording) => void) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -51,9 +65,20 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
   const uploadChainRef = useRef<Promise<any>>(Promise.resolve());
   const startedAtRef = useRef(0);
   const routeActivatedRef = useRef(false);
+  const broadcastIntervalRef = useRef<any>(null);
 
   // Canvas Ref
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const timerRef = useRef('00:00');
+  const signalLevelRef = useRef('-∞ dB');
+  const progressTextRef = useRef('');
+  const isRecordingRef = useRef(false);
+
+  useEffect(() => { timerRef.current = timer; }, [timer]);
+  useEffect(() => { signalLevelRef.current = signalLevel; }, [signalLevel]);
+  useEffect(() => { progressTextRef.current = progressText; }, [progressText]);
+  useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
 
   const isAggregateInput = (label: string) => {
     const normalized = label.toLowerCase();
@@ -131,6 +156,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
       navigator.mediaDevices?.removeEventListener?.('devicechange', handleDeviceChange);
     };
   }, [loadDevices, refreshAudioStatus, t]);
+
 
   const stopAudioMeter = useCallback((closeContext = true) => {
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
@@ -274,6 +300,25 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     await recorderStopped;
 
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    if (broadcastIntervalRef.current) {
+      clearInterval(broadcastIntervalRef.current);
+      broadcastIntervalRef.current = null;
+    }
+    
+    // Broadcast final offline status to overlay
+    const finalBc = new BroadcastChannel('closedroom-recording');
+    finalBc.postMessage({
+      type: 'status',
+      isRecording: false,
+      timer: '00:00',
+      signalLevel: '-∞ dB',
+      progressText: t('recording.progressNone')
+    });
+    finalBc.close();
+
+    // Hide native overlay
+    ApiClient.toggleOverlay(false).catch(() => {});
+
     releaseMedia();
 
     const sessionId = sessionIdRef.current;
@@ -297,6 +342,37 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
       await restoreAudioRoute();
     }
   }, [t, onSaved, releaseMedia, restoreAudioRoute, showToast]);
+
+  // Listen for remote overlay command and status requests
+  useEffect(() => {
+    const bc = new BroadcastChannel('closedroom-recording');
+    
+    const handleMessage = (e: MessageEvent) => {
+      const data = e.data;
+      if (!data) return;
+      
+      if (data.type === 'command' && data.action === 'stop') {
+        stopRecording();
+      } else if (data.type === 'request-status') {
+        const replyBc = new BroadcastChannel('closedroom-recording');
+        replyBc.postMessage({
+          type: 'status',
+          isRecording: isRecordingRef.current,
+          timer: timerRef.current,
+          signalLevel: signalLevelRef.current,
+          progressText: progressTextRef.current
+        });
+        replyBc.close();
+      }
+    };
+    
+    bc.addEventListener('message', handleMessage);
+    
+    return () => {
+      bc.removeEventListener('message', handleMessage);
+      bc.close();
+    };
+  }, [stopRecording]);
 
   const getAudioStream = async (deviceId: string, voiceProcessing: boolean) => {
     if (!deviceId && !voiceProcessing) {
@@ -444,6 +520,28 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
         const secs = (elapsed % 60).toString().padStart(2, '0');
         setTimer(`${mins}:${secs}`);
       }, 250);
+
+      // Start status broadcast interval for the overlay window
+      broadcastIntervalRef.current = setInterval(() => {
+        const bc = new BroadcastChannel('closedroom-recording');
+        bc.postMessage({
+          type: 'status',
+          isRecording: true,
+          timer: timerRef.current,
+          signalLevel: signalLevelRef.current,
+          progressText: progressTextRef.current
+        });
+        bc.close();
+      }, 100);
+
+      // Request showing the native overlay panel, fallback to browser window.open if unavailable
+      ApiClient.toggleOverlay(true).then((res) => {
+        if (!res || !res.success) {
+          openBrowserPopup();
+        }
+      }).catch(() => {
+        openBrowserPopup();
+      });
 
       setIsRecording(true);
       setStatusText(t('recording.statusRecording'));

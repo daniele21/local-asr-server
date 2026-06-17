@@ -232,5 +232,17 @@ export const ApiClient = {
   
   async getAudioRouteStatus(): Promise<any> {
     return (await request('/v1/system/audio/status')).json();
+  },
+
+  async toggleOverlay(show: boolean): Promise<{ success: boolean; error?: string }> {
+    try {
+      return (await request('/v1/system/window/overlay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ show })
+      })).json();
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
   }
 };

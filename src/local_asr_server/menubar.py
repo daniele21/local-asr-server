@@ -65,8 +65,9 @@ class _ServerThread(threading.Thread):
     the main menu bar process exits.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, app_instance: ClosedRoomApp) -> None:
         super().__init__(name="closedroom-server", daemon=True)
+        self.app_instance = app_instance
         self._server: Optional[object] = None
         self.ready = threading.Event()
 
@@ -89,6 +90,7 @@ class _ServerThread(threading.Thread):
         app = create_app(
             recordings_dir=recordings_dir,
         )
+        app.state.window_manager = self.app_instance.window_manager
 
         config = uvicorn.Config(
             app,
@@ -187,7 +189,7 @@ class ClosedRoomApp(rumps.App):
         self.window_manager = ClosedRoomWindowManager(APP_URL)
 
         # Start the server
-        self._server_thread = _ServerThread()
+        self._server_thread = _ServerThread(self)
         self._server_thread.start()
 
         # Poll until server is ready, then update icon

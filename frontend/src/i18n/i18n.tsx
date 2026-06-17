@@ -176,7 +176,8 @@ const I18N_DATA: Record<string, any> = {
       tooltipAnalyzed: 'Analisi disponibile',
       tooltipNotAnalyzed: 'Analisi non ancora disponibile',
       btnProject: 'Progetto',
-      tooltipProject: 'Associa a un progetto'
+      tooltipProject: 'Associa a un progetto',
+      btnShowOverlay: 'Miniatura'
     },
     transcription: {
       title: 'Trascrizione',
@@ -554,7 +555,8 @@ const I18N_DATA: Record<string, any> = {
       tooltipAnalyzed: 'Analysis available',
       tooltipNotAnalyzed: 'Analysis not yet available',
       btnProject: 'Project',
-      tooltipProject: 'Associate with a project'
+      tooltipProject: 'Associate with a project',
+      btnShowOverlay: 'Overlay'
     },
     transcription: {
       title: 'Transcription',
