@@ -31,6 +31,7 @@ class RecordingApiTests(unittest.TestCase):
         self.app = create_app(
             default_model="test-model",
             recordings_dir=Path(self.temp_dir.name),
+            enable_auth=False,
         )
         self.client = TestClient(self.app)
 
@@ -149,6 +150,38 @@ class RecordingApiTests(unittest.TestCase):
         self.assertTrue(response.json()["success"])
         route.assert_called_once_with()
 
+    def test_protected_api_requires_local_session(self) -> None:
+        app = create_app(
+            default_model="test-model",
+            recordings_dir=Path(self.temp_dir.name),
+            enable_auth=True,
+        )
+        client = TestClient(app)
+        try:
+            unauthorized = client.post(
+                "/v1/recordings",
+                json={"title": "Call", "mime_type": "audio/webm"},
+            )
+            session = client.get("/v1/session")
+            authorized = client.post(
+                "/v1/recordings",
+                json={"title": "Call", "mime_type": "audio/webm"},
+            )
+
+            self.assertEqual(unauthorized.status_code, 401)
+            self.assertEqual(session.status_code, 200)
+            self.assertTrue(session.json()["auth_enabled"])
+            self.assertEqual(authorized.status_code, 201)
+        finally:
+            client.close()
+
+    def test_capture_capabilities_endpoint_reports_fallback(self) -> None:
+        response = self.client.get("/v1/capture/capabilities")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(response.json()["default_backend"], {"native", "browser"})
+        self.assertIn("native", response.json())
+
     @patch("local_asr_server.server.transcribe_file_sync")
     def test_transcribe_recording_splits_tracks_and_merges_timeline(self, transcribe) -> None:
         transcribe.side_effect = [
@@ -194,6 +227,42 @@ class RecordingApiTests(unittest.TestCase):
         self.assertIn("[00:01] Computer: Salve", data["text"])
         self.assertIn("[00:02] Tu: Ciao", data["text"])
         self.assertEqual({track["id"] for track in data["source_tracks"]}, {"mic", "system"})
+
+    @patch("local_asr_server.server.transcribe_file_sync")
+    def test_transcription_job_for_recording(self, transcribe) -> None:
+        transcribe.return_value = {
+            "text": "Ciao",
+            "language": "it",
+            "segments": [{"id": 0, "start": 0.0, "end": 1.0, "text": "Ciao"}],
+        }
+        created = self.client.post(
+            "/v1/recordings",
+            json={"title": "Call", "mime_type": "audio/webm;codecs=opus", "capture_mode": "mic_only"},
+        )
+        recording_id = created.json()["id"]
+        self.client.post(
+            f"/v1/recordings/{recording_id}/tracks/mic/chunks",
+            data={"sequence": "0"},
+            files={"file": ("mic.webm", b"mic", "audio/webm")},
+        )
+        self.client.post(f"/v1/recordings/{recording_id}/stop")
+
+        job = self.client.post(
+            f"/v1/recordings/{recording_id}/transcription-jobs",
+            json={"language": "it", "response_format": "verbose_json"},
+        )
+        self.assertEqual(job.status_code, 202)
+        job_id = job.json()["id"]
+
+        for _ in range(20):
+            status = self.client.get(f"/v1/jobs/{job_id}").json()
+            if status["status"] == "completed":
+                break
+            import time
+            time.sleep(0.05)
+
+        self.assertEqual(status["status"], "completed")
+        self.assertEqual(status["result"]["text"], "[00:00] Tu: Ciao")
 
 
 if __name__ == "__main__":

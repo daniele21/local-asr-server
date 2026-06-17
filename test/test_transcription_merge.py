@@ -36,6 +36,7 @@ class TranscriptionMergeTests(unittest.TestCase):
         self.app = create_app(
             default_model="test-model",
             recordings_dir=Path(self.temp_dir.name),
+            enable_auth=False,
         )
         self.client = TestClient(self.app)
         self.store = TranscriptionStore()

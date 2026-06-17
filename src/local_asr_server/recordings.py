@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import threading
 import uuid
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -15,6 +17,8 @@ VALID_STATUSES = {
     "recording",
     "finalizing",
     "recorded",
+    "interrupted",
+    "recoverable",
     "transcribing",
     "completed",
     "failed",
@@ -106,6 +110,7 @@ class RecordingStore:
         model: str,
         language: str | None,
         capture_mode: str = "legacy_mixed",
+        capture_backend: str = "browser",
     ) -> dict[str, Any]:
         recording_id = str(uuid.uuid4())
         date_dir = datetime.now(timezone.utc).date().isoformat()
@@ -125,6 +130,7 @@ class RecordingStore:
                 "extension": extension,
                 "chunk_count": 0,
                 "bytes_written": 0,
+                "chunks": [],
                 "primary": track_id == primary_track_id,
                 "audio_file": None,
             }
@@ -148,6 +154,11 @@ class RecordingStore:
             "error": None,
             "relative_dir": str(session_dir.relative_to(self.root)),
             "capture_mode": capture_mode,
+            "capture_backend": capture_backend,
+            "capture_status": "idle",
+            "timeline": None,
+            "quality_report": None,
+            "warnings": [],
             "primary_track_id": primary_track_id,
             "audio_tracks": audio_tracks,
         }
@@ -178,14 +189,52 @@ class RecordingStore:
     def update_title(self, recording_id: str, title: str) -> dict[str, Any]:
         return self.update(recording_id, title=title)
 
-    def append_chunk(self, recording_id: str, sequence: int, content: bytes) -> dict[str, Any]:
-        return self.append_track_chunk(recording_id, "mixed", sequence, content)
+    def append_chunk(
+        self,
+        recording_id: str,
+        sequence: int,
+        content: bytes,
+        *,
+        sha256: str | None = None,
+        size: int | None = None,
+        client_started_at_ms: float | None = None,
+        client_chunk_start_ms: float | None = None,
+        client_chunk_end_ms: float | None = None,
+    ) -> dict[str, Any]:
+        return self.append_track_chunk(
+            recording_id,
+            "mixed",
+            sequence,
+            content,
+            sha256=sha256,
+            size=size,
+            client_started_at_ms=client_started_at_ms,
+            client_chunk_start_ms=client_chunk_start_ms,
+            client_chunk_end_ms=client_chunk_end_ms,
+        )
 
-    def append_track_chunk(self, recording_id: str, track_id: str, sequence: int, content: bytes) -> dict[str, Any]:
+    def append_track_chunk(
+        self,
+        recording_id: str,
+        track_id: str,
+        sequence: int,
+        content: bytes,
+        *,
+        sha256: str | None = None,
+        size: int | None = None,
+        client_started_at_ms: float | None = None,
+        client_chunk_start_ms: float | None = None,
+        client_chunk_end_ms: float | None = None,
+    ) -> dict[str, Any]:
         if sequence < 0:
             raise RecordingConflict("Chunk sequence must be non-negative")
         if not content:
             raise RecordingConflict("Chunk is empty")
+        content_hash = hashlib.sha256(content).hexdigest()
+        if sha256 and sha256.lower() != content_hash:
+            raise RecordingConflict("Chunk checksum does not match uploaded content")
+        if size is not None and size != len(content):
+            raise RecordingConflict("Chunk size does not match uploaded content")
 
         with self._lock_for(recording_id):
             session_dir, metadata = self._load(recording_id)
@@ -194,6 +243,18 @@ class RecordingStore:
                 raise RecordingConflict("Recording is no longer accepting chunks")
             track = self._track_for(metadata, track_id)
             expected = track["chunk_count"]
+            chunks = self._track_chunks(track)
+            if sequence < expected:
+                existing = next((item for item in chunks if item.get("sequence") == sequence), None)
+                if (
+                    existing
+                    and existing.get("sha256") == content_hash
+                    and existing.get("size") == len(content)
+                ):
+                    return self.public_metadata(metadata)
+                raise RecordingConflict(
+                    f"Chunk sequence {sequence} was already committed with different content"
+                )
             if sequence != expected:
                 raise RecordingConflict(
                     f"Expected chunk sequence {expected}, received {sequence}"
@@ -207,7 +268,69 @@ class RecordingStore:
 
             track["chunk_count"] += 1
             track["bytes_written"] += len(content)
+            chunks.append({
+                "sequence": sequence,
+                "sha256": content_hash,
+                "size": len(content),
+                "received_at": _utc_now(),
+                "client_started_at_ms": client_started_at_ms,
+                "client_chunk_start_ms": client_chunk_start_ms,
+                "client_chunk_end_ms": client_chunk_end_ms,
+            })
             self._sync_legacy_totals(metadata)
+            self._write_metadata(session_dir, metadata)
+            self._upsert_catalog(metadata)
+            return self.public_metadata(metadata)
+
+    def expected_sequence(self, recording_id: str, track_id: str) -> dict[str, Any]:
+        session_dir, metadata = self._load(recording_id)
+        metadata = self._ensure_tracks(metadata)
+        track = self._track_for(metadata, track_id)
+        return {
+            "recording_id": recording_id,
+            "track_id": track_id,
+            "status": metadata["status"],
+            "expected_sequence": track.get("chunk_count", 0),
+            "last_committed_sequence": track.get("chunk_count", 0) - 1,
+            "bytes_written": track.get("bytes_written", 0),
+            "part_file_exists": self._track_part_path(session_dir, track).exists(),
+            "audio_file_exists": self._track_audio_path(session_dir, track).exists(),
+        }
+
+    def session_dir(self, recording_id: str) -> Path:
+        session_dir, _ = self._load(recording_id)
+        return session_dir
+
+    def mark_capture_started(self, recording_id: str, *, backend: str) -> dict[str, Any]:
+        with self._lock_for(recording_id):
+            session_dir, metadata = self._load(recording_id)
+            metadata["capture_backend"] = backend
+            metadata["capture_status"] = "recording"
+            self._write_metadata(session_dir, metadata)
+            self._upsert_catalog(metadata)
+            return self.public_metadata(metadata)
+
+    def mark_capture_event(self, recording_id: str, event: dict[str, Any]) -> dict[str, Any]:
+        with self._lock_for(recording_id):
+            session_dir, metadata = self._load(recording_id)
+            timeline = metadata.setdefault("timeline", {"events": []})
+            timeline.setdefault("events", []).append(event)
+            if event.get("type") == "warning":
+                metadata.setdefault("warnings", []).append(event.get("message") or event.get("reason") or "capture_warning")
+            if event.get("type") == "error":
+                metadata["capture_status"] = "error"
+                metadata.setdefault("warnings", []).append(event.get("message") or "capture_error")
+            self._write_timeline(session_dir, metadata)
+            self._write_metadata(session_dir, metadata)
+            self._upsert_catalog(metadata)
+            return self.public_metadata(metadata)
+
+    def save_quality_report(self, recording_id: str, report: dict[str, Any]) -> dict[str, Any]:
+        with self._lock_for(recording_id):
+            session_dir, metadata = self._load(recording_id)
+            metadata["quality_report"] = report
+            metadata["warnings"] = sorted(set((metadata.get("warnings") or []) + (report.get("warnings") or [])))
+            self._write_json_atomic(session_dir / "quality_report.json", report)
             self._write_metadata(session_dir, metadata)
             self._upsert_catalog(metadata)
             return self.public_metadata(metadata)
@@ -235,16 +358,64 @@ class RecordingStore:
                 audio_path = self._track_audio_path(session_dir, track)
                 if part_path.exists():
                     part_path.replace(audio_path)
+                elif audio_path.exists():
+                    pass
                 elif not audio_path.exists():
                     # No data was written; create an empty file.
                     audio_path.touch()
                 track["audio_file"] = self._relative_track_audio_file(metadata, track)
+                try:
+                    track["bytes_written"] = audio_path.stat().st_size
+                    if track["bytes_written"] > 0 and track.get("chunk_count", 0) == 0:
+                        track["chunk_count"] = 1
+                except OSError:
+                    pass
 
             metadata["status"] = "recorded"
+            metadata["capture_status"] = "stopped"
             self._sync_legacy_totals(metadata)
+            self._write_timeline(session_dir, metadata)
             self._write_metadata(session_dir, metadata)
             self._upsert_catalog(metadata)
             return self.public_metadata(metadata), False
+
+    def recover(self, recording_id: str) -> dict[str, Any]:
+        with self._lock_for(recording_id):
+            session_dir, metadata = self._load(recording_id)
+            metadata = self._ensure_tracks(metadata)
+            if metadata["status"] in {"recorded", "transcribing", "completed"}:
+                return self.public_metadata(metadata)
+            if metadata["status"] not in {"recording", "finalizing", "interrupted", "recoverable", "failed"}:
+                raise RecordingConflict(f"Cannot recover recording in status {metadata['status']}")
+            if not self._has_recoverable_audio(session_dir, metadata):
+                raise RecordingConflict("Recording has no recoverable audio")
+
+            metadata["status"] = "recorded"
+            metadata["partial"] = True
+            metadata["stopped_at"] = metadata.get("stopped_at") or _utc_now()
+            metadata["completed_at"] = None
+            metadata["error"] = None
+            for track in metadata["audio_tracks"]:
+                part_path = self._track_part_path(session_dir, track)
+                audio_path = self._track_audio_path(session_dir, track)
+                if part_path.exists():
+                    part_path.replace(audio_path)
+                elif not audio_path.exists():
+                    audio_path.touch()
+                track["audio_file"] = self._relative_track_audio_file(metadata, track)
+            self._sync_legacy_totals(metadata)
+            self._write_metadata(session_dir, metadata)
+            self._upsert_catalog(metadata)
+            return self.public_metadata(metadata)
+
+    def discard(self, recording_id: str) -> None:
+        with self._lock_for(recording_id):
+            session_dir, metadata = self._load(recording_id)
+            if metadata["status"] not in {"recording", "finalizing", "interrupted", "recoverable", "failed"}:
+                raise RecordingConflict(f"Cannot discard recording in status {metadata['status']}")
+            shutil.rmtree(session_dir)
+            if self.catalog is not None:
+                self.catalog.delete_recording(recording_id)
 
     def get(self, recording_id: str, include_result: bool = True) -> dict[str, Any]:
         _, metadata = self._load(recording_id)
@@ -419,6 +590,8 @@ class RecordingStore:
 
     def _ensure_tracks(self, metadata: dict[str, Any]) -> dict[str, Any]:
         if metadata.get("audio_tracks"):
+            for track in metadata["audio_tracks"]:
+                self._track_chunks(track)
             return metadata
         track_id = metadata.get("primary_track_id") or "mixed"
         extension = metadata.get("extension") or _extension_for_mime(metadata.get("mime_type", "audio/webm"))
@@ -432,6 +605,7 @@ class RecordingStore:
             "extension": extension,
             "chunk_count": metadata.get("chunk_count", 0),
             "bytes_written": metadata.get("bytes_written", 0),
+            "chunks": [],
             "primary": True,
             "audio_file": None,
         }]
@@ -456,6 +630,13 @@ class RecordingStore:
         metadata["bytes_written"] = sum(track.get("bytes_written", 0) for track in metadata.get("audio_tracks", []))
         metadata["mime_type"] = primary.get("mime_type", metadata.get("mime_type"))
         metadata["extension"] = primary.get("extension", metadata.get("extension"))
+
+    def _track_chunks(self, track: dict[str, Any]) -> list[dict[str, Any]]:
+        chunks = track.setdefault("chunks", [])
+        if not isinstance(chunks, list):
+            chunks = []
+            track["chunks"] = chunks
+        return chunks
 
     def _lock_for(self, recording_id: str) -> threading.Lock:
         with self._locks_guard:
@@ -482,19 +663,46 @@ class RecordingStore:
             os.fsync(output.fileno())
         temp_path.replace(path)
 
+    def _write_timeline(self, session_dir: Path, metadata: dict[str, Any]) -> None:
+        timeline = metadata.get("timeline")
+        if timeline is not None:
+            self._write_json_atomic(session_dir / "timeline.json", timeline)
+
     def _mark_interrupted_jobs(self) -> None:
         for metadata_path in self.root.glob("*/*/metadata.json"):
             try:
                 with metadata_path.open("r", encoding="utf-8") as metadata_file:
                     metadata = json.load(metadata_file)
-                if metadata.get("status") == "finalizing":
-                    metadata["status"] = "failed"
-                    metadata["completed_at"] = _utc_now()
-                    metadata["error"] = "Server restarted before processing completed"
+                metadata = self._ensure_tracks(metadata)
+                if metadata.get("status") in {"recording", "finalizing"}:
+                    if self._has_recoverable_audio(metadata_path.parent, metadata):
+                        metadata["status"] = "recoverable"
+                        metadata["stopped_at"] = metadata.get("stopped_at") or _utc_now()
+                        metadata["error"] = "Server restarted before recording was stopped"
+                    else:
+                        metadata["status"] = "interrupted"
+                        metadata["stopped_at"] = metadata.get("stopped_at") or _utc_now()
+                        metadata["completed_at"] = _utc_now()
+                        metadata["error"] = "Server restarted before any audio chunk was committed"
                     self._write_metadata(metadata_path.parent, metadata)
                     self._upsert_catalog(metadata)
             except (OSError, json.JSONDecodeError, KeyError):
                 continue
+
+    def _has_recoverable_audio(self, session_dir: Path, metadata: dict[str, Any]) -> bool:
+        for track in metadata.get("audio_tracks", []):
+            if track.get("bytes_written", 0) > 0 or track.get("chunk_count", 0) > 0:
+                return True
+            for path in (
+                self._track_part_path(session_dir, track),
+                self._track_audio_path(session_dir, track),
+            ):
+                try:
+                    if path.exists() and path.stat().st_size > 0:
+                        return True
+                except OSError:
+                    continue
+        return False
 
     def sync_catalog(self) -> None:
         if self.catalog is None:

@@ -3,19 +3,10 @@ import { ApiClient, Recording } from '../api/apiClient';
 import { RECORDING_CHUNK_INTERVAL_MS } from '../api/config';
 import { useTranslation } from '../i18n/i18n';
 import { useToast } from '../context/ToastContext';
+import { useAudioDevices, AudioDevice, AudioRouteStatus } from './useAudioDevices';
+import { drawAudioMeterOnCanvas } from '../utils/audioVisualizer';
 
-export interface AudioDevice {
-  deviceId: string;
-  label: string;
-}
-
-export interface AudioRouteStatus {
-  ready_to_record: boolean;
-  routing_active: boolean;
-  auto_routing: boolean;
-  physical_output?: string;
-  missing?: string[];
-}
+export type { AudioDevice, AudioRouteStatus };
 
 export const openBrowserPopup = () => {
   const width = 295;
@@ -38,21 +29,36 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
   const [isRecording, setIsRecording] = useState(false);
   const [timer, setTimer] = useState('00:00');
   const [signalLevel, setSignalLevel] = useState('-∞ dB');
+  const [signalLevelMic, setSignalLevelMic] = useState('-∞ dB');
+  const [signalLevelSystem, setSignalLevelSystem] = useState('-∞ dB');
   const [progressText, setProgressText] = useState(t('recording.progressNone'));
   const [statusText, setStatusText] = useState(t('recording.statusReady'));
   const [statusState, setStatusState] = useState<'ready' | 'recording' | 'paused' | 'working' | 'error' | 'success'>('ready');
   
-  const [microphones, setMicrophones] = useState<AudioDevice[]>([]);
-  const [systemDevices, setSystemDevices] = useState<AudioDevice[]>([]);
-  const [selectedMicrophone, setSelectedMicrophone] = useState('');
-  const [selectedSystemDevice, setSelectedSystemDevice] = useState('');
-  const [audioRouteStatus, setAudioRouteStatus] = useState<AudioRouteStatus | null>(null);
-  const [isTestRouted, setIsTestRouted] = useState(false);
-  const [isVerifying, setIsVerifying] = useState(false);
+  // Audio devices and routing state managed by custom hook
+  const {
+    microphones,
+    systemDevices,
+    selectedMicrophone,
+    setSelectedMicrophone,
+    selectedSystemDevice,
+    setSelectedSystemDevice,
+    audioRouteStatus,
+    captureCapabilities,
+    isTestRouted,
+    setIsTestRouted,
+    isVerifying,
+    setIsVerifying,
+    loadDevices,
+    refreshAudioStatus,
+    refreshCaptureCapabilities
+  } = useAudioDevices();
 
   // Audio Context Ref
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const micAnalyserRef = useRef<AnalyserNode | null>(null);
+  const systemAnalyserRef = useRef<AnalyserNode | null>(null);
   const mediaRecordersRef = useRef<Map<string, MediaRecorder>>(new Map());
   const sourceStreamsRef = useRef<MediaStream[]>([]);
   const mixDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
@@ -65,18 +71,26 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
   const uploadChainsRef = useRef<Map<string, Promise<any>>>(new Map());
   const startedAtRef = useRef(0);
   const routeActivatedRef = useRef(false);
+  const captureBackendRef = useRef<'browser' | 'native'>('browser');
   const broadcastIntervalRef = useRef<any>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const currentMicDbRef = useRef<number>(-120);
+  const currentSysDbRef = useRef<number>(-120);
 
   // Canvas Ref
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const timerRef = useRef('00:00');
   const signalLevelRef = useRef('-∞ dB');
+  const signalLevelMicRef = useRef('-∞ dB');
+  const signalLevelSystemRef = useRef('-∞ dB');
   const progressTextRef = useRef('');
   const isRecordingRef = useRef(false);
 
   useEffect(() => { timerRef.current = timer; }, [timer]);
   useEffect(() => { signalLevelRef.current = signalLevel; }, [signalLevel]);
+  useEffect(() => { signalLevelMicRef.current = signalLevelMic; }, [signalLevelMic]);
+  useEffect(() => { signalLevelSystemRef.current = signalLevelSystem; }, [signalLevelSystem]);
   useEffect(() => { progressTextRef.current = progressText; }, [progressText]);
   useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
 
@@ -85,64 +99,16 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     return normalized.includes('aggregate') || normalized.includes('combinat') || normalized.includes('local asr input');
   };
 
-  const loadDevices = useCallback(async () => {
-    if (!navigator.mediaDevices?.enumerateDevices) return;
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const inputs = devices.filter((device) => device.kind === 'audioinput');
-
-      const mics: AudioDevice[] = [];
-      const sysDevices: AudioDevice[] = [];
-
-      inputs.forEach((device, index) => {
-        const label = device.label || t('recording.audioInputLabel', { index: index + 1 });
-        const isBlackHole = label.toLowerCase().includes('blackhole');
-        const isAggregate = isAggregateInput(label);
-
-        if (isBlackHole) {
-          sysDevices.push({ deviceId: device.deviceId, label });
-        } else if (!isAggregate) {
-          mics.push({ deviceId: device.deviceId, label });
-        }
-      });
-
-      setMicrophones(mics);
-      setSystemDevices(sysDevices);
-
-      if (sysDevices.length > 0 && !selectedSystemDevice) {
-        setSelectedSystemDevice(sysDevices[0].deviceId);
-      }
-    } catch (error) {
-      console.warn('Unable to enumerate audio devices:', error);
-    }
-  }, [t, selectedSystemDevice]);
-
-  const refreshAudioStatus = useCallback(async () => {
-    try {
-      const status = await ApiClient.getAudioRouteStatus();
-      setAudioRouteStatus(status);
-    } catch {
-      setAudioRouteStatus(null);
-    }
-  }, []);
-
-  // Initialize and load devices
+  // Interrupted recording session cleanup & recovery check
   useEffect(() => {
-    loadDevices();
-    refreshAudioStatus();
-
-    const handleDeviceChange = () => {
-      loadDevices();
-      refreshAudioStatus();
-    };
-
-    navigator.mediaDevices?.addEventListener?.('devicechange', handleDeviceChange);
-    
-    // Check if there was an interrupted recording session
     const storedId = localStorage.getItem('asr-active-recording-id');
     if (storedId) {
-      ApiClient.getRecording(storedId).then((recording: Recording) => {
-        if (recording.stopped_at === null || recording.duration_seconds === null) {
+      ApiClient.getRecording(storedId).then(async (recording: Recording) => {
+        if (['recording', 'finalizing', 'recoverable'].includes(recording.status)) {
+          await ApiClient.recoverRecording(storedId);
+          setStatusText(t('recording.sessionInterrupted'));
+          setProgressText(t('recording.pageClosedWarning'));
+        } else if (recording.stopped_at === null || recording.duration_seconds === null) {
           setStatusText(t('recording.sessionInterrupted'));
           setProgressText(t('recording.pageClosedWarning'));
         }
@@ -151,17 +117,15 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
         localStorage.removeItem('asr-active-recording-id');
       });
     }
-
-    return () => {
-      navigator.mediaDevices?.removeEventListener?.('devicechange', handleDeviceChange);
-    };
-  }, [loadDevices, refreshAudioStatus, t]);
+  }, [t]);
 
 
   const stopAudioMeter = useCallback((closeContext = true) => {
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     animationFrameRef.current = null;
     analyserRef.current = null;
+    micAnalyserRef.current = null;
+    systemAnalyserRef.current = null;
 
     if (closeContext && audioContextRef.current) {
       audioContextRef.current.close().catch(() => {});
@@ -173,86 +137,53 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
       context?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
     }
     setSignalLevel('-∞ dB');
+    setSignalLevelMic('-∞ dB');
+    setSignalLevelSystem('-∞ dB');
   }, []);
 
   const drawAudioMeter = useCallback(() => {
-    const analyser = analyserRef.current;
     const canvas = canvasRef.current;
-    if (!analyser || !canvas) return;
+    if (!canvas) return;
 
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    analyser.getByteFrequencyData(dataArray);
+    const levels = drawAudioMeterOnCanvas(
+      canvas,
+      micAnalyserRef.current,
+      systemAnalyserRef.current,
+      captureBackendRef.current === 'native',
+      currentMicDbRef.current,
+      currentSysDbRef.current
+    );
 
-    const context = canvas.getContext('2d');
-    if (!context) return;
+    const levelMic = levels.dbMic <= -47.5 ? '-∞ dB' : `${levels.dbMic.toFixed(1)} dB`;
+    setSignalLevelMic(levelMic);
 
-    const width = canvas.width;
-    const height = canvas.height;
-    
-    // Theme colors fallback
-    const styles = getComputedStyle(document.documentElement);
-    const accent = styles.getPropertyValue('--accent').trim() || '#9f74ff';
-    const accentHover = styles.getPropertyValue('--accent-hover').trim() || '#b89aff';
-    const muted = styles.getPropertyValue('--border-subtle').trim() || 'rgba(255,255,255,.08)';
-    
-    const barCount = 60;
-    const gap = 4;
-    const barWidth = (width - gap * (barCount - 1)) / barCount;
-    let sumSquares = 0;
+    const levelSys = levels.dbSys <= -47.5 ? '-∞ dB' : `${levels.dbSys.toFixed(1)} dB`;
+    setSignalLevelSystem(levelSys);
 
-    context.clearRect(0, 0, width, height);
-
-    const gradient = context.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, accentHover);
-    gradient.addColorStop(0.5, accent);
-    gradient.addColorStop(1, accentHover);
-
-    for (let index = 0; index < barCount; index += 1) {
-      const sampleIndex = Math.floor(index * dataArray.length / barCount);
-      const normalized = dataArray[sampleIndex] / 255;
-      sumSquares += normalized * normalized;
-      
-      const minHeight = 6;
-      const barHeight = Math.max(minHeight, normalized * (height * 0.85));
-      const y = (height - barHeight) / 2;
-
-      context.fillStyle = normalized > 0.05 ? gradient : muted;
-      
-      context.beginPath();
-      // Round Rect support
-      if (context.roundRect) {
-        context.roundRect(index * (barWidth + gap), y, barWidth, barHeight, barWidth / 2);
-      } else {
-        context.rect(index * (barWidth + gap), y, barWidth, barHeight);
-      }
-      context.fill();
-    }
-
-    const rms = Math.sqrt(sumSquares / barCount);
-    const decibels = rms > 0 ? Math.max(-48, 20 * Math.log10(rms)) : -48;
-    setSignalLevel(decibels <= -47.5 ? '-∞ dB' : `${decibels.toFixed(1)} dB`);
+    const levelCombined = levels.dbCombined <= -47.5 ? '-∞ dB' : `${levels.dbCombined.toFixed(1)} dB`;
+    setSignalLevel(levelCombined);
 
     animationFrameRef.current = requestAnimationFrame(drawAudioMeter);
   }, []);
 
   const startAudioMeter = useCallback((streamOrNode: AudioNode | MediaStream) => {
+    // startAudioMeter is kept for compatibility, but we now manually connect in startRecording
     stopAudioMeter(false);
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioContextClass) return;
     
     if (streamOrNode instanceof AudioNode) {
       audioContextRef.current = streamOrNode.context as AudioContext;
-      analyserRef.current = audioContextRef.current.createAnalyser();
-      analyserRef.current.fftSize = 512;
-      analyserRef.current.smoothingTimeConstant = 0.78;
-      streamOrNode.connect(analyserRef.current);
+      micAnalyserRef.current = audioContextRef.current.createAnalyser();
+      micAnalyserRef.current.fftSize = 512;
+      micAnalyserRef.current.smoothingTimeConstant = 0.78;
+      streamOrNode.connect(micAnalyserRef.current);
     } else {
       audioContextRef.current = new AudioContextClass();
-      analyserRef.current = audioContextRef.current.createAnalyser();
-      analyserRef.current.fftSize = 512;
-      analyserRef.current.smoothingTimeConstant = 0.78;
-      audioContextRef.current.createMediaStreamSource(streamOrNode).connect(analyserRef.current);
+      micAnalyserRef.current = audioContextRef.current.createAnalyser();
+      micAnalyserRef.current.fftSize = 512;
+      micAnalyserRef.current.smoothingTimeConstant = 0.78;
+      audioContextRef.current.createMediaStreamSource(streamOrNode).connect(micAnalyserRef.current);
     }
 
     drawAudioMeter();
@@ -263,6 +194,10 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     sourceStreamsRef.current.forEach((stream) => stream.getTracks().forEach((track) => track.stop()));
     sourceStreamsRef.current = [];
     mediaRecordersRef.current.clear();
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
   }, [stopAudioMeter]);
 
   const restoreAudioRoute = useCallback(async () => {
@@ -280,29 +215,34 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
 
   const stopRecording = useCallback(async () => {
     const mediaRecorders = Array.from(mediaRecordersRef.current.values());
-    if (mediaRecorders.length === 0 || mediaRecorders.every((recorder) => recorder.state === 'inactive')) return;
+    if (
+      captureBackendRef.current !== 'native'
+      && (mediaRecorders.length === 0 || mediaRecorders.every((recorder) => recorder.state === 'inactive'))
+    ) return;
 
     setStatusText(t('recording.finalizing'));
     setStatusState('working');
 
-    mediaRecorders.forEach((recorder) => {
-      if (recorder.state === 'recording') {
-        try {
-          recorder.requestData();
-        } catch { /* ignore */ }
-      }
-    });
-    // Brief delay to flush chunks
-    await new Promise((r) => setTimeout(r, 150));
+    if (captureBackendRef.current !== 'native') {
+      mediaRecorders.forEach((recorder) => {
+        if (recorder.state === 'recording') {
+          try {
+            recorder.requestData();
+          } catch { /* ignore */ }
+        }
+      });
+      // Brief delay to flush chunks
+      await new Promise((r) => setTimeout(r, 150));
 
-    await Promise.all(mediaRecorders.map((recorder) => new Promise<void>((resolve) => {
-      if (recorder.state === 'inactive') {
-        resolve();
-        return;
-      }
-      recorder.addEventListener('stop', () => resolve(), { once: true });
-      recorder.stop();
-    })));
+      await Promise.all(mediaRecorders.map((recorder) => new Promise<void>((resolve) => {
+        if (recorder.state === 'inactive') {
+          resolve();
+          return;
+        }
+        recorder.addEventListener('stop', () => resolve(), { once: true });
+        recorder.stop();
+      })));
+    }
 
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     if (broadcastIntervalRef.current) {
@@ -317,6 +257,8 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
       isRecording: false,
       timer: '00:00',
       signalLevel: '-∞ dB',
+      signalLevelMic: '-∞ dB',
+      signalLevelSystem: '-∞ dB',
       progressText: t('recording.progressNone')
     });
     finalBc.close();
@@ -330,9 +272,12 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     try {
       await Promise.all(Array.from(uploadChainsRef.current.values()));
       if (sessionId) {
-        const recording = await ApiClient.stopRecording(sessionId);
+        const recording = captureBackendRef.current === 'native'
+          ? (await ApiClient.stopNativeCapture(sessionId)).recording
+          : await ApiClient.stopRecording(sessionId);
         localStorage.removeItem('asr-active-recording-id');
         sessionIdRef.current = null;
+        captureBackendRef.current = 'browser';
         setStatusText(t('recording.saved'));
         setStatusState('success');
         setProgressText(t('recording.audioCompleteSaved'));
@@ -365,6 +310,8 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
           isRecording: isRecordingRef.current,
           timer: timerRef.current,
           signalLevel: signalLevelRef.current,
+          signalLevelMic: signalLevelMicRef.current,
+          signalLevelSystem: signalLevelSystemRef.current,
           progressText: progressTextRef.current
         });
         replyBc.close();
@@ -395,14 +342,26 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
   const uploadChunk = async (trackId: string, blob: Blob, chunkSequence: number) => {
     const sessionId = sessionIdRef.current;
     if (!sessionId) return;
-    try {
-      const metadata = await ApiClient.appendRecordingTrackChunk(sessionId, trackId, chunkSequence, blob);
-      const sizeStr = metadata.bytes_written > 1024 * 1024
-        ? `${(metadata.bytes_written / (1024 * 1024)).toFixed(1)} MB`
-        : `${Math.round(metadata.bytes_written / 1024)} KB`;
-      setProgressText(t('recording.chunksSaved', { count: metadata.chunk_count, size: sizeStr }));
-    } catch (error: any) {
-      throw new Error(error.message);
+    const maxAttempts = 5;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const metadata = await ApiClient.appendRecordingTrackChunk(sessionId, trackId, chunkSequence, blob);
+        const sizeStr = metadata.bytes_written > 1024 * 1024
+          ? `${(metadata.bytes_written / (1024 * 1024)).toFixed(1)} MB`
+          : `${Math.round(metadata.bytes_written / 1024)} KB`;
+        setProgressText(t('recording.chunksSaved', { count: metadata.chunk_count, size: sizeStr }));
+        return;
+      } catch (error: any) {
+        if (attempt >= maxAttempts) {
+          try {
+            await ApiClient.expectedRecordingTrackSequence(sessionId, trackId);
+          } catch {
+            // Preserve the original upload error for the UI.
+          }
+          throw new Error(error.message);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+      }
     }
   };
 
@@ -415,6 +374,93 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     setStatusText(t('recording.audioSetupTitle'));
     setStatusState('working');
     try {
+      const capabilities = captureCapabilities || await ApiClient.captureCapabilities().catch(() => null);
+      if (capabilities?.default_backend === 'native' && capabilities.native.available) {
+        const session = await ApiClient.createRecording({
+          title: title || t('recording.untitledRecording'),
+          project_name: projectName,
+          mime_type: 'audio/wav',
+          language: language || undefined,
+          capture_mode: mode,
+          capture_backend: 'native',
+        });
+        captureBackendRef.current = 'native';
+        sessionIdRef.current = session.id;
+        localStorage.setItem('asr-active-recording-id', session.id);
+        
+        await ApiClient.startNativeCapture(session.id, mode);
+        startedAtRef.current = Date.now();
+        
+        // Connect EventSource to receive real-time levels and capture status
+        currentMicDbRef.current = -120;
+        currentSysDbRef.current = -120;
+        const eventSource = new EventSource(`/v1/recordings/${session.id}/capture/events`);
+        eventSourceRef.current = eventSource;
+        eventSource.onmessage = (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            if (data.type === 'volume') {
+              const dbVal = Number(data.db) || -120;
+              if (data.source === 'mic') {
+                currentMicDbRef.current = dbVal;
+              } else if (data.source === 'system') {
+                currentSysDbRef.current = dbVal;
+              }
+            } else if (data.type === 'error') {
+              showToast(t('recording.error', { error: data.message }), 'error');
+            } else if (data.type === 'stopped') {
+              eventSource.close();
+            }
+          } catch (err) {
+            console.error('Failed to parse capture event:', err);
+          }
+        };
+        eventSource.onerror = (err) => {
+          console.error('EventSource error:', err);
+          eventSource.close();
+        };
+
+        stopAudioMeter(false);
+        drawAudioMeter();
+
+        timerIntervalRef.current = setInterval(() => {
+          const elapsed = Math.floor((Date.now() - startedAtRef.current) / 1000);
+          const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
+          const secs = (elapsed % 60).toString().padStart(2, '0');
+          setTimer(`${mins}:${secs}`);
+        }, 250);
+
+        // Start status broadcast interval for the overlay window
+        broadcastIntervalRef.current = setInterval(() => {
+          const bc = new BroadcastChannel('closedroom-recording');
+          bc.postMessage({
+            type: 'status',
+            isRecording: true,
+            timer: timerRef.current,
+            signalLevel: signalLevelRef.current,
+            signalLevelMic: signalLevelMicRef.current,
+            signalLevelSystem: signalLevelSystemRef.current,
+            progressText: progressTextRef.current
+          });
+          bc.close();
+        }, 100);
+
+        // Request showing the native overlay panel
+        ApiClient.toggleOverlay(true).then((res) => {
+          if (!res || !res.success) {
+            openBrowserPopup();
+          }
+        }).catch(() => {
+          openBrowserPopup();
+        });
+
+        setIsRecording(true);
+        setStatusState('recording');
+        setStatusText(t('recording.statusRecording'));
+        setProgressText(t('recording.progressSaving') || 'Salvataggio in corso...');
+        return;
+      }
+
       // 1. Audio Routing
       if (mode !== 'mic_only') {
         const routing = await ApiClient.testAudioRoute();
@@ -476,7 +522,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
       };
 
       const connectSourceTrack = (trackId: 'mic' | 'system', stream: MediaStream | null) => {
-        if (!stream) return;
+        if (!stream) return null;
         const sourceNode = actx.createMediaStreamSource(stream);
         sourceNode.connect(mixBus);
 
@@ -485,10 +531,11 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
         sourceNode.connect(trackDest);
         keepDestinationClocked(trackDest);
         trackDestinations.set(trackId, trackDest);
+        return sourceNode;
       };
 
-      connectSourceTrack('mic', micStream);
-      connectSourceTrack('system', systemStream);
+      const micNode = connectSourceTrack('mic', micStream);
+      const systemNode = connectSourceTrack('system', systemStream);
       mixBus.connect(destNode);
       keepDestinationClocked(destNode);
       silenceSource.start();
@@ -499,7 +546,26 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
       mixBus.connect(silentGain);
       silentGain.connect(actx.destination);
 
-      startAudioMeter(mixBus);
+      stopAudioMeter(false);
+      if (micNode) {
+        micAnalyserRef.current = actx.createAnalyser();
+        micAnalyserRef.current.fftSize = 512;
+        micAnalyserRef.current.smoothingTimeConstant = 0.78;
+        micNode.connect(micAnalyserRef.current);
+      } else {
+        micAnalyserRef.current = null;
+      }
+
+      if (systemNode) {
+        systemAnalyserRef.current = actx.createAnalyser();
+        systemAnalyserRef.current.fftSize = 512;
+        systemAnalyserRef.current.smoothingTimeConstant = 0.78;
+        systemNode.connect(systemAnalyserRef.current);
+      } else {
+        systemAnalyserRef.current = null;
+      }
+
+      drawAudioMeter();
 
       // 4. Create Backend Recording
       const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
@@ -511,7 +577,9 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
         mime_type: mimeType,
         language: language || undefined,
         capture_mode: mode,
+        capture_backend: 'browser',
       });
+      captureBackendRef.current = 'browser';
 
       sessionIdRef.current = session.id;
       localStorage.setItem('asr-active-recording-id', session.id);
@@ -582,6 +650,8 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
           isRecording: true,
           timer: timerRef.current,
           signalLevel: signalLevelRef.current,
+          signalLevelMic: signalLevelMicRef.current,
+          signalLevelSystem: signalLevelSystemRef.current,
           progressText: progressTextRef.current
         });
         bc.close();
@@ -608,7 +678,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
       setStatusState('error');
       showToast(t('recording.startFailed', { error: error.message }), 'error');
     }
-  }, [t, selectedMicrophone, selectedSystemDevice, startAudioMeter, loadDevices, releaseMedia, restoreAudioRoute, showToast]);
+  }, [t, selectedMicrophone, selectedSystemDevice, captureCapabilities, startAudioMeter, loadDevices, releaseMedia, restoreAudioRoute, showToast]);
 
   const toggleTestAudioRoute = async () => {
     setIsVerifying(true);
@@ -644,6 +714,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     setIsVerifying(true);
     await loadDevices();
     await refreshAudioStatus();
+    await refreshCaptureCapabilities();
     setIsVerifying(false);
   };
 
@@ -675,7 +746,10 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     isRecording,
     timer,
     signalLevel,
+    signalLevelMic,
+    signalLevelSystem,
     progressText,
+    captureCapabilities,
     statusText,
     statusState,
     microphones,

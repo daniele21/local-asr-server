@@ -340,7 +340,7 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
       if (selectedRecordingId) {
         setProgressStatus(lang === 'it' ? 'Trascrizione tracce della registrazione...' : 'Transcribing recording tracks...');
         setProgressPercent(10);
-        const result = await ApiClient.transcribeRecording(selectedRecordingId, {
+        const job = await ApiClient.createTranscriptionJob(selectedRecordingId, {
           model: targetModel || undefined,
           language: targetLanguage || undefined,
           task: targetTask,
@@ -349,6 +349,17 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
           condition_on_previous_text: conditionOnPrevious,
           temperature: temperature ? Number(temperature) : null,
         });
+        let currentJob = job;
+        while (!['completed', 'failed', 'cancelled'].includes(currentJob.status)) {
+          setProgressPercent(currentJob.progress || 10);
+          setProgressStatus(currentJob.current_step || currentJob.status);
+          await new Promise((resolve) => setTimeout(resolve, 800));
+          currentJob = await ApiClient.getJob(job.id);
+        }
+        if (currentJob.status !== 'completed' || !currentJob.result) {
+          throw new Error(currentJob.error || currentJob.status);
+        }
+        const result = currentJob.result;
         setProgressPercent(100);
         setTranscriptionResult(result);
         setStep('results');

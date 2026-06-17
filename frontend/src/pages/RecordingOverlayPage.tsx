@@ -3,7 +3,8 @@ import { ApiClient } from '../api/apiClient';
 
 export default function RecordingOverlayPage() {
   const [timer, setTimer] = useState('00:00');
-  const [signalLevel, setSignalLevel] = useState('-∞ dB');
+  const [signalLevelMic, setSignalLevelMic] = useState('-∞ dB');
+  const [signalLevelSystem, setSignalLevelSystem] = useState('-∞ dB');
   const [progressText, setProgressText] = useState('In attesa...');
   const [isRecording, setIsRecording] = useState(false);
 
@@ -16,7 +17,8 @@ export default function RecordingOverlayPage() {
       if (data && data.type === 'status') {
         setIsRecording(data.isRecording);
         setTimer(data.timer);
-        setSignalLevel(data.signalLevel);
+        setSignalLevelMic(data.signalLevelMic || '-∞ dB');
+        setSignalLevelSystem(data.signalLevelSystem || '-∞ dB');
         setProgressText(data.progressText);
 
         // Auto-close browser popup after a short delay when recording completes/stops
@@ -53,13 +55,17 @@ export default function RecordingOverlayPage() {
     }
   };
 
-  // Calculate dB percentage for progress bar
-  const dbVal = parseFloat(signalLevel.replace(' dB', ''));
-  const minDb = -48;
-  const maxDb = 0;
-  const dbPercentage = isNaN(dbVal)
-    ? 0
-    : Math.min(100, Math.max(0, ((dbVal - minDb) / (maxDb - minDb)) * 100));
+  const getPercentage = (levelStr: string) => {
+    const val = parseFloat(levelStr.replace(' dB', ''));
+    const minDb = -48;
+    const maxDb = 0;
+    return isNaN(val)
+      ? 0
+      : Math.min(100, Math.max(0, ((val - minDb) / (maxDb - minDb)) * 100));
+  };
+
+  const micPercentage = getPercentage(signalLevelMic);
+  const systemPercentage = getPercentage(signalLevelSystem);
 
   return (
     <div className="h-screen w-screen bg-[rgba(19,16,45,0.92)] text-white p-3 select-none flex flex-col justify-between overflow-hidden border border-white/10 rounded-xl">
@@ -100,16 +106,28 @@ export default function RecordingOverlayPage() {
       <div className="flex items-center gap-3">
         {/* dB Signal Level Visualizer */}
         <div className="flex-1 flex flex-col gap-1">
-          <div className="h-2.5 w-full bg-white/5 rounded-full overflow-hidden border border-white/5 relative">
-            <div
-              className="h-full bg-gradient-to-r from-accent to-accent-hover transition-all duration-75 rounded-full"
-              style={{ width: `${dbPercentage}%` }}
-            ></div>
+          {/* Mic level */}
+          <div className="flex items-center gap-1">
+            <span className="text-[8px] opacity-60">🎙️</span>
+            <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5 relative">
+              <div
+                className="h-full bg-gradient-to-r from-accent to-accent-hover transition-all duration-75 rounded-full"
+                style={{ width: `${micPercentage}%` }}
+              ></div>
+            </div>
+            <span className="text-[8px] font-mono font-bold text-text-secondary min-w-[32px] text-right">{signalLevelMic}</span>
           </div>
-          <div className="flex justify-between text-[8px] text-text-muted font-mono leading-none">
-            <span>-48 dB</span>
-            <span className="font-bold text-text-secondary">{signalLevel}</span>
-            <span>0 dB</span>
+
+          {/* System level */}
+          <div className="flex items-center gap-1">
+            <span className="text-[8px] opacity-60">🖥️</span>
+            <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5 relative">
+              <div
+                className="h-full bg-gradient-to-r from-accent to-accent-hover transition-all duration-75 rounded-full"
+                style={{ width: `${systemPercentage}%` }}
+              ></div>
+            </div>
+            <span className="text-[8px] font-mono font-bold text-text-secondary min-w-[32px] text-right">{signalLevelSystem}</span>
           </div>
         </div>
 

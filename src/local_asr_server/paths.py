@@ -153,3 +153,17 @@ def get_audio_helper_path() -> Path:
     # Dev mode: use the compile-time cache location
     from local_asr_server.macos_audio_helper.compile import _BINARY_PATH  # type: ignore
     return _BINARY_PATH
+
+
+def get_native_capture_helper_path() -> Path:
+    """
+    Return the path to the native ScreenCaptureKit capture helper.
+
+    Bundle mode expects a pre-compiled binary in Resources. Dev mode uses the
+    cache managed by ``native_capture_helper.compile``.
+    """
+    if is_bundled():
+        return get_bundle_dir() / "native-capture-helper"
+
+    from local_asr_server.native_capture_helper.compile import _BINARY_PATH  # type: ignore
+    return _BINARY_PATH

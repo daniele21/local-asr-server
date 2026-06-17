@@ -8,10 +8,27 @@ export interface HealthResponse {
   recordings: boolean;
 }
 
+export type RecordingStatus =
+  | 'recording'
+  | 'finalizing'
+  | 'recorded'
+  | 'interrupted'
+  | 'recoverable'
+  | 'transcribing'
+  | 'completed'
+  | 'failed';
+
 export interface Recording {
   id: string;
   title: string;
   project_name: string;
+  status: RecordingStatus;
+  error?: string | null;
+  partial?: boolean;
+  capture_backend?: 'browser' | 'native';
+  capture_status?: string;
+  quality_report?: any;
+  warnings?: string[];
   mime_type: string;
   audio_file: string;
   capture_mode?: 'both' | 'mic_only' | 'pc_only' | 'legacy_mixed';
@@ -36,7 +53,54 @@ export interface RecordingTrack {
   audio_file?: string | null;
   bytes_written: number;
   chunk_count: number;
+  chunks?: RecordingChunk[];
   primary: boolean;
+}
+
+export interface RecordingChunk {
+  sequence: number;
+  sha256: string;
+  size: number;
+  received_at: string;
+  client_started_at_ms?: number | null;
+  client_chunk_start_ms?: number | null;
+  client_chunk_end_ms?: number | null;
+}
+
+export interface ExpectedSequence {
+  recording_id: string;
+  track_id: string;
+  status: RecordingStatus;
+  expected_sequence: number;
+  last_committed_sequence: number;
+  bytes_written: number;
+  part_file_exists: boolean;
+  audio_file_exists: boolean;
+}
+
+export interface CaptureCapabilities {
+  default_backend: 'native' | 'browser';
+  native: {
+    available: boolean;
+    backend: 'native';
+    reason?: string;
+    error?: string;
+    modes?: Array<'both' | 'mic_only' | 'pc_only'>;
+    minimum_macos?: string;
+  };
+  fallbacks: string[];
+}
+
+export interface TranscriptionJob {
+  id: string;
+  recording_id: string;
+  status: 'queued' | 'validating_audio' | 'preprocessing' | 'transcribing_mic' | 'transcribing_system' | 'merging' | 'saving' | 'completed' | 'failed' | 'cancelled';
+  current_step: string;
+  progress: number;
+  error?: string | null;
+  result?: Transcription | null;
+  created_at: number;
+  updated_at: number;
 }
 
 export interface ProjectItem {
@@ -106,9 +170,40 @@ export interface Settings {
   default_condition_on_previous: boolean;
 }
 
-async function request(url: string, options: RequestInit = {}): Promise<Response> {
-  const response = await fetch(url, options);
+let sessionPromise: Promise<void> | null = null;
+
+function isPublicRequest(url: string): boolean {
+  return url === '/health' || url === '/v1/session';
+}
+
+async function sha256Blob(file: Blob): Promise<string | null> {
+  if (!globalThis.crypto?.subtle) return null;
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function ensureSession(): Promise<void> {
+  if (!sessionPromise) {
+    sessionPromise = fetch('/v1/session', { credentials: 'same-origin' }).then((response) => {
+      if (!response.ok) {
+        throw new Error(`Session bootstrap failed: HTTP ${response.status}`);
+      }
+    });
+  }
+  return sessionPromise;
+}
+
+async function request(url: string, options: RequestInit = {}, retrying = false): Promise<Response> {
+  if (!isPublicRequest(url)) {
+    await ensureSession();
+  }
+  const response = await fetch(url, { ...options, credentials: options.credentials ?? 'same-origin' });
   if (response.ok) return response;
+  if (response.status === 401 && !isPublicRequest(url) && !retrying) {
+    sessionPromise = null;
+    await ensureSession();
+    return request(url, options, true);
+  }
 
   let detail = `HTTP ${response.status}`;
   try {
@@ -124,6 +219,10 @@ async function request(url: string, options: RequestInit = {}): Promise<Response
 export const ApiClient = {
   async health(): Promise<HealthResponse> {
     return (await request('/health')).json();
+  },
+
+  async captureCapabilities(): Promise<CaptureCapabilities> {
+    return (await request('/v1/capture/capabilities')).json();
   },
 
   async listRecordings(): Promise<{ items: Recording[] }> {
@@ -154,7 +253,7 @@ export const ApiClient = {
     return request('/v1/audio/transcriptions', { method: 'POST', body: formData });
   },
 
-  async createRecording(payload: { title?: string; project_name?: string; mime_type?: string; model?: string; language?: string; capture_mode?: 'both' | 'mic_only' | 'pc_only' | 'legacy_mixed' }): Promise<Recording> {
+  async createRecording(payload: { title?: string; project_name?: string; mime_type?: string; model?: string; language?: string; capture_mode?: 'both' | 'mic_only' | 'pc_only' | 'legacy_mixed'; capture_backend?: 'browser' | 'native' }): Promise<Recording> {
     return (await request('/v1/recordings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -166,10 +265,37 @@ export const ApiClient = {
     return (await request(`/v1/recordings/${recordingId}/stop`, { method: 'POST' })).json();
   },
 
+  async startNativeCapture(recordingId: string, mode: 'both' | 'mic_only' | 'pc_only'): Promise<any> {
+    return (await request(`/v1/recordings/${recordingId}/capture/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    })).json();
+  },
+
+  async stopNativeCapture(recordingId: string): Promise<{ capture: any; recording: Recording }> {
+    return (await request(`/v1/recordings/${recordingId}/capture/stop`, { method: 'POST' })).json();
+  },
+
+  async cancelNativeCapture(recordingId: string): Promise<any> {
+    return (await request(`/v1/recordings/${recordingId}/capture/cancel`, { method: 'POST' })).json();
+  },
+
+  async recoverRecording(recordingId: string): Promise<Recording> {
+    return (await request(`/v1/recordings/${recordingId}/recover`, { method: 'POST' })).json();
+  },
+
+  async discardRecording(recordingId: string): Promise<void> {
+    await request(`/v1/recordings/${recordingId}/discard`, { method: 'POST' });
+  },
+
   async appendRecordingChunk(recordingId: string, sequence: number, file: Blob): Promise<any> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('sequence', String(sequence));
+    formData.append('size', String(file.size));
+    const sha256 = await sha256Blob(file);
+    if (sha256) formData.append('sha256', sha256);
     return (await request(`/v1/recordings/${recordingId}/chunks`, {
       method: 'POST',
       body: formData
@@ -180,10 +306,17 @@ export const ApiClient = {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('sequence', String(sequence));
+    formData.append('size', String(file.size));
+    const sha256 = await sha256Blob(file);
+    if (sha256) formData.append('sha256', sha256);
     return (await request(`/v1/recordings/${recordingId}/tracks/${trackId}/chunks`, {
       method: 'POST',
       body: formData
     })).json();
+  },
+
+  async expectedRecordingTrackSequence(recordingId: string, trackId: string): Promise<ExpectedSequence> {
+    return (await request(`/v1/recordings/${recordingId}/tracks/${trackId}/expected-sequence`)).json();
   },
 
   async recordingTrackAudio(recordingId: string, trackId: string): Promise<Blob> {
@@ -205,6 +338,31 @@ export const ApiClient = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     }).then((res) => res.json());
+  },
+
+  async createTranscriptionJob(recordingId: string, payload: {
+    model?: string;
+    language?: string;
+    task?: string;
+    response_format?: string;
+    word_timestamps?: boolean;
+    initial_prompt?: string;
+    temperature?: number | null;
+    condition_on_previous_text?: boolean;
+  }): Promise<TranscriptionJob> {
+    return (await request(`/v1/recordings/${recordingId}/transcription-jobs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })).json();
+  },
+
+  async getJob(jobId: string): Promise<TranscriptionJob> {
+    return (await request(`/v1/jobs/${jobId}`)).json();
+  },
+
+  async cancelJob(jobId: string): Promise<TranscriptionJob> {
+    return (await request(`/v1/jobs/${jobId}/cancel`, { method: 'POST' })).json();
   },
 
   async updateRecording(recordingId: string, payload: { title?: string; project_name?: string }): Promise<Recording> {

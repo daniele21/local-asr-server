@@ -43,6 +43,56 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
   };
 
   const recorder = useRecorder(onRecordingSaved);
+  const nativeCaptureReady = recorder.captureCapabilities?.default_backend === 'native' && recorder.captureCapabilities.native.available;
+  const nativeCaptureChecked = Boolean(recorder.captureCapabilities);
+  const nativeCaptureUnavailableReason = recorder.captureCapabilities?.native.reason || recorder.captureCapabilities?.native.error || '';
+  const nativeCaptureUnavailableMessage = (() => {
+    if (nativeCaptureUnavailableReason === 'screen_capture_stream_pending') {
+      return t('recording.nativeCapturePendingReason');
+    }
+    if (nativeCaptureUnavailableReason === 'helper_missing') {
+      return t('recording.nativeCaptureHelperMissingReason');
+    }
+    if (nativeCaptureUnavailableReason === 'macos_required' || nativeCaptureUnavailableReason === 'macos_14_required') {
+      return t('recording.nativeCaptureMacosRequiredReason');
+    }
+    if (nativeCaptureUnavailableReason === 'screen_recording_permission_required') {
+      return t('recording.nativeCaptureScreenPermissionReason');
+    }
+    if (nativeCaptureUnavailableReason === 'microphone_permission_required') {
+      return t('recording.nativeCaptureMicPermissionReason');
+    }
+    return nativeCaptureUnavailableReason || t('recording.nativeCaptureUnavailableUnknown');
+  })();
+  const needsComputerAudio = sourceMode !== 'mic_only';
+  const micReady = sourceMode === 'pc_only' || recorder.microphones.length > 0 || recorder.selectedMicrophone === '';
+  const computerReady = !needsComputerAudio || nativeCaptureReady || Boolean(recorder.audioRouteStatus?.ready_to_record) || recorder.systemDevices.length > 0;
+  const storageReady = recordingsDir.trim().length > 0;
+  const readyToRecord = micReady && computerReady && storageReady;
+  const captureModeOptions = [
+    { value: 'both', label: t('recording.captureModeBoth') },
+    { value: 'mic_only', label: t('recording.captureModeMicOnly') },
+    {
+      value: 'pc_only',
+      label: nativeCaptureReady
+        ? t('recording.captureModeComputerOnly')
+        : t('recording.captureModeComputerOnlyFallback'),
+    },
+  ] as const;
+  const userQualityWarnings = (recording?: Recording | null) => {
+    const warnings = recording?.warnings || [];
+    return warnings
+      .filter((warning) => !/^track_.*_invalid$/.test(warning))
+      .map((warning) => {
+        if (warning === 'track_mic_empty') return t('recording.qualityMicEmpty');
+        if (warning === 'track_system_empty') return t('recording.qualitySystemEmpty');
+        if (warning === 'track_mixed_empty') return t('recording.qualityMixedEmpty');
+        if (warning === 'sync_duration_warning') return t('recording.qualitySyncWarning');
+        if (warning === 'sync_duration_serious_warning') return t('recording.qualitySyncSeriousWarning');
+        if (warning === 'sync_duration_unreliable') return t('recording.qualitySyncUnreliable');
+        return warning;
+      });
+  };
 
   // Load Settings for recordings directory
   useEffect(() => {
@@ -236,6 +286,35 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
                 <p className="text-xs text-text-secondary">
                   <strong>Progetto:</strong> {recording.project_name || 'Senza progetto'}
                 </p>
+                {(recording.quality_report || (recording.warnings && recording.warnings.length > 0)) && (() => {
+                  const qualityWarnings = userQualityWarnings(recording);
+                  const hasProbeOnlyWarning = (recording.warnings || []).some((warning) => /^track_.*_invalid$/.test(warning));
+                  return (
+                  <div className="mt-2 rounded-lg border border-border-subtle/70 bg-bg-surface/40 p-3 text-xs text-text-secondary">
+                    <div className="flex items-center justify-between font-bold text-text-primary">
+                      <span>{t('recording.qualityTitle')}</span>
+                      <span className={qualityWarnings.length ? 'text-warning' : 'text-success'}>
+                        {qualityWarnings.length ? t('recording.qualityCheck') : t('recording.qualityOk')}
+                      </span>
+                    </div>
+                    {recording.quality_report?.sync?.duration_delta_ms != null && (
+                      <p className="mt-1">
+                        {t('recording.qualitySyncLabel')}: {recording.quality_report.sync.duration_delta_ms} ms
+                      </p>
+                    )}
+                    {qualityWarnings.length > 0 && (
+                      <p className="mt-1 text-warning">
+                        {qualityWarnings.slice(0, 3).join(' · ')}
+                      </p>
+                    )}
+                    {qualityWarnings.length === 0 && hasProbeOnlyWarning && (
+                      <p className="mt-1 text-text-muted">
+                        {t('recording.qualityProbeUnavailable')}
+                      </p>
+                    )}
+                  </div>
+                  );
+                })()}
               </div>
               <Button
                 variant="secondary"
@@ -285,14 +364,11 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
                 variant="secondary"
                 disabled={!transcription}
                 onClick={() => {
-                  if (analysis) {
-                    navigateTo('analysis', transcription.id);
-                  } else {
-                    navigateTo('analysis', transcription.id);
-                  }
+                  if (!transcription) return;
+                  navigateTo('analysis', transcription.id);
                 }}
               >
-                {analysis ? 'Apri analisi' : 'Genera analisi'}
+                {!transcription ? 'Trascrivi prima' : (analysis ? 'Apri analisi' : 'Genera analisi')}
               </Button>
             </Card>
           </div>
@@ -369,7 +445,10 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
               </div>
               <div className="text-xs text-text-secondary text-right">
                 <span className="block font-medium">{recorder.progressText}</span>
-                <span className="block text-text-muted mt-0.5">{t('recording.signalInput')}: <strong>{recorder.signalLevel}</strong></span>
+                <span className="block text-text-muted mt-0.5">
+                  🎙️ Mic: <strong className="text-text-primary mr-2">{recorder.signalLevelMic}</strong>
+                  🖥️ PC: <strong className="text-text-primary">{recorder.signalLevelSystem}</strong>
+                </span>
               </div>
             </div>
 
@@ -445,81 +524,121 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
               )}
             </div>
 
-            {/* Advanced configurations collapsible */}
+            {/* Capture backend and advanced fallback details */}
             <div className="border border-border-subtle rounded-xl overflow-hidden mt-2">
               <button
                 type="button"
                 onClick={() => setShowAdvancedAudio(!showAdvancedAudio)}
                 className="w-full p-4 flex items-center justify-between text-sm font-semibold text-text-primary bg-bg-surface/30 cursor-pointer"
               >
-                <span>⚙️ {t('recording.advancedAudioConfig')}</span>
+                <span>{nativeCaptureReady ? '✅' : '⚠️'} {t('recording.captureBackendTitle')}</span>
                 <span className={`transform transition-transform ${showAdvancedAudio ? 'rotate-180' : ''}`}>▼</span>
               </button>
 
               {showAdvancedAudio && (
                 <div className="p-4 flex flex-col gap-4 border-t border-border-subtle bg-bg-surface/10 animate-in fade-in duration-200">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Select
-                      label={t('recording.microphone')}
-                      value={recorder.selectedMicrophone}
-                      onChange={(e) => recorder.setSelectedMicrophone(e.target.value)}
-                    >
-                      <option value="">{t('recording.deviceAuto')}</option>
-                      {recorder.microphones.map((d) => (
-                        <option key={d.deviceId} value={d.deviceId}>
-                          {d.label}
-                        </option>
-                      ))}
-                    </Select>
+                  {nativeCaptureReady ? (
+                    <div className="rounded-lg border border-success/30 bg-success/10 p-3 text-xs text-text-secondary">
+                      <strong className="block text-text-primary mb-1">
+                        {t('recording.nativeCaptureTitle')}
+                      </strong>
+                      <p>{t('recording.nativeCaptureDesc')}</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-text-secondary">
+                        <strong className="block text-text-primary mb-1">
+                          {nativeCaptureChecked ? t('recording.nativeCaptureUnavailableTitle') : t('recording.nativeCaptureCheckingTitle')}
+                        </strong>
+                        <p>
+                          {nativeCaptureChecked
+                            ? t('recording.nativeCaptureUnavailableDesc', { reason: nativeCaptureUnavailableMessage })
+                            : t('recording.nativeCaptureCheckingDesc')}
+                        </p>
+                        {nativeCaptureChecked && (nativeCaptureUnavailableReason === 'screen_recording_permission_required' || nativeCaptureUnavailableReason === 'microphone_permission_required') && (
+                          <div className="mt-3 pt-3 border-t border-warning/20 text-[11px] flex flex-col gap-1.5">
+                            <strong className="text-text-primary">{t('recording.nativeCaptureInstructionsTitle')}</strong>
+                            <ol className="list-decimal pl-4 flex flex-col gap-1 text-text-secondary">
+                              <li>{t('recording.nativeCaptureInstructionStep1')}</li>
+                              <li>
+                                {nativeCaptureUnavailableReason === 'screen_recording_permission_required'
+                                  ? t('recording.nativeCaptureInstructionStep2Screen')
+                                  : t('recording.nativeCaptureInstructionStep2Mic')}
+                              </li>
+                              <li>{t('recording.nativeCaptureInstructionStep3')}</li>
+                            </ol>
+                          </div>
+                        )}
+                      </div>
 
-                    <Select
-                      label={t('recording.computerAudio')}
-                      value={recorder.selectedSystemDevice}
-                      onChange={(e) => recorder.setSelectedSystemDevice(e.target.value)}
-                    >
-                      {recorder.systemDevices.length === 0 ? (
-                        <option value="">{t('recording.searchingBlackhole')}</option>
-                      ) : (
-                        recorder.systemDevices.map((d) => (
-                          <option key={d.deviceId} value={d.deviceId}>
-                            {d.label}
-                          </option>
-                        ))
-                      )}
-                    </Select>
-                  </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Select
+                          label={t('recording.microphone')}
+                          value={recorder.selectedMicrophone}
+                          onChange={(e) => recorder.setSelectedMicrophone(e.target.value)}
+                        >
+                          <option value="">{t('recording.deviceAuto')}</option>
+                          {recorder.microphones.map((d) => (
+                            <option key={d.deviceId} value={d.deviceId}>
+                              {d.label}
+                            </option>
+                          ))}
+                        </Select>
+
+                        <Select
+                          label={t('recording.computerAudio')}
+                          value={recorder.selectedSystemDevice}
+                          onChange={(e) => recorder.setSelectedSystemDevice(e.target.value)}
+                        >
+                          {recorder.systemDevices.length === 0 ? (
+                            <option value="">{t('recording.searchingBlackhole')}</option>
+                          ) : (
+                            recorder.systemDevices.map((d) => (
+                              <option key={d.deviceId} value={d.deviceId}>
+                                {d.label}
+                              </option>
+                            ))
+                          )}
+                        </Select>
+                      </div>
+                    </>
+                  )}
 
                   <Select
-                    label="Modalità di acquisizione"
+                    label={t('recording.captureModeLabel')}
                     value={sourceMode}
                     onChange={(e) => setSourceMode(e.target.value as any)}
                   >
-                    <option value="both">Voce + Audio computer (Aggregate)</option>
-                    <option value="mic_only">Solo Voce (Microfono)</option>
-                    <option value="pc_only">Solo Audio computer (BlackHole)</option>
+                    {captureModeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </Select>
 
-                  <div className="flex gap-3 mt-1">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      className="flex-1"
-                      onClick={recorder.toggleTestAudioRoute}
-                      disabled={recorder.isVerifying}
-                    >
-                      {recorder.isTestRouted ? t('recording.btnRestoreOriginalAudio') : t('recording.testAudioRoute')}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="flex-1"
-                      onClick={() => setShowSetupInfo(true)}
-                    >
-                      ℹ️ Info Routing
-                    </Button>
-                  </div>
+                  {!nativeCaptureReady && (
+                    <div className="flex gap-3 mt-1">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="flex-1"
+                        onClick={recorder.toggleTestAudioRoute}
+                        disabled={recorder.isVerifying}
+                      >
+                        {recorder.isTestRouted ? t('recording.btnRestoreOriginalAudio') : t('recording.testAudioRoute')}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => setShowSetupInfo(true)}
+                      >
+                        ℹ️ {t('recording.routingInfo')}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -536,16 +655,22 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
 
             <div className="flex items-start gap-3 mt-1">
               <span className="text-xl">
-                {recorder.audioRouteStatus?.ready_to_record ? '✅' : '⚠️'}
+                {readyToRecord ? '✅' : '⚠️'}
               </span>
               <div className="flex flex-col leading-snug">
                 <strong className="text-xs text-text-primary font-bold">
-                  {recorder.audioRouteStatus?.ready_to_record ? t('recording.audioSetupTitleReady') : t('recording.configRequiredStatus')}
+                  {readyToRecord ? t('recording.readyToRecordTitle') : t('recording.notReadyToRecordTitle')}
                 </strong>
                 <span className="text-[11px] text-text-secondary mt-1">
-                  {recorder.audioRouteStatus?.ready_to_record ? t('recording.readyConfigStatus') : t('recording.verifyConfigRequiredStatus')}
+                  {readyToRecord ? t('recording.readyToRecordStatus') : t('recording.notReadyToRecordStatus')}
                 </span>
               </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-1.5 text-[11px] text-text-secondary">
+              <span>{micReady ? '✅' : '⚠️'} {t('recording.microphone')}</span>
+              <span>{computerReady ? '✅' : '⚠️'} {t('recording.computerAudio')}</span>
+              <span>{storageReady ? '✅' : '⚠️'} {t('recording.storageConfigTitle')}</span>
             </div>
 
             <Button

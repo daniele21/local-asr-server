@@ -18,6 +18,7 @@ from pathlib import Path
 PROJECT_ROOT   = Path(SPECPATH)                                     # noqa: F821
 CACHE_DIR      = PROJECT_ROOT / ".cache"
 AUDIO_HELPER   = CACHE_DIR / "audio-helper" / "audio-helper"
+NATIVE_CAPTURE_HELPER = CACHE_DIR / "native-capture-helper" / "native-capture-helper"
 BUILD_ASSETS   = PROJECT_ROOT / "build_assets"                      # created by build.sh
 
 # Resolve paths from the installed package in the active environment
@@ -40,6 +41,12 @@ if not AUDIO_HELPER.exists():
         "Run: ./build.sh  (or: uv run local-asr setup-audio)"
     )
 
+if not NATIVE_CAPTURE_HELPER.exists():
+    raise FileNotFoundError(
+        f"Pre-compiled native capture helper not found at {NATIVE_CAPTURE_HELPER}.\n"
+        "Run: ./build.sh"
+    )
+
 ffmpeg_bin = BUILD_ASSETS / "ffmpeg"
 if not ffmpeg_bin.exists():
     raise FileNotFoundError(
@@ -51,6 +58,7 @@ if not ffmpeg_bin.exists():
 
 extra_binaries = [
     (str(AUDIO_HELPER), "."),        # → Contents/MacOS/audio-helper
+    (str(NATIVE_CAPTURE_HELPER), "."),  # → Contents/MacOS/native-capture-helper
     (str(ffmpeg_bin), "."),          # → Contents/MacOS/ffmpeg
 ]
 
@@ -130,6 +138,11 @@ hidden_imports = [
     "local_asr_server.launchd",
     "local_asr_server.macos_audio_helper",
     "local_asr_server.macos_audio_helper.compile",
+    "local_asr_server.native_capture",
+    "local_asr_server.native_capture_helper",
+    "local_asr_server.native_capture_helper.compile",
+    "local_asr_server.audio_diagnostics",
+    "local_asr_server.transcription_jobs",
 ]
 
 # ── Exclude heavy dev/test packages ───────────────────────────────────────────
@@ -214,6 +227,8 @@ app = BUNDLE(                                                           # noqa: 
         "NSHighResolutionCapable": True,
         "NSMicrophoneUsageDescription":
             "ClosedRoom needs microphone access to record meetings.",
+        "NSScreenCaptureUsageDescription":
+            "ClosedRoom needs screen and system audio capture access for native recording.",
         "NSAppleEventsUsageDescription":
             "ClosedRoom uses AppleScript to open folder selection dialogs.",
         # Minimum macOS version (MLX requires 14+)

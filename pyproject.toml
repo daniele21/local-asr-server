@@ -36,5 +36,9 @@ local-asr = "local_asr_server.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-local_asr_server = ["static/*", "static/**/*"]
-
+local_asr_server = [
+    "static/*",
+    "static/**/*",
+    "macos_audio_helper/*.swift",
+    "native_capture_helper/*.swift",
+]

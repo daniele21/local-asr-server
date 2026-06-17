@@ -83,7 +83,11 @@ class CatalogStore:
                 audio_file TEXT,
                 capture_mode TEXT,
                 primary_track_id TEXT,
-                audio_tracks TEXT
+                audio_tracks TEXT,
+                capture_backend TEXT,
+                capture_status TEXT,
+                quality_report TEXT,
+                warnings TEXT
             );
 
             CREATE TABLE IF NOT EXISTS transcriptions (
@@ -116,6 +120,10 @@ class CatalogStore:
         self._ensure_column(conn, "recordings", "capture_mode", "TEXT")
         self._ensure_column(conn, "recordings", "primary_track_id", "TEXT")
         self._ensure_column(conn, "recordings", "audio_tracks", "TEXT")
+        self._ensure_column(conn, "recordings", "capture_backend", "TEXT")
+        self._ensure_column(conn, "recordings", "capture_status", "TEXT")
+        self._ensure_column(conn, "recordings", "quality_report", "TEXT")
+        self._ensure_column(conn, "recordings", "warnings", "TEXT")
         self._ensure_column(conn, "transcriptions", "source_tracks", "TEXT")
 
     def _ensure_column(self, conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
@@ -130,8 +138,9 @@ class CatalogStore:
                 INSERT INTO recordings (
                     id, title, project_name, status, created_at, stopped_at, completed_at,
                     mime_type, extension, chunk_count, bytes_written, model, language, error,
-                    relative_dir, audio_file, capture_mode, primary_track_id, audio_tracks
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    relative_dir, audio_file, capture_mode, primary_track_id, audio_tracks,
+                    capture_backend, capture_status, quality_report, warnings
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     title = excluded.title,
                     project_name = excluded.project_name,
@@ -149,7 +158,11 @@ class CatalogStore:
                     audio_file = excluded.audio_file,
                     capture_mode = excluded.capture_mode,
                     primary_track_id = excluded.primary_track_id,
-                    audio_tracks = excluded.audio_tracks
+                    audio_tracks = excluded.audio_tracks,
+                    capture_backend = excluded.capture_backend,
+                    capture_status = excluded.capture_status,
+                    quality_report = excluded.quality_report,
+                    warnings = excluded.warnings
                 """,
                 (
                     metadata["id"],
@@ -171,8 +184,16 @@ class CatalogStore:
                     metadata.get("capture_mode"),
                     metadata.get("primary_track_id"),
                     _json_dump(metadata.get("audio_tracks", [])),
+                    metadata.get("capture_backend"),
+                    metadata.get("capture_status"),
+                    _json_dump(metadata.get("quality_report")),
+                    _json_dump(metadata.get("warnings", [])),
                 ),
             )
+
+    def delete_recording(self, recording_id: str) -> None:
+        with self.connection() as conn:
+            conn.execute("DELETE FROM recordings WHERE id = ?", (recording_id,))
 
     def upsert_transcription(self, data: dict[str, Any], file_name: str | None = None) -> None:
         with self.connection() as conn:
@@ -330,4 +351,6 @@ class CatalogStore:
     def row_to_recording(self, row: sqlite3.Row) -> dict[str, Any]:
         item = dict(row)
         item["audio_tracks"] = _json_load(item.get("audio_tracks"), [])
+        item["quality_report"] = _json_load(item.get("quality_report"), None)
+        item["warnings"] = _json_load(item.get("warnings"), [])
         return item

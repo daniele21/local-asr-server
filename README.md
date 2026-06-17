@@ -50,6 +50,9 @@ local-asr serve \
 ```
 
 Open `http://127.0.0.1:1236` to upload an audio file or record a call.
+The web app bootstraps a local same-origin session automatically. For direct
+API calls, fetch `/v1/session` first and reuse the returned cookie or bearer
+token. Set `LOCAL_ASR_REQUIRE_AUTH=0` only for trusted development tests.
 
 ## Post-call recording
 
@@ -58,24 +61,40 @@ the call is in progress. Clicking **Termina e salva** only finalizes the audio.
 To run Whisper, open the **Trascrizione** screen and select the saved recording
 or upload a different audio file.
 
+Chunk uploads are recorded with monotonic sequence numbers and SHA-256 metadata,
+so retrying the same committed chunk is idempotent while conflicting duplicate
+content is rejected. If the browser tab closes or the server restarts before
+stop, ClosedRoom marks sessions with partial audio as recoverable and can
+finalize them as partial recordings instead of discarding the captured audio.
+
 Each session stores:
 
 ```text
 <recordings-dir>/<date>/<session-id>/
 ├── recording.webm      # mixed playback track
 ├── mic.webm            # local microphone track, when captured
-├── system.webm         # computer/BlackHole track, when captured
+├── system.webm         # computer audio track, when captured
 ├── metadata.json
 ├── transcript.json
 └── transcript.txt
 ```
 
-Browser recording captures the selected microphone and BlackHole as separate
-streams. For **voice + computer audio** sessions, ClosedRoom stores the two
-source tracks plus a mixed playback track under one recording item. Whisper is
-started later from the **Trascrizione** screen: it transcribes the source tracks
-sequentially and merges the resulting segments by timestamp, labeling them as
-local microphone or computer audio. The one-time setup for each output device is:
+ClosedRoom checks `/v1/capture/capabilities` before recording. On macOS 14 or
+later, the native Swift helper records microphone audio with AVFoundation and
+computer audio with ScreenCaptureKit, then writes WAV tracks directly into the
+recording session. The native backend is considered available only when the
+macOS version and the required Screen Recording/Microphone permissions are
+ready. When it is available, it becomes the default and the UI shows native
+capture status instead of BlackHole setup controls. For **voice + computer
+audio** sessions, ClosedRoom stores the source tracks plus a mixed playback
+track under one recording item. Whisper is started later from the
+**Trascrizione** screen: it transcribes the source tracks sequentially and
+merges the resulting segments by timestamp, labeling them as local microphone
+or computer audio.
+
+If the native helper is unavailable, ClosedRoom makes that fallback explicit and
+uses browser recording with BlackHole compatibility. The one-time setup for each
+output device is:
 
 1. **Install prerequisites**: Run `./setup.sh` or `local-asr setup-audio`.
 2. **Create an output profile**:
@@ -88,7 +107,7 @@ local microphone or computer audio. The one-time setup for each output device is
 3. **Verify**: Run `local-asr doctor` or use the guided setup in the Web UI.
 
 Create one profile for every output you regularly use. Microphone and BlackHole
-selection are available under **Configurazione audio avanzata**.
+selection are shown only while the app is using browser + BlackHole fallback.
 
 ## Endpoints / Usage Examples
 
@@ -97,9 +116,16 @@ selection are available under **Configurazione audio avanzata**.
 curl http://127.0.0.1:1236/health
 ```
 
+### Capture capabilities
+```bash
+curl -c /tmp/closedroom.cookies http://127.0.0.1:1236/v1/session
+curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/capture/capabilities
+```
+
 ### Transcribe uploaded audio
 ```bash
-curl http://127.0.0.1:1236/v1/audio/transcriptions \
+curl -c /tmp/closedroom.cookies http://127.0.0.1:1236/v1/session
+curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/audio/transcriptions \
   -F "file=@/Users/daniele/Desktop/audio.mp3" \
   -F "language=it" \
   -F "response_format=verbose_json"
@@ -107,7 +133,8 @@ curl http://127.0.0.1:1236/v1/audio/transcriptions \
 
 ### Transcribe local path
 ```bash
-curl http://127.0.0.1:1236/v1/audio/transcriptions/path \
+curl -c /tmp/closedroom.cookies http://127.0.0.1:1236/v1/session
+curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/audio/transcriptions/path \
   -H "Content-Type: application/json" \
   -d '{
     "file": "/Users/daniele/Desktop/audio.mp3",
@@ -119,7 +146,8 @@ curl http://127.0.0.1:1236/v1/audio/transcriptions/path \
 
 ### Text-only response
 ```bash
-curl http://127.0.0.1:1236/v1/audio/transcriptions \
+curl -c /tmp/closedroom.cookies http://127.0.0.1:1236/v1/session
+curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/audio/transcriptions \
   -F "file=@/Users/daniele/Desktop/audio.mp3" \
   -F "language=it" \
   -F "response_format=text"

@@ -103,6 +103,14 @@ fi
 chmod +x "$HELPER_DEST"
 ok "Audio helper: $HELPER_DEST ($(du -sh "$HELPER_DEST" | cut -f1))"
 
+NATIVE_HELPER_CACHE="$SCRIPT_DIR/.cache/native-capture-helper/native-capture-helper"
+NATIVE_HELPER_DEST="$BUILD_ASSETS/native-capture-helper"
+log "  Compiling native capture helper..."
+uv run python -c "from local_asr_server.native_capture_helper.compile import compile_helper; compile_helper(force=False)"
+cp "$NATIVE_HELPER_CACHE" "$NATIVE_HELPER_DEST"
+chmod +x "$NATIVE_HELPER_DEST"
+ok "Native capture helper: $NATIVE_HELPER_DEST ($(du -sh "$NATIVE_HELPER_DEST" | cut -f1))"
+
 # ── Step 2: Bundle ffmpeg ──────────────────────────────────────────────────────
 log "Step 2/5: Bundling ffmpeg..."
 
@@ -259,6 +267,7 @@ find "$APP_PATH" -name "*.dylib" -exec chmod 755 {} \;
 find "$APP_PATH" -name "*.so" -exec chmod 755 {} \;
 chmod +x "$APP_PATH/Contents/MacOS/$APP_NAME"
 chmod +x "$APP_PATH/Contents/MacOS/audio-helper" 2>/dev/null || true
+chmod +x "$APP_PATH/Contents/MacOS/native-capture-helper" 2>/dev/null || true
 chmod +x "$APP_PATH/Contents/MacOS/ffmpeg" 2>/dev/null || true
 
 log "  Applying ad-hoc code signature..."
