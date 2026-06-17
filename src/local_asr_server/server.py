@@ -67,6 +67,7 @@ class CreateRecordingRequest(BaseModel):
     mime_type: str = "audio/webm;codecs=opus"
     model: Optional[str] = None
     language: Optional[str] = "it"
+    capture_mode: Optional[str] = "legacy_mixed"
 
 
 class UpdateRecordingRequest(BaseModel):
@@ -92,6 +93,75 @@ class MergeTranscriptionsRequest(BaseModel):
     title: Optional[str] = None
 
 
+class TranscribeRecordingRequest(BaseModel):
+    model: Optional[str] = None
+    language: Optional[str] = "it"
+    task: str = "transcribe"
+    response_format: str = "verbose_json"
+    word_timestamps: bool = False
+    initial_prompt: Optional[str] = None
+    temperature: Optional[float] = None
+    condition_on_previous_text: bool = True
+    verbose: Optional[bool] = None
+
+
+def _format_time_label(seconds: float) -> str:
+    total = max(0, int(seconds))
+    minutes = total // 60
+    secs = total % 60
+    return f"{minutes:02d}:{secs:02d}"
+
+
+def _merge_track_transcriptions(track_results: list[dict], *, model: str, language: str | None, elapsed: float, recording_id: str) -> dict:
+    segments = []
+    source_tracks = []
+    text_lines = []
+    next_id = 0
+    languages: list[str] = []
+
+    for item in track_results:
+        track = item["track"]
+        result = item["result"]
+        source_tracks.append({
+            "id": track["id"],
+            "source": track.get("source"),
+            "label": track.get("label"),
+            "audio_file": track.get("audio_file"),
+        })
+        if result.get("language") and result["language"] not in languages:
+            languages.append(result["language"])
+        for seg in result.get("segments", []) or []:
+            merged_seg = dict(seg)
+            merged_seg["id"] = next_id
+            next_id += 1
+            merged_seg["track_id"] = track["id"]
+            merged_seg["source"] = track.get("source")
+            merged_seg["speaker_label"] = track.get("label")
+            segments.append(merged_seg)
+
+    segments.sort(key=lambda seg: (seg.get("start") or 0.0, seg.get("end") or 0.0, seg.get("track_id") or ""))
+    for index, seg in enumerate(segments):
+        seg["id"] = index
+        label = seg.get("speaker_label") or seg.get("source") or "Audio"
+        text = (seg.get("text") or "").strip()
+        if text:
+            text_lines.append(f"[{_format_time_label(float(seg.get('start') or 0.0))}] {label}: {text}")
+
+    return {
+        "text": "\n".join(text_lines),
+        "language": ", ".join(languages) if languages else (language or "it"),
+        "segments": segments,
+        "source_tracks": source_tracks,
+        "model": model,
+        "backend": "mlx-whisper",
+        "recording_id": recording_id,
+        "stats": {
+            "time_total_seconds": elapsed,
+            "track_count": len(track_results),
+        },
+    }
+
+
 class OverlayRequest(BaseModel):
     show: bool
 
@@ -107,12 +177,7 @@ def _build_projects(app: FastAPI) -> dict:
             "is_unassigned": project_name == unassigned_name,
             "items": [],
         })
-        audio_name = Path(recording.get("audio_file") or "").name
-        extension = Path(audio_name).suffix or recording.get("extension") or ""
-        title_audio_name = f"{recording.get('title')}{extension}" if extension else ""
-        transcription = app.state.transcription_store.find_for_recording(recording["id"], audio_name)
-        if transcription is None and title_audio_name:
-            transcription = app.state.transcription_store.find_for_recording("", title_audio_name)
+        transcription = app.state.transcription_store.find_for_recording(recording["id"])
         bucket["items"].append({
             "recording": recording,
             "transcription": transcription,
@@ -224,6 +289,7 @@ def create_app(
                 mime_type=request.mime_type,
                 model=request.model or app.state.default_model,
                 language=request.language,
+                capture_mode=request.capture_mode or "legacy_mixed",
             )
             app.state.is_recording = True
             return res
@@ -279,6 +345,24 @@ def create_app(
         except OSError as exc:
             raise HTTPException(status_code=507, detail=str(exc)) from exc
 
+    @app.post("/v1/recordings/{recording_id}/tracks/{track_id}/chunks")
+    async def append_recording_track_chunk(
+        recording_id: str,
+        track_id: str,
+        file: UploadFile = File(...),
+        sequence: int = Form(...),
+    ):
+        store: RecordingStore = app.state.recording_store
+        try:
+            content = await file.read()
+            return store.append_track_chunk(recording_id, track_id, sequence, content)
+        except RecordingNotFound as exc:
+            raise HTTPException(status_code=404, detail="Recording not found") from exc
+        except RecordingConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=507, detail=str(exc)) from exc
+
     @app.post("/v1/recordings/{recording_id}/stop", status_code=202)
     def stop_recording(recording_id: str):
         store: RecordingStore = app.state.recording_store
@@ -310,6 +394,24 @@ def create_app(
                 store.audio_path(recording_id),
                 media_type=metadata["mime_type"],
                 filename=Path(metadata["audio_file"]).name,
+            )
+        except RecordingNotFound as exc:
+            raise HTTPException(status_code=404, detail="Recording not found") from exc
+        except RecordingConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/v1/recordings/{recording_id}/tracks/{track_id}/audio")
+    def get_recording_track_audio(recording_id: str, track_id: str):
+        store: RecordingStore = app.state.recording_store
+        try:
+            metadata = store.get(recording_id, include_result=False)
+            track = next((item for item in metadata.get("audio_tracks", []) if item.get("id") == track_id), None)
+            if track is None:
+                raise RecordingConflict("Recording track not found")
+            return FileResponse(
+                store.track_audio_path(recording_id, track_id),
+                media_type=track.get("mime_type") or metadata["mime_type"],
+                filename=Path(track.get("audio_file") or f"{track_id}.webm").name,
             )
         except RecordingNotFound as exc:
             raise HTTPException(status_code=404, detail="Recording not found") from exc
@@ -572,6 +674,66 @@ def create_app(
         finally:
             app.state.is_transcribing = False
 
+    @app.post("/v1/recordings/{recording_id}/transcriptions")
+    def transcribe_recording(recording_id: str, request: TranscribeRecordingRequest):
+        started_at = time.perf_counter()
+        target_model = request.model or app.state.default_model
+        store: RecordingStore = app.state.recording_store
+        try:
+            recording = store.get(recording_id, include_result=False)
+            track_paths = store.transcribable_tracks(recording_id)
+        except RecordingNotFound as exc:
+            raise HTTPException(status_code=404, detail="Recording not found") from exc
+        except RecordingConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        app.state.is_transcribing = True
+        try:
+            track_results = []
+            for track, audio_path in track_paths:
+                result = transcribe_file_sync(
+                    audio_path=str(audio_path),
+                    model=target_model,
+                    language=request.language,
+                    task=request.task,
+                    word_timestamps=request.word_timestamps,
+                    initial_prompt=request.initial_prompt,
+                    temperature=request.temperature,
+                    condition_on_previous_text=request.condition_on_previous_text,
+                    verbose=request.verbose,
+                )
+                public_track = next(
+                    (item for item in recording.get("audio_tracks", []) if item.get("id") == track["id"]),
+                    track,
+                )
+                track_results.append({"track": public_track, "result": result})
+
+            elapsed = time.perf_counter() - started_at
+            payload = _merge_track_transcriptions(
+                track_results,
+                model=target_model,
+                language=request.language,
+                elapsed=elapsed,
+                recording_id=recording_id,
+            )
+            payload = _clean_nan_values(payload)
+            saved_meta = app.state.transcription_store.save(
+                payload,
+                audio_filename=recording.get("title") or Path(recording.get("audio_file") or "recording").name,
+                recording_id=recording_id,
+            )
+            payload["saved_id"] = saved_meta["id"]
+            payload["saved_file_path"] = str(app.state.transcription_store.root)
+
+            if request.response_format == "text":
+                return PlainTextResponse(payload["text"])
+            return JSONResponse(payload)
+        except Exception as exc:
+            logger.error(f"[/v1/recordings/{recording_id}/transcriptions] Transcription failed: {exc}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Transcription failed: {exc}") from exc
+        finally:
+            app.state.is_transcribing = False
+
     @app.patch("/v1/recordings/{recording_id}")
     def update_recording(recording_id: str, request: UpdateRecordingRequest):
         store: RecordingStore = app.state.recording_store
@@ -590,12 +752,7 @@ def create_app(
             recording = app.state.recording_store.get(recording_id)
         except RecordingNotFound as exc:
             raise HTTPException(status_code=404, detail="Recording not found") from exc
-        audio_name = Path(recording.get("audio_file") or "").name
-        extension = Path(audio_name).suffix or recording.get("extension") or ""
-        title_audio_name = f"{recording.get('title')}{extension}" if extension else ""
-        transcription = app.state.transcription_store.find_for_recording(recording_id, audio_name)
-        if transcription is None and title_audio_name:
-            transcription = app.state.transcription_store.find_for_recording("", title_audio_name)
+        transcription = app.state.transcription_store.find_for_recording(recording_id)
         return {
             "recording": recording,
             "transcription": transcription,

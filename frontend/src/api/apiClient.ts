@@ -14,6 +14,9 @@ export interface Recording {
   project_name: string;
   mime_type: string;
   audio_file: string;
+  capture_mode?: 'both' | 'mic_only' | 'pc_only' | 'legacy_mixed';
+  primary_track_id?: string;
+  audio_tracks?: RecordingTrack[];
   bytes_written: number;
   created_at: string;
   stopped_at?: string;
@@ -23,6 +26,17 @@ export interface Recording {
     duration_seconds?: number;
     duration?: number;
   };
+}
+
+export interface RecordingTrack {
+  id: string;
+  source: 'mixed' | 'mic' | 'system';
+  label: string;
+  mime_type: string;
+  audio_file?: string | null;
+  bytes_written: number;
+  chunk_count: number;
+  primary: boolean;
 }
 
 export interface ProjectItem {
@@ -49,6 +63,9 @@ export interface TranscriptionSegment {
   start: number;
   end: number;
   text: string;
+  track_id?: string;
+  source?: 'mixed' | 'mic' | 'system';
+  speaker_label?: string;
   words?: Array<{ word: string; start: number; end: number }>;
 }
 
@@ -73,6 +90,7 @@ export interface Transcription {
   saved_id?: string;
   recording_id?: string;
   merged_sources?: MergedSource[];
+  source_tracks?: RecordingTrack[];
 }
 
 export interface Settings {
@@ -136,7 +154,7 @@ export const ApiClient = {
     return request('/v1/audio/transcriptions', { method: 'POST', body: formData });
   },
 
-  async createRecording(payload: { title?: string; project_name?: string; mime_type?: string; model?: string; language?: string }): Promise<Recording> {
+  async createRecording(payload: { title?: string; project_name?: string; mime_type?: string; model?: string; language?: string; capture_mode?: 'both' | 'mic_only' | 'pc_only' | 'legacy_mixed' }): Promise<Recording> {
     return (await request('/v1/recordings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -156,6 +174,37 @@ export const ApiClient = {
       method: 'POST',
       body: formData
     })).json();
+  },
+
+  async appendRecordingTrackChunk(recordingId: string, trackId: string, sequence: number, file: Blob): Promise<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('sequence', String(sequence));
+    return (await request(`/v1/recordings/${recordingId}/tracks/${trackId}/chunks`, {
+      method: 'POST',
+      body: formData
+    })).json();
+  },
+
+  async recordingTrackAudio(recordingId: string, trackId: string): Promise<Blob> {
+    return (await request(`/v1/recordings/${recordingId}/tracks/${trackId}/audio`)).blob();
+  },
+
+  transcribeRecording(recordingId: string, payload: {
+    model?: string;
+    language?: string;
+    task?: string;
+    response_format?: string;
+    word_timestamps?: boolean;
+    initial_prompt?: string;
+    temperature?: number | null;
+    condition_on_previous_text?: boolean;
+  }): Promise<Transcription> {
+    return request(`/v1/recordings/${recordingId}/transcriptions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then((res) => res.json());
   },
 
   async updateRecording(recordingId: string, payload: { title?: string; project_name?: string }): Promise<Recording> {

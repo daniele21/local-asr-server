@@ -62,15 +62,20 @@ Each session stores:
 
 ```text
 <recordings-dir>/<date>/<session-id>/
-├── recording.webm
+├── recording.webm      # mixed playback track
+├── mic.webm            # local microphone track, when captured
+├── system.webm         # computer/BlackHole track, when captured
 ├── metadata.json
 ├── transcript.json
 └── transcript.txt
 ```
 
-Browser recording captures the selected microphone and BlackHole as two
-separate streams, mixes them with the Web Audio API, and restores the original
-system output after recording. The one-time setup for each output device is:
+Browser recording captures the selected microphone and BlackHole as separate
+streams. For **voice + computer audio** sessions, ClosedRoom stores the two
+source tracks plus a mixed playback track under one recording item. Whisper is
+started later from the **Trascrizione** screen: it transcribes the source tracks
+sequentially and merges the resulting segments by timestamp, labeling them as
+local microphone or computer audio. The one-time setup for each output device is:
 
 1. **Install prerequisites**: Run `./setup.sh` or `local-asr setup-audio`.
 2. **Create an output profile**:

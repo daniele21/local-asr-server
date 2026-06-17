@@ -53,7 +53,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
   // Audio Context Ref
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaRecordersRef = useRef<Map<string, MediaRecorder>>(new Map());
   const sourceStreamsRef = useRef<MediaStream[]>([]);
   const mixDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
@@ -61,8 +61,8 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
   
   // Session State
   const sessionIdRef = useRef<string | null>(null);
-  const sequenceRef = useRef(0);
-  const uploadChainRef = useRef<Promise<any>>(Promise.resolve());
+  const sequenceRef = useRef<Map<string, number>>(new Map());
+  const uploadChainsRef = useRef<Map<string, Promise<any>>>(new Map());
   const startedAtRef = useRef(0);
   const routeActivatedRef = useRef(false);
   const broadcastIntervalRef = useRef<any>(null);
@@ -262,7 +262,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     stopAudioMeter();
     sourceStreamsRef.current.forEach((stream) => stream.getTracks().forEach((track) => track.stop()));
     sourceStreamsRef.current = [];
-    mediaRecorderRef.current = null;
+    mediaRecordersRef.current.clear();
   }, [stopAudioMeter]);
 
   const restoreAudioRoute = useCallback(async () => {
@@ -279,25 +279,30 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
   }, [refreshAudioStatus]);
 
   const stopRecording = useCallback(async () => {
-    const mediaRecorder = mediaRecorderRef.current;
-    if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+    const mediaRecorders = Array.from(mediaRecordersRef.current.values());
+    if (mediaRecorders.length === 0 || mediaRecorders.every((recorder) => recorder.state === 'inactive')) return;
 
     setStatusText(t('recording.finalizing'));
     setStatusState('working');
 
-    if (mediaRecorder.state === 'recording') {
-      try {
-        mediaRecorder.requestData();
-      } catch { /* ignore */ }
-      // Brief delay to flush chunks
-      await new Promise((r) => setTimeout(r, 150));
-    }
-
-    const recorderStopped = new Promise<void>((resolve) => {
-      mediaRecorder.addEventListener('stop', () => resolve(), { once: true });
+    mediaRecorders.forEach((recorder) => {
+      if (recorder.state === 'recording') {
+        try {
+          recorder.requestData();
+        } catch { /* ignore */ }
+      }
     });
-    mediaRecorder.stop();
-    await recorderStopped;
+    // Brief delay to flush chunks
+    await new Promise((r) => setTimeout(r, 150));
+
+    await Promise.all(mediaRecorders.map((recorder) => new Promise<void>((resolve) => {
+      if (recorder.state === 'inactive') {
+        resolve();
+        return;
+      }
+      recorder.addEventListener('stop', () => resolve(), { once: true });
+      recorder.stop();
+    })));
 
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     if (broadcastIntervalRef.current) {
@@ -323,7 +328,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
 
     const sessionId = sessionIdRef.current;
     try {
-      await uploadChainRef.current;
+      await Promise.all(Array.from(uploadChainsRef.current.values()));
       if (sessionId) {
         const recording = await ApiClient.stopRecording(sessionId);
         localStorage.removeItem('asr-active-recording-id');
@@ -387,11 +392,11 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     return navigator.mediaDevices.getUserMedia({ audio: constraints });
   };
 
-  const uploadChunk = async (blob: Blob, chunkSequence: number) => {
+  const uploadChunk = async (trackId: string, blob: Blob, chunkSequence: number) => {
     const sessionId = sessionIdRef.current;
     if (!sessionId) return;
     try {
-      const metadata = await ApiClient.appendRecordingChunk(sessionId, chunkSequence, blob);
+      const metadata = await ApiClient.appendRecordingTrackChunk(sessionId, trackId, chunkSequence, blob);
       const sizeStr = metadata.bytes_written > 1024 * 1024
         ? `${(metadata.bytes_written / (1024 * 1024)).toFixed(1)} MB`
         : `${Math.round(metadata.bytes_written / 1024)} KB`;
@@ -456,14 +461,37 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
       const destNode = actx.createMediaStreamDestination();
       destNode.channelCount = 2;
       mixDestinationRef.current = destNode;
+      const trackDestinations = new Map<string, MediaStreamAudioDestinationNode>();
 
       const mixBus = actx.createGain();
       mixBus.gain.value = 1;
 
-      sourceStreamsRef.current.forEach((stream) => {
-        actx.createMediaStreamSource(stream).connect(mixBus);
-      });
+      const silenceSource = actx.createConstantSource();
+      silenceSource.offset.value = 0;
+      const keepDestinationClocked = (destination: MediaStreamAudioDestinationNode) => {
+        const silentGain = actx.createGain();
+        silentGain.gain.value = 0;
+        silenceSource.connect(silentGain);
+        silentGain.connect(destination);
+      };
+
+      const connectSourceTrack = (trackId: 'mic' | 'system', stream: MediaStream | null) => {
+        if (!stream) return;
+        const sourceNode = actx.createMediaStreamSource(stream);
+        sourceNode.connect(mixBus);
+
+        const trackDest = actx.createMediaStreamDestination();
+        trackDest.channelCount = 1;
+        sourceNode.connect(trackDest);
+        keepDestinationClocked(trackDest);
+        trackDestinations.set(trackId, trackDest);
+      };
+
+      connectSourceTrack('mic', micStream);
+      connectSourceTrack('system', systemStream);
       mixBus.connect(destNode);
+      keepDestinationClocked(destNode);
+      silenceSource.start();
 
       // Chrome Workaround for active graph
       const silentGain = actx.createGain();
@@ -482,35 +510,60 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
         project_name: projectName,
         mime_type: mimeType,
         language: language || undefined,
+        capture_mode: mode,
       });
 
       sessionIdRef.current = session.id;
       localStorage.setItem('asr-active-recording-id', session.id);
-      sequenceRef.current = 0;
-      uploadChainRef.current = Promise.resolve();
+      sequenceRef.current = new Map();
+      uploadChainsRef.current = new Map();
 
       // 5. Start MediaRecorder
-      const mediaRecorder = mimeType
-        ? new MediaRecorder(destNode.stream, { mimeType })
-        : new MediaRecorder(destNode.stream);
-      mediaRecorderRef.current = mediaRecorder;
+      const recorderInputs: Array<{ trackId: string; stream: MediaStream }> = [];
+      if (mode === 'both') {
+        const micDest = trackDestinations.get('mic');
+        const systemDest = trackDestinations.get('system');
+        if (micDest) recorderInputs.push({ trackId: 'mic', stream: micDest.stream });
+        if (systemDest) recorderInputs.push({ trackId: 'system', stream: systemDest.stream });
+        recorderInputs.push({ trackId: 'mixed', stream: destNode.stream });
+      } else if (mode === 'mic_only') {
+        const micDest = trackDestinations.get('mic');
+        if (micDest) recorderInputs.push({ trackId: 'mic', stream: micDest.stream });
+      } else if (mode === 'pc_only') {
+        const systemDest = trackDestinations.get('system');
+        if (systemDest) recorderInputs.push({ trackId: 'system', stream: systemDest.stream });
+      }
 
-      mediaRecorder.addEventListener('dataavailable', (event) => {
-        if (!event.data || event.data.size === 0 || !sessionIdRef.current) return;
-        const currentSequence = sequenceRef.current++;
-        uploadChainRef.current = uploadChainRef.current.then(() => uploadChunk(event.data, currentSequence));
-        uploadChainRef.current.catch((error) => {
-          setStatusText(t('common.error'));
-          setStatusState('error');
-          showToast(t('recording.chunkSaveFailed', { error: error.message }), 'error');
+      const startTrackRecorder = (trackId: string, stream: MediaStream) => {
+        const recorder = mimeType
+          ? new MediaRecorder(stream, { mimeType })
+          : new MediaRecorder(stream);
+        mediaRecordersRef.current.set(trackId, recorder);
+        sequenceRef.current.set(trackId, 0);
+        uploadChainsRef.current.set(trackId, Promise.resolve());
+
+        recorder.addEventListener('dataavailable', (event) => {
+          if (!event.data || event.data.size === 0 || !sessionIdRef.current) return;
+          const currentSequence = sequenceRef.current.get(trackId) || 0;
+          sequenceRef.current.set(trackId, currentSequence + 1);
+          const currentChain = uploadChainsRef.current.get(trackId) || Promise.resolve();
+          const nextChain = currentChain.then(() => uploadChunk(trackId, event.data, currentSequence));
+          uploadChainsRef.current.set(trackId, nextChain);
+          nextChain.catch((error) => {
+            setStatusText(t('common.error'));
+            setStatusState('error');
+            showToast(t('recording.chunkSaveFailed', { error: error.message }), 'error');
+          });
         });
-      });
 
-      mediaRecorder.addEventListener('error', (event: any) => {
-        showToast(t('recording.error', { error: event.error?.message || 'unknown' }), 'error');
-      });
+        recorder.addEventListener('error', (event: any) => {
+          showToast(t('recording.error', { error: event.error?.message || 'unknown' }), 'error');
+        });
 
-      mediaRecorder.start(RECORDING_CHUNK_INTERVAL_MS);
+        recorder.start(RECORDING_CHUNK_INTERVAL_MS);
+      };
+
+      recorderInputs.forEach(({ trackId, stream }) => startTrackRecorder(trackId, stream));
 
       // 6. Timer and state
       startedAtRef.current = Date.now();

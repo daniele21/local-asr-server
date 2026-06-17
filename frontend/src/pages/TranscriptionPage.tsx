@@ -334,24 +334,44 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
       setElapsedTime(`${elapsed}s`);
     }, 100);
 
-    const formData = new FormData();
-    formData.append('file', selectedFile);
-    formData.append('stream', 'true');
-    if (selectedRecordingId) {
-      formData.append('recording_id', selectedRecordingId);
-    }
-    if (targetModel) formData.append('model', targetModel);
-    if (targetLanguage) formData.append('language', targetLanguage);
-    formData.append('task', targetTask);
-    formData.append('response_format', 'verbose_json');
-    formData.append('word_timestamps', String(wordTimestamps));
-    formData.append('condition_on_previous_text', String(conditionOnPrevious));
-    if (temperature) formData.append('temperature', temperature);
-
-    const duration = audioDuration || audioRef.current?.duration || 0;
     abortControllerRef.current = new AbortController();
 
     try {
+      if (selectedRecordingId) {
+        setProgressStatus(lang === 'it' ? 'Trascrizione tracce della registrazione...' : 'Transcribing recording tracks...');
+        setProgressPercent(10);
+        const result = await ApiClient.transcribeRecording(selectedRecordingId, {
+          model: targetModel || undefined,
+          language: targetLanguage || undefined,
+          task: targetTask,
+          response_format: 'verbose_json',
+          word_timestamps: wordTimestamps,
+          condition_on_previous_text: conditionOnPrevious,
+          temperature: temperature ? Number(temperature) : null,
+        });
+        setProgressPercent(100);
+        setTranscriptionResult(result);
+        setStep('results');
+        setResultTab('text');
+        showToast(t('transcription.successTitle'), 'success');
+        if (result.saved_id) {
+          navigateTo('transcription', result.saved_id);
+        }
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('stream', 'true');
+      if (targetModel) formData.append('model', targetModel);
+      if (targetLanguage) formData.append('language', targetLanguage);
+      formData.append('task', targetTask);
+      formData.append('response_format', 'verbose_json');
+      formData.append('word_timestamps', String(wordTimestamps));
+      formData.append('condition_on_previous_text', String(conditionOnPrevious));
+      if (temperature) formData.append('temperature', temperature);
+
+      const duration = audioDuration || audioRef.current?.duration || 0;
       const response = await ApiClient.transcribe(formData);
       const reader = response.body?.getReader();
       const decoder = new TextDecoder('utf-8');

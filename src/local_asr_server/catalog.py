@@ -80,7 +80,10 @@ class CatalogStore:
                 language TEXT,
                 error TEXT,
                 relative_dir TEXT,
-                audio_file TEXT
+                audio_file TEXT,
+                capture_mode TEXT,
+                primary_track_id TEXT,
+                audio_tracks TEXT
             );
 
             CREATE TABLE IF NOT EXISTS transcriptions (
@@ -95,6 +98,7 @@ class CatalogStore:
                 stats TEXT,
                 analysis TEXT,
                 merged_sources TEXT,
+                source_tracks TEXT,
                 hidden INTEGER DEFAULT 0,
                 merged_into TEXT,
                 file_name TEXT
@@ -109,6 +113,15 @@ class CatalogStore:
             CREATE INDEX IF NOT EXISTS idx_transcriptions_timestamp ON transcriptions(timestamp DESC);
             """
         )
+        self._ensure_column(conn, "recordings", "capture_mode", "TEXT")
+        self._ensure_column(conn, "recordings", "primary_track_id", "TEXT")
+        self._ensure_column(conn, "recordings", "audio_tracks", "TEXT")
+        self._ensure_column(conn, "transcriptions", "source_tracks", "TEXT")
+
+    def _ensure_column(self, conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        if column not in {row["name"] for row in rows}:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def upsert_recording(self, metadata: dict[str, Any], audio_file: str | None = None) -> None:
         with self.connection() as conn:
@@ -117,8 +130,8 @@ class CatalogStore:
                 INSERT INTO recordings (
                     id, title, project_name, status, created_at, stopped_at, completed_at,
                     mime_type, extension, chunk_count, bytes_written, model, language, error,
-                    relative_dir, audio_file
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    relative_dir, audio_file, capture_mode, primary_track_id, audio_tracks
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     title = excluded.title,
                     project_name = excluded.project_name,
@@ -133,7 +146,10 @@ class CatalogStore:
                     language = excluded.language,
                     error = excluded.error,
                     relative_dir = excluded.relative_dir,
-                    audio_file = excluded.audio_file
+                    audio_file = excluded.audio_file,
+                    capture_mode = excluded.capture_mode,
+                    primary_track_id = excluded.primary_track_id,
+                    audio_tracks = excluded.audio_tracks
                 """,
                 (
                     metadata["id"],
@@ -152,6 +168,9 @@ class CatalogStore:
                     metadata.get("error"),
                     metadata.get("relative_dir"),
                     audio_file,
+                    metadata.get("capture_mode"),
+                    metadata.get("primary_track_id"),
+                    _json_dump(metadata.get("audio_tracks", [])),
                 ),
             )
 
@@ -161,8 +180,8 @@ class CatalogStore:
                 """
                 INSERT INTO transcriptions (
                     id, timestamp, audio_filename, recording_id, model, language, text,
-                    segments, stats, analysis, merged_sources, hidden, merged_into, file_name
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    segments, stats, analysis, merged_sources, source_tracks, hidden, merged_into, file_name
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     timestamp = excluded.timestamp,
                     audio_filename = excluded.audio_filename,
@@ -174,6 +193,7 @@ class CatalogStore:
                     stats = excluded.stats,
                     analysis = excluded.analysis,
                     merged_sources = excluded.merged_sources,
+                    source_tracks = excluded.source_tracks,
                     hidden = excluded.hidden,
                     merged_into = excluded.merged_into,
                     file_name = excluded.file_name
@@ -190,6 +210,7 @@ class CatalogStore:
                     _json_dump(data.get("stats", {})),
                     _json_dump(data.get("analysis")) if data.get("analysis") is not None else None,
                     _json_dump(data.get("merged_sources")) if data.get("merged_sources") is not None else None,
+                    _json_dump(data.get("source_tracks")) if data.get("source_tracks") is not None else None,
                     1 if data.get("hidden") else 0,
                     data.get("merged_into"),
                     file_name or data.get("file_name"),
@@ -209,6 +230,7 @@ class CatalogStore:
             "stats": _json_load(row["stats"], {}),
             "analysis": _json_load(row["analysis"], None),
             "merged_sources": _json_load(row["merged_sources"], None),
+            "source_tracks": _json_load(row["source_tracks"], None),
             "hidden": bool(row["hidden"]),
             "merged_into": row["merged_into"],
         }
@@ -276,7 +298,7 @@ class CatalogStore:
                     "SELECT * FROM transcriptions WHERE recording_id = ? ORDER BY timestamp DESC LIMIT 1",
                     (recording_id,),
                 ).fetchone()
-            if row is None and audio_filename:
+            elif audio_filename:
                 row = conn.execute(
                     "SELECT * FROM transcriptions WHERE audio_filename = ? ORDER BY timestamp DESC LIMIT 1",
                     (audio_filename,),
@@ -301,6 +323,11 @@ class CatalogStore:
         return {
             "recordings_count": recordings_count,
             "transcriptions_count": transcriptions_count,
-            "latest_recording": dict(latest_recording) if latest_recording else None,
+            "latest_recording": self.row_to_recording(latest_recording) if latest_recording else None,
             "latest_transcription": self.row_to_transcription(latest_transcription) if latest_transcription else None,
         }
+
+    def row_to_recording(self, row: sqlite3.Row) -> dict[str, Any]:
+        item = dict(row)
+        item["audio_tracks"] = _json_load(item.get("audio_tracks"), [])
+        return item

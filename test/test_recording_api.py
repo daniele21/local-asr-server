@@ -13,6 +13,21 @@ from local_asr_server.server import AudioRouter, create_app
 class RecordingApiTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
+        self.transcriptions_dir = Path(self.temp_dir.name) / "transcriptions"
+        self.transcriptions_dir.mkdir(parents=True, exist_ok=True)
+        self.settings_patcher = patch("local_asr_server.transcriptions.load_settings")
+        self.mock_load_settings = self.settings_patcher.start()
+        self.mock_load_settings.return_value = {
+            "transcriptions_dir": str(self.transcriptions_dir),
+            "recordings_dir": self.temp_dir.name,
+            "gemini_api_key": "",
+            "llm_provider": "mock",
+            "default_model": "test-model",
+            "default_language": "it",
+            "default_task": "transcribe",
+            "default_word_timestamps": False,
+            "default_condition_on_previous": True,
+        }
         self.app = create_app(
             default_model="test-model",
             recordings_dir=Path(self.temp_dir.name),
@@ -20,6 +35,7 @@ class RecordingApiTests(unittest.TestCase):
         self.client = TestClient(self.app)
 
     def tearDown(self) -> None:
+        self.settings_patcher.stop()
         self.client.close()
         self.temp_dir.cleanup()
 
@@ -65,6 +81,32 @@ class RecordingApiTests(unittest.TestCase):
         self.assertEqual(stopped.status_code, 202)
         self.assertEqual(stopped.json()["status"], "recorded")
 
+    def test_recording_project_does_not_attach_transcription_by_filename_only(self) -> None:
+        self.app.state.transcription_store.save(
+            {
+                "text": "Trascrizione di un altro audio",
+                "segments": [],
+                "model": "test-model",
+                "language": "it",
+            },
+            audio_filename="Untitled recording.webm",
+        )
+        created = self.client.post(
+            "/v1/recordings",
+            json={
+                "title": "Untitled recording",
+                "mime_type": "audio/webm;codecs=opus",
+                "language": "it",
+                "capture_mode": "both",
+            },
+        )
+        recording_id = created.json()["id"]
+
+        response = self.client.get(f"/v1/recordings/{recording_id}/project")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["transcription"])
+
     @patch.object(AudioRouter, "route_to_multi_output")
     def test_create_recording_does_not_change_audio_route(self, route) -> None:
         created = self.client.post(
@@ -106,6 +148,52 @@ class RecordingApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["success"])
         route.assert_called_once_with()
+
+    @patch("local_asr_server.server.transcribe_file_sync")
+    def test_transcribe_recording_splits_tracks_and_merges_timeline(self, transcribe) -> None:
+        transcribe.side_effect = [
+            {
+                "text": "Ciao",
+                "language": "it",
+                "segments": [{"id": 0, "start": 2.0, "end": 3.0, "text": "Ciao"}],
+            },
+            {
+                "text": "Salve",
+                "language": "it",
+                "segments": [{"id": 0, "start": 1.0, "end": 1.5, "text": "Salve"}],
+            },
+        ]
+        created = self.client.post(
+            "/v1/recordings",
+            json={
+                "title": "Call",
+                "mime_type": "audio/webm;codecs=opus",
+                "language": "it",
+                "capture_mode": "both",
+            },
+        )
+        recording_id = created.json()["id"]
+        for track_id, content in {"mic": b"mic", "system": b"sys", "mixed": b"mix"}.items():
+            response = self.client.post(
+                f"/v1/recordings/{recording_id}/tracks/{track_id}/chunks",
+                data={"sequence": "0"},
+                files={"file": (f"{track_id}.webm", content, "audio/webm")},
+            )
+            self.assertEqual(response.status_code, 200)
+        self.client.post(f"/v1/recordings/{recording_id}/stop")
+
+        response = self.client.post(
+            f"/v1/recordings/{recording_id}/transcriptions",
+            json={"language": "it", "response_format": "verbose_json"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(transcribe.call_count, 2)
+        self.assertEqual([segment["speaker_label"] for segment in data["segments"]], ["Computer", "Tu"])
+        self.assertIn("[00:01] Computer: Salve", data["text"])
+        self.assertIn("[00:02] Tu: Ciao", data["text"])
+        self.assertEqual({track["id"] for track in data["source_tracks"]}, {"mic", "system"})
 
 
 if __name__ == "__main__":

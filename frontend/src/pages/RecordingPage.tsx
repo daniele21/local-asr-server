@@ -211,6 +211,28 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
                 <p className="text-xs text-text-secondary mt-2 truncate">
                   {recording.audio_file || 'Audio locale'}
                 </p>
+                {recording.audio_tracks && recording.audio_tracks.length > 1 && (
+                  <div className="flex flex-col gap-2 mt-2">
+                    <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider">
+                      Tracce sorgente
+                    </span>
+                    {recording.audio_tracks
+                      .filter((track) => !track.primary)
+                      .map((track) => (
+                        <div key={track.id} className="flex flex-col gap-1.5 p-2 rounded-lg border border-border-subtle/70 bg-bg-surface/40">
+                          <div className="flex items-center justify-between text-[10px] text-text-secondary font-bold uppercase tracking-wider">
+                            <span>{track.source === 'mic' ? '🎙️' : '🖥️'} {track.label}</span>
+                            <span>{formatBytes(track.bytes_written || 0)}</span>
+                          </div>
+                          <audio
+                            controls
+                            src={`/v1/recordings/${recording.id}/tracks/${track.id}/audio`}
+                            className="w-full h-8"
+                          />
+                        </div>
+                      ))}
+                  </div>
+                )}
                 <p className="text-xs text-text-secondary">
                   <strong>Progetto:</strong> {recording.project_name || 'Senza progetto'}
                 </p>

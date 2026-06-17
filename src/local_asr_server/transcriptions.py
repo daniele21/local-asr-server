@@ -58,6 +58,7 @@ class TranscriptionStore:
             "stats": payload.get("stats", {}),
             "analysis": payload.get("analysis"),
             "merged_sources": payload.get("merged_sources"),
+            "source_tracks": payload.get("source_tracks"),
         }
 
         file_name = self._write_export_files(filename_base, meta)

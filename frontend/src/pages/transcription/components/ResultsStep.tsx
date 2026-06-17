@@ -202,6 +202,25 @@ export default function ResultsStep({
             src={`/v1/recordings/${transcriptionResult.recording_id}/audio`}
             className="w-full mt-1"
           />
+          {transcriptionResult.source_tracks && transcriptionResult.source_tracks.length > 1 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+              {transcriptionResult.source_tracks.map((track) => (
+                <div key={track.id} className="p-3 bg-bg-surface border border-border-subtle/70 rounded-xl flex flex-col gap-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-text-primary">
+                    <span>{track.source === 'mic' ? '🎙️' : '🖥️'} {track.label}</span>
+                    <span className="text-[9px] bg-accent/10 text-accent border border-accent/20 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                      {track.id}
+                    </span>
+                  </div>
+                  <audio
+                    controls
+                    src={`/v1/recordings/${transcriptionResult.recording_id}/tracks/${track.id}/audio`}
+                    className="w-full h-8"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
       )}
 
@@ -363,7 +382,9 @@ export default function ResultsStep({
               <div key={seg.id} className="p-4 bg-bg-surface/40 border border-border-subtle rounded-xl flex flex-col gap-2.5">
                 <div className="flex justify-between items-center text-[10px] text-text-muted font-bold uppercase tracking-wider">
                   <span>{formatTime(seg.start)} → {formatTime(seg.end)}</span>
-                  <span>Segment #{seg.id}</span>
+                  <span>
+                    {seg.speaker_label ? `${seg.speaker_label} · ` : ''}Segment #{seg.id}
+                  </span>
                 </div>
                 <p className="text-text-primary text-sm font-medium">{seg.text}</p>
 

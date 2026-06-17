@@ -70,6 +70,30 @@ class RecordingStoreTests(unittest.TestCase):
         self.assertEqual(restored["status"], "recorded")
         self.assertEqual(self.store.audio_path(recording["id"]).read_bytes(), b"audio")
 
+    def test_split_tracks_are_persisted_under_one_recording(self) -> None:
+        recording = self.store.create(
+            title="Call",
+            mime_type="audio/webm;codecs=opus",
+            model="test-model",
+            language="it",
+            capture_mode="both",
+        )
+
+        self.store.append_track_chunk(recording["id"], "mic", 0, b"mic")
+        self.store.append_track_chunk(recording["id"], "system", 0, b"sys")
+        self.store.append_track_chunk(recording["id"], "mixed", 0, b"mix")
+        finalized, _ = self.store.finalize(recording["id"])
+
+        self.assertEqual(finalized["status"], "recorded")
+        self.assertEqual(finalized["capture_mode"], "both")
+        self.assertEqual({track["id"] for track in finalized["audio_tracks"]}, {"mic", "system", "mixed"})
+        self.assertEqual(self.store.track_audio_path(recording["id"], "mic").read_bytes(), b"mic")
+        self.assertEqual(self.store.track_audio_path(recording["id"], "system").read_bytes(), b"sys")
+        self.assertEqual(self.store.audio_path(recording["id"]).read_bytes(), b"mix")
+
+        tracks = self.store.transcribable_tracks(recording["id"])
+        self.assertEqual([track["id"] for track, _ in tracks], ["mic", "system"])
+
 
 if __name__ == "__main__":
     unittest.main()
