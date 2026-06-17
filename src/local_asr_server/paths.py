@@ -139,6 +139,31 @@ def get_ffmpeg_path() -> str:
     )
 
 
+def get_ffprobe_path() -> str:
+    """
+    Return the path to the ffprobe binary.
+
+    Priority:
+      1. Bundled binary inside the .app (``Resources/ffprobe``).
+      2. System ffprobe found via ``shutil.which``.
+
+    Raises ``FileNotFoundError`` if ffprobe cannot be located.
+    """
+    if is_bundled():
+        bundled = get_bundle_dir() / "ffprobe"
+        if bundled.exists():
+            return str(bundled)
+
+    system = shutil.which("ffprobe")
+    if system:
+        return system
+
+    raise FileNotFoundError(
+        "ffprobe not found. Install it with: brew install ffmpeg"
+    )
+
+
+
 def get_audio_helper_path() -> Path:
     """
     Return the path to the pre-compiled Swift audio helper binary.

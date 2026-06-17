@@ -128,6 +128,16 @@ def capture_capabilities(request: Request):
     }
 
 
+@router.get("/v1/capture/permissions")
+def capture_permissions(request: Request):
+    return request.app.state.capture_manager.permissions()
+
+
+@router.post("/v1/capture/request-permissions")
+def request_capture_permissions(request: Request):
+    return request.app.state.capture_manager.request_permissions()
+
+
 @router.post("/v1/recordings/{recording_id}/capture/start", status_code=202)
 def start_capture(recording_id: str, request: Request, body: CaptureStartRequest):
     store = request.app.state.recording_store

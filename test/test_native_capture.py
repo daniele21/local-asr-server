@@ -47,6 +47,21 @@ else:
         self.assertEqual(started["backend"], "native")
         self.assertEqual([event["type"] for event in events], ["ready", "stopped"])
 
+    def test_validate_audio_file_behavior(self) -> None:
+        from local_asr_server.native_capture import validate_audio_file
+        
+        # Test file not found
+        res = validate_audio_file(self.root / "nonexistent.wav")
+        self.assertFalse(res["valid"])
+        self.assertEqual(res["error"], "file_not_found")
+        
+        # Test empty file
+        empty_file = self.root / "empty.wav"
+        empty_file.touch()
+        res = validate_audio_file(empty_file)
+        self.assertFalse(res["valid"])
+        self.assertEqual(res["error"], "file_empty")
+
 
 if __name__ == "__main__":
     unittest.main()

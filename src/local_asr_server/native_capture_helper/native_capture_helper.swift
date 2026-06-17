@@ -4,12 +4,27 @@ import CoreMedia
 import Foundation
 import ScreenCaptureKit
 
-func emitJSON(_ payload: [String: Any], exitCode: Int32? = nil) {
-    let data = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
-    print(String(data: data, encoding: .utf8)!)
-    fflush(stdout)
-    if let code = exitCode {
-        exit(code)
+final class JSONEmitter {
+    static let shared = JSONEmitter()
+    private let queue = DispatchQueue(label: "closedroom.native.json-emitter")
+
+    func emit(_ payload: [String: Any], exitCode: Int32? = nil) {
+        queue.async {
+            do {
+                let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+                FileHandle.standardOutput.write(data)
+                FileHandle.standardOutput.write(Data([0x0A]))
+                if let exitCode = exitCode {
+                    exit(exitCode)
+                }
+            } catch {
+                let fallback = #"{"type":"error","message":"json_serialization_failed"}"# + "\n"
+                FileHandle.standardOutput.write(fallback.data(using: .utf8)!)
+                if let exitCode = exitCode {
+                    exit(exitCode)
+                }
+            }
+        }
     }
 }
 
@@ -21,15 +36,28 @@ func calculateDB(from sampleBuffer: CMSampleBuffer) -> Float {
     let absd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription)
     guard let absd = absd else { return -120.0 }
     
-    var blockBuffer: CMBlockBuffer?
-    var audioBufferList = AudioBufferList()
-    
     var bufferListSizeNeeded = 0
-    let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+    var status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
         sampleBuffer,
         bufferListSizeNeededOut: &bufferListSizeNeeded,
-        bufferListOut: &audioBufferList,
-        bufferListSize: MemoryLayout<AudioBufferList>.size,
+        bufferListOut: nil,
+        bufferListSize: 0,
+        blockBufferAllocator: nil,
+        blockBufferMemoryAllocator: nil,
+        flags: 0,
+        blockBufferOut: nil
+    )
+    guard status == noErr, bufferListSizeNeeded > 0 else { return -120.0 }
+    
+    let bufferListMemory = UnsafeMutablePointer<AudioBufferList>.allocate(capacity: bufferListSizeNeeded)
+    defer { bufferListMemory.deallocate() }
+    
+    var blockBuffer: CMBlockBuffer?
+    status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+        sampleBuffer,
+        bufferListSizeNeededOut: nil,
+        bufferListOut: bufferListMemory,
+        bufferListSize: bufferListSizeNeeded,
         blockBufferAllocator: nil,
         blockBufferMemoryAllocator: nil,
         flags: 0,
@@ -37,14 +65,14 @@ func calculateDB(from sampleBuffer: CMSampleBuffer) -> Float {
     )
     guard status == noErr else { return -120.0 }
     
+    let bufferList = UnsafeMutableAudioBufferListPointer(bufferListMemory)
     var sumSquares: Float = 0.0
     var sampleCount = 0
     
     let isFloat = (absd.pointee.mFormatFlags & kAudioFormatFlagIsFloat) != 0
     let bitDepth = absd.pointee.mBitsPerChannel
     
-    let buffers = UnsafeBufferPointer(start: &audioBufferList.mBuffers, count: Int(audioBufferList.mNumberBuffers))
-    for buffer in buffers {
+    for buffer in bufferList {
         guard let data = buffer.mData else { continue }
         let dataSize = Int(buffer.mDataByteSize)
         
@@ -86,36 +114,27 @@ func requireArg(_ name: String, in args: [String]) -> String? {
 
 func capabilityPayload() -> [String: Any] {
     let processInfo = ProcessInfo.processInfo
-    let isAtLeastMacOS14 = processInfo.isOperatingSystemAtLeast(
-        OperatingSystemVersion(majorVersion: 14, minorVersion: 0, patchVersion: 0)
+    let isAtLeastMacOS13 = processInfo.isOperatingSystemAtLeast(
+        OperatingSystemVersion(majorVersion: 13, minorVersion: 0, patchVersion: 0)
     )
-    var screenCaptureAllowed = CGPreflightScreenCaptureAccess()
-    if !screenCaptureAllowed {
-        _ = CGRequestScreenCaptureAccess()
-        screenCaptureAllowed = CGPreflightScreenCaptureAccess()
-    }
+    let screenCaptureAllowed = CGPreflightScreenCaptureAccess()
     let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
-    if micStatus == .notDetermined {
-        AVCaptureDevice.requestAccess(for: .audio) { _ in }
-    }
     let micAllowed = micStatus == .authorized
-    let available = isAtLeastMacOS14 && screenCaptureAllowed && micAllowed
+    let available = isAtLeastMacOS13
+    
     let reason: Any
-    if !isAtLeastMacOS14 {
-        reason = "macos_14_required"
-    } else if !screenCaptureAllowed {
-        reason = "screen_recording_permission_required"
-    } else if !micAllowed {
-        reason = "microphone_permission_required"
+    if !isAtLeastMacOS13 {
+        reason = "macos_13_required"
     } else {
         reason = NSNull()
     }
+    
     return [
         "available": available,
         "backend": "native",
         "reason": reason,
         "modes": available ? ["both", "mic_only", "pc_only"] : [],
-        "minimum_macos": "14.0",
+        "minimum_macos": "13.0",
         "screen_recording_permission": screenCaptureAllowed ? "granted" : "required",
         "microphone_permission": "\(micStatus)",
     ]
@@ -123,23 +142,43 @@ func capabilityPayload() -> [String: Any] {
 
 func permissionsPayload() -> [String: Any] {
     let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+    let screenCaptureAllowed = CGPreflightScreenCaptureAccess()
     return [
-        "ok": micStatus == .authorized,
+        "ok": micStatus == .authorized && screenCaptureAllowed,
         "microphone": "\(micStatus)",
-        "screen_capture": "system_prompt_required",
+        "screen_capture": screenCaptureAllowed ? "granted" : "required",
     ]
 }
 
+func requestPermissions() {
+    _ = CGRequestScreenCaptureAccess()
+    let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+    if micStatus == .notDetermined {
+        let semaphore = DispatchSemaphore(value: 0)
+        AVCaptureDevice.requestAccess(for: .audio) { _ in
+            semaphore.signal()
+        }
+        _ = semaphore.wait(timeout: .now() + 5.0)
+    }
+    JSONEmitter.shared.emit(permissionsPayload(), exitCode: 0)
+}
+
 final class SampleBufferWavSink {
-    private let url: URL
+    let url: URL
+    let sourceName: String
     private var writer: AVAssetWriter?
     private var input: AVAssetWriterInput?
     private var started = false
     private var finished = false
     private let queue = DispatchQueue(label: "closedroom.native.wav-sink")
+    
+    private var droppedBuffers = 0
+    private var lastEmitDroppedCount = 0
+    private var lastEmitDroppedTime: Double = 0
 
-    init(url: URL) {
+    init(url: URL, sourceName: String) {
         self.url = url
+        self.sourceName = sourceName
         try? FileManager.default.removeItem(at: url)
     }
 
@@ -151,23 +190,10 @@ final class SampleBufferWavSink {
                 if self.writer == nil {
                     let writer = try AVAssetWriter(outputURL: self.url, fileType: .wav)
                     
-                    var sampleRate = 48000.0
-                    var channels: UInt32 = 2
-                    if let formatDesc = CMSampleBufferGetFormatDescription(sampleBuffer) {
-                        let absd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDesc)
-                        if let absd = absd {
-                            sampleRate = absd.pointee.mSampleRate
-                            channels = absd.pointee.mChannelsPerFrame
-                        }
-                    }
-                    if channels > 2 {
-                        channels = 2
-                    }
-                    
                     let audioSettings: [String: Any] = [
                         AVFormatIDKey: kAudioFormatLinearPCM,
-                        AVSampleRateKey: sampleRate,
-                        AVNumberOfChannelsKey: channels,
+                        AVSampleRateKey: 16000.0,
+                        AVNumberOfChannelsKey: 1,
                         AVLinearPCMBitDepthKey: 16,
                         AVLinearPCMIsNonInterleaved: false,
                         AVLinearPCMIsFloatKey: false,
@@ -177,7 +203,7 @@ final class SampleBufferWavSink {
                     let input = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
                     input.expectsMediaDataInRealTime = true
                     guard writer.canAdd(input) else {
-                        emitJSON([
+                        JSONEmitter.shared.emit([
                             "type": "error",
                             "message": "Cannot add WAV audio input",
                             "file": self.url.path,
@@ -197,9 +223,21 @@ final class SampleBufferWavSink {
                 }
                 if input.isReadyForMoreMediaData {
                     input.append(sampleBuffer)
+                } else {
+                    self.droppedBuffers += 1
+                    let now = Date().timeIntervalSince1970
+                    if self.droppedBuffers - self.lastEmitDroppedCount >= 10 || (now - self.lastEmitDroppedTime >= 2.0 && self.droppedBuffers > self.lastEmitDroppedCount) {
+                        self.lastEmitDroppedCount = self.droppedBuffers
+                        self.lastEmitDroppedTime = now
+                        JSONEmitter.shared.emit([
+                            "type": "health",
+                            "source": self.sourceName,
+                            "dropped_buffers": self.droppedBuffers
+                        ])
+                    }
                 }
             } catch {
-                emitJSON([
+                JSONEmitter.shared.emit([
                     "type": "error",
                     "message": "Failed to initialize WAV writer",
                     "file": self.url.path,
@@ -224,7 +262,7 @@ final class SampleBufferWavSink {
             input.markAsFinished()
             writer.finishWriting {
                 if writer.status == .failed {
-                    emitJSON([
+                    JSONEmitter.shared.emit([
                         "type": "error",
                         "message": "Failed to finish WAV writer",
                         "file": self.url.path,
@@ -237,19 +275,11 @@ final class SampleBufferWavSink {
     }
 }
 
-@available(macOS 14.0, *)
-final class SystemAudioCapture: NSObject, SCStreamOutput {
-    private let sink: SampleBufferWavSink
-    private let mirrorSink: SampleBufferWavSink?
+@available(macOS 13.0, *)
+final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
+    var onSample: ((CMSampleBuffer) -> Void)?
     private var stream: SCStream?
     private let queue = DispatchQueue(label: "closedroom.native.system-audio")
-    private var lastEmitTime: Double = 0
-    private let emitInterval: Double = 0.1
-
-    init(sink: SampleBufferWavSink, mirrorSink: SampleBufferWavSink?) {
-        self.sink = sink
-        self.mirrorSink = mirrorSink
-    }
 
     func start() async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
@@ -265,50 +295,64 @@ final class SystemAudioCapture: NSObject, SCStreamOutput {
         configuration.height = 2
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: 1)
         configuration.capturesAudio = true
-        configuration.excludesCurrentProcessAudio = false
-        configuration.sampleRate = 48_000
-        configuration.channelCount = 2
+        configuration.excludesCurrentProcessAudio = true
+        configuration.sampleRate = 16000
+        configuration.channelCount = 1
 
-        let stream = SCStream(filter: filter, configuration: configuration, delegate: nil)
+        let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
         try await stream.startCapture()
         self.stream = stream
     }
 
     func stop() async {
-        if let stream {
+        if let stream = stream {
             try? await stream.stopCapture()
         }
         stream = nil
     }
 
+    func stream(_ stream: SCStream, didStopWithError error: Error) {
+        JSONEmitter.shared.emit([
+            "type": "error",
+            "source": "system",
+            "message": "ScreenCaptureKit session error: \(error.localizedDescription)"
+        ])
+    }
+
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .audio else { return }
-        sink.append(sampleBuffer)
-        mirrorSink?.append(sampleBuffer)
-
-        let now = Date().timeIntervalSince1970
-        if now - lastEmitTime >= emitInterval {
-            lastEmitTime = now
-            let db = calculateDB(from: sampleBuffer)
-            emitJSON([
-                "type": "volume",
-                "source": "system",
-                "db": db
-            ])
-        }
+        onSample?(sampleBuffer)
     }
 }
 
 final class MicrophoneCapture: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
-    private let sink: SampleBufferWavSink
+    var onSample: ((CMSampleBuffer) -> Void)?
     private let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "closedroom.native.microphone")
-    private var lastEmitTime: Double = 0
-    private let emitInterval: Double = 0.1
 
-    init(sink: SampleBufferWavSink) {
-        self.sink = sink
+    override init() {
+        super.init()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleRuntimeError),
+            name: .AVCaptureSessionRuntimeError,
+            object: session
+        )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func handleRuntimeError(notification: Notification) {
+        if let error = notification.userInfo?[AVCaptureSessionErrorKey] as? Error {
+            JSONEmitter.shared.emit([
+                "type": "error",
+                "source": "mic",
+                "message": "Microphone session runtime error: \(error.localizedDescription)"
+            ])
+        }
     }
 
     func start() throws {
@@ -341,22 +385,13 @@ final class MicrophoneCapture: NSObject, AVCaptureAudioDataOutputSampleBufferDel
     }
 
     func stop() {
-        session.stopRunning()
+        if session.isRunning {
+            session.stopRunning()
+        }
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        sink.append(sampleBuffer)
-
-        let now = Date().timeIntervalSince1970
-        if now - lastEmitTime >= emitInterval {
-            lastEmitTime = now
-            let db = calculateDB(from: sampleBuffer)
-            emitJSON([
-                "type": "volume",
-                "source": "mic",
-                "db": db
-            ])
-        }
+        onSample?(sampleBuffer)
     }
 }
 
@@ -367,7 +402,19 @@ final class NativeCaptureRun {
     private var systemCapture: AnyObject?
     private var microphoneCapture: MicrophoneCapture?
     private var sinks: [SampleBufferWavSink] = []
+    
+    private let lock = NSLock()
+    private var isReady = false
+    private var micStarted = false
+    private var systemStarted = false
     private var stopped = false
+
+    private var micSink: SampleBufferWavSink?
+    private var systemSink: SampleBufferWavSink?
+    
+    private var lastMicEmitTime: Double = 0
+    private var lastSystemEmitTime: Double = 0
+    private let emitInterval: Double = 0.1
 
     init(recordingID: String, outputDir: String, mode: String) {
         self.recordingID = recordingID
@@ -380,53 +427,175 @@ final class NativeCaptureRun {
 
         let needsMic = mode != "pc_only"
         let needsSystem = mode != "mic_only"
-        let micSink = needsMic ? SampleBufferWavSink(url: outputDir.appendingPathComponent("mic.wav")) : nil
-        let systemSink = needsSystem ? SampleBufferWavSink(url: outputDir.appendingPathComponent("system.wav")) : nil
-        let mixedSink = mode == "both" ? SampleBufferWavSink(url: outputDir.appendingPathComponent("recording.wav")) : nil
-        sinks = [micSink, systemSink, mixedSink].compactMap { $0 }
 
-        if let micSink {
-            let capture = MicrophoneCapture(sink: micSink)
-            try capture.start()
+        if needsMic {
+            let sink = SampleBufferWavSink(url: outputDir.appendingPathComponent("mic.wav"), sourceName: "mic")
+            sinks.append(sink)
+            micSink = sink
+
+            let capture = MicrophoneCapture()
+            capture.onSample = { [weak self] sampleBuffer in
+                self?.handleSample(sampleBuffer, source: .mic)
+            }
             microphoneCapture = capture
         }
 
-        if let systemSink {
-            guard #available(macOS 14.0, *) else {
+        if needsSystem {
+            let sink = SampleBufferWavSink(url: outputDir.appendingPathComponent("system.wav"), sourceName: "system")
+            sinks.append(sink)
+            systemSink = sink
+
+            guard #available(macOS 13.0, *) else {
                 throw NSError(domain: "ClosedRoomNativeCapture", code: 30, userInfo: [
-                    NSLocalizedDescriptionKey: "ScreenCaptureKit audio capture requires macOS 14.0 or later"
+                    NSLocalizedDescriptionKey: "ScreenCaptureKit audio capture requires macOS 13.0 or later"
                 ])
             }
-            let capture = SystemAudioCapture(sink: systemSink, mirrorSink: mixedSink)
-            try await capture.start()
+            let capture = SystemAudioCapture()
+            capture.onSample = { [weak self] sampleBuffer in
+                self?.handleSample(sampleBuffer, source: .system)
+            }
             systemCapture = capture
         }
 
-        emitJSON([
-            "type": "ready",
-            "recording_id": recordingID,
-            "output_dir": outputDir.path,
-            "mode": mode,
-            "sample_rate": 48_000,
-            "channels": 2,
-        ])
-    }
+        if let microphoneCapture = microphoneCapture {
+            try microphoneCapture.start()
+        }
 
-    func stopAndExit(cancelled: Bool = false) {
-        if stopped { return }
-        stopped = true
-        microphoneCapture?.stop()
-        if #available(macOS 14.0, *), let capture = systemCapture as? SystemAudioCapture {
-            Task {
-                await capture.stop()
-                finishSinks(cancelled: cancelled)
+        if #available(macOS 13.0, *), let capture = systemCapture as? SystemAudioCapture {
+            do {
+                try await capture.start()
+            } catch {
+                microphoneCapture?.stop()
+                throw error
             }
-        } else {
-            finishSinks(cancelled: cancelled)
         }
     }
 
-    private func finishSinks(cancelled: Bool) {
+    enum AudioSource {
+        case mic
+        case system
+    }
+
+    private func handleSample(_ sampleBuffer: CMSampleBuffer, source: AudioSource) {
+        let now = Date().timeIntervalSince1970
+        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+
+        var readyToEmit = false
+        var shouldWrite = false
+
+        lock.lock()
+        if !isReady {
+            if source == .mic {
+                if !micStarted {
+                    micStarted = true
+                    JSONEmitter.shared.emit([
+                        "type": "track_ready",
+                        "source": "mic",
+                        "first_sample_wall_time": now,
+                        "first_sample_pts": pts.seconds
+                    ])
+                }
+            } else {
+                if !systemStarted {
+                    systemStarted = true
+                    JSONEmitter.shared.emit([
+                        "type": "track_ready",
+                        "source": "system",
+                        "first_sample_wall_time": now,
+                        "first_sample_pts": pts.seconds
+                    ])
+                }
+            }
+
+            let needsMic = mode != "pc_only"
+            let needsSystem = mode != "mic_only"
+            let micReady = !needsMic || micStarted
+            let systemReady = !needsSystem || systemStarted
+
+            if micReady && systemReady {
+                isReady = true
+                readyToEmit = true
+                shouldWrite = true
+            }
+        } else {
+            shouldWrite = true
+        }
+        lock.unlock()
+
+        if readyToEmit {
+            JSONEmitter.shared.emit([
+                "type": "ready",
+                "recording_id": recordingID,
+                "recording_ready_at": now,
+                "output_dir": outputDir.path,
+                "mode": mode,
+                "sample_rate": 16000,
+                "channels": 1,
+            ])
+        }
+
+        if shouldWrite {
+            if source == .mic {
+                micSink?.append(sampleBuffer)
+
+                lock.lock()
+                let emit = now - lastMicEmitTime >= emitInterval
+                if emit {
+                    lastMicEmitTime = now
+                }
+                lock.unlock()
+
+                if emit {
+                    let db = calculateDB(from: sampleBuffer)
+                    JSONEmitter.shared.emit([
+                        "type": "volume",
+                        "source": "mic",
+                        "db": db
+                    ])
+                }
+            } else {
+                systemSink?.append(sampleBuffer)
+
+                lock.lock()
+                let emit = now - lastSystemEmitTime >= emitInterval
+                if emit {
+                    lastSystemEmitTime = now
+                }
+                lock.unlock()
+
+                if emit {
+                    let db = calculateDB(from: sampleBuffer)
+                    JSONEmitter.shared.emit([
+                        "type": "volume",
+                        "source": "system",
+                        "db": db
+                    ])
+                }
+            }
+        }
+    }
+
+    func stopAndExit(cancelled: Bool = false, errorMsg: String? = nil) {
+        lock.lock()
+        if stopped {
+            lock.unlock()
+            return
+        }
+        stopped = true
+        lock.unlock()
+
+        microphoneCapture?.stop()
+        if #available(macOS 13.0, *), let capture = systemCapture as? SystemAudioCapture {
+            Task {
+                await capture.stop()
+                finishSinks(cancelled: cancelled, errorMsg: errorMsg)
+            }
+        } else {
+            finishSinks(cancelled: cancelled, errorMsg: errorMsg)
+        }
+    }
+
+    private func finishSinks(cancelled: Bool, errorMsg: String?) {
         let group = DispatchGroup()
         for sink in sinks {
             group.enter()
@@ -435,31 +604,70 @@ final class NativeCaptureRun {
             }
         }
         group.notify(queue: .main) {
-            emitJSON([
-                "type": "stopped",
-                "recording_id": self.recordingID,
-                "cancelled": cancelled,
-            ])
-            exit(0)
+            if let errorMsg = errorMsg {
+                for sink in self.sinks {
+                    try? FileManager.default.removeItem(at: sink.url)
+                }
+                JSONEmitter.shared.emit([
+                    "type": "error",
+                    "recording_id": self.recordingID,
+                    "message": errorMsg,
+                ], exitCode: 4)
+            } else {
+                JSONEmitter.shared.emit([
+                    "type": "stopped",
+                    "recording_id": self.recordingID,
+                    "cancelled": cancelled,
+                ], exitCode: 0)
+            }
         }
     }
 }
 
 func runStart(recordingID: String, outputDir: String, mode: String) {
     guard ["both", "mic_only", "pc_only"].contains(mode) else {
-        emitJSON(["type": "error", "message": "Invalid capture mode: \(mode)"], exitCode: 2)
+        JSONEmitter.shared.emit(["type": "error", "message": "Invalid capture mode: \(mode)"], exitCode: 2)
         return
     }
 
     let capabilities = capabilityPayload()
     guard capabilities["available"] as? Bool == true else {
-        emitJSON([
+        JSONEmitter.shared.emit([
             "type": "error",
             "recording_id": recordingID,
             "output_dir": outputDir,
             "mode": mode,
-            "message": "Native capture is not available on this macOS version.",
+            "message": "Native capture is not available on this macOS version (macOS 13.0+ required).",
             "reason": capabilities["reason"] ?? "native_unavailable",
+        ], exitCode: 3)
+        return
+    }
+
+    let micAllowed = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+    let screenCaptureAllowed = CGPreflightScreenCaptureAccess()
+
+    if mode == "both" && (!micAllowed || !screenCaptureAllowed) {
+        JSONEmitter.shared.emit([
+            "type": "error",
+            "recording_id": recordingID,
+            "message": "Permissions required for both mic and system audio.",
+            "reason": !micAllowed ? "microphone_permission_required" : "screen_recording_permission_required"
+        ], exitCode: 3)
+        return
+    } else if mode == "mic_only" && !micAllowed {
+        JSONEmitter.shared.emit([
+            "type": "error",
+            "recording_id": recordingID,
+            "message": "Microphone permission required.",
+            "reason": "microphone_permission_required"
+        ], exitCode: 3)
+        return
+    } else if mode == "pc_only" && !screenCaptureAllowed {
+        JSONEmitter.shared.emit([
+            "type": "error",
+            "recording_id": recordingID,
+            "message": "Screen recording permission required.",
+            "reason": "screen_recording_permission_required"
         ], exitCode: 3)
         return
     }
@@ -478,11 +686,7 @@ func runStart(recordingID: String, outputDir: String, mode: String) {
         do {
             try await run.start()
         } catch {
-            emitJSON([
-                "type": "error",
-                "recording_id": recordingID,
-                "message": error.localizedDescription,
-            ], exitCode: 4)
+            run.stopAndExit(cancelled: true, errorMsg: error.localizedDescription)
         }
     }
     RunLoop.main.run()
@@ -490,27 +694,25 @@ func runStart(recordingID: String, outputDir: String, mode: String) {
 
 let args = Array(CommandLine.arguments.dropFirst())
 guard let command = args.first else {
-    emitJSON(["type": "error", "message": "Missing command"], exitCode: 1)
+    JSONEmitter.shared.emit(["type": "error", "message": "Missing command"], exitCode: 1)
     exit(1)
 }
 
 switch command {
 case "capabilities":
-    emitJSON(capabilityPayload(), exitCode: 0)
+    JSONEmitter.shared.emit(capabilityPayload(), exitCode: 0)
 case "permissions":
-    emitJSON(permissionsPayload(), exitCode: 0)
+    JSONEmitter.shared.emit(permissionsPayload(), exitCode: 0)
+case "request-permissions":
+    requestPermissions()
 case "start":
     guard let recordingID = requireArg("--recording-id", in: args),
           let outputDir = requireArg("--output-dir", in: args),
           let mode = requireArg("--mode", in: args) else {
-        emitJSON(["type": "error", "message": "Missing required start arguments"], exitCode: 2)
+        JSONEmitter.shared.emit(["type": "error", "message": "Missing required start arguments"], exitCode: 2)
         exit(2)
     }
     runStart(recordingID: recordingID, outputDir: outputDir, mode: mode)
-case "stop":
-    emitJSON(["type": "stopped"], exitCode: 0)
-case "cancel":
-    emitJSON(["type": "stopped", "cancelled": true], exitCode: 0)
 default:
-    emitJSON(["type": "error", "message": "Unknown command: \(command)"], exitCode: 1)
+    JSONEmitter.shared.emit(["type": "error", "message": "Unknown command: \(command)"], exitCode: 1)
 }
