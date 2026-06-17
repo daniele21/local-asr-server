@@ -1,9 +1,10 @@
-import React from 'react';
+import { useState } from 'react';
 import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
-import { Transcription, TranscriptionSegment } from '../../../api/apiClient';
+import { ApiClient, Transcription, TranscriptionSegment } from '../../../api/apiClient';
 import { useTranslation } from '../../../i18n/i18n';
 import { formatTime } from '../../../utils/formatters';
+import { useToast } from '../../../context/ToastContext';
 
 interface ResultsStepProps {
   transcriptionResult: Transcription;
@@ -25,6 +26,32 @@ export default function ResultsStep({
   navigateTo,
 }: ResultsStepProps) {
   const { t, lang } = useTranslation();
+  const { showToast } = useToast();
+  const [isSplitting, setIsSplitting] = useState(false);
+
+  const handleSplit = async () => {
+    const confirmMsg = lang === 'it' 
+      ? 'Sei sicuro di voler dividere questa trascrizione unita? Verranno ripristinate le trascrizioni originali e questa verrà eliminata.' 
+      : 'Are you sure you want to split this merged transcription? The original transcripts will be restored and this one will be deleted.';
+      
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      setIsSplitting(true);
+      await ApiClient.splitTranscription(transcriptionResult.id);
+      showToast(
+        lang === 'it' 
+          ? 'Trascrizione divisa con successo! Trascrizioni originali ripristinate.' 
+          : 'Transcription split successfully! Original transcripts restored.', 
+        'success'
+      );
+      goToUploadStep();
+    } catch (err: any) {
+      showToast(`Errore durante la divisione: ${err.message}`, 'error');
+    } finally {
+      setIsSplitting(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-5 animate-in fade-in duration-150">
@@ -38,10 +65,15 @@ export default function ResultsStep({
           </h2>
         </div>
         <div className="flex gap-2">
-          <Button variant="secondary" onClick={goToUploadStep}>
+          {transcriptionResult.merged_sources && transcriptionResult.merged_sources.length > 0 && (
+            <Button variant="danger" onClick={handleSplit} isLoading={isSplitting} disabled={isSplitting}>
+              ✂️ {lang === 'it' ? 'Dividi' : 'Split'}
+            </Button>
+          )}
+          <Button variant="secondary" onClick={goToUploadStep} disabled={isSplitting}>
             🔄 {t('transcription.newTranscription')}
           </Button>
-          <Button onClick={copyToClipboard}>
+          <Button onClick={copyToClipboard} disabled={isSplitting}>
             📄 {copiedText}
           </Button>
         </div>
@@ -78,7 +110,7 @@ export default function ResultsStep({
       </div>
 
       {/* Audio Player for Results */}
-      {transcriptionResult.recording_id && (
+      {transcriptionResult.recording_id && !transcriptionResult.merged_sources && (
         <Card className="flex flex-col gap-2 p-4 mt-2">
           <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider">
             {t('transcription.audioTrackTitle') || 'Traccia Audio'}
@@ -88,6 +120,51 @@ export default function ResultsStep({
             src={`/v1/recordings/${transcriptionResult.recording_id}/audio`}
             className="w-full mt-1"
           />
+        </Card>
+      )}
+
+      {/* Merged Sources Players */}
+      {transcriptionResult.merged_sources && transcriptionResult.merged_sources.length > 0 && (
+        <Card className="flex flex-col gap-3.5 p-4 mt-2">
+          <div className="border-b border-border-subtle pb-2">
+            <span className="text-[10px] text-accent font-bold uppercase tracking-wider">
+              {t('transcription.mergeTrackTitle') || 'Tracce Audio Unite'}
+            </span>
+            <p className="text-[10px] text-text-muted mt-0.5">
+              {t('transcription.mergeTrackDesc') || 'Questa trascrizione deriva dall\'unione delle seguenti sorgenti:'}
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {transcriptionResult.merged_sources.map((src, index) => (
+              <div key={src.id} className="p-3 bg-bg-surface border border-border-subtle/70 rounded-xl flex flex-col gap-2">
+                <div className="flex items-center justify-between text-xs font-bold text-text-primary">
+                  <span className="truncate pr-2" title={src.audio_filename}>
+                    🎵 Part {index + 1}: {src.audio_filename}
+                  </span>
+                  {src.recording_id ? (
+                    <span className="text-[9px] bg-accent/10 text-accent border border-accent/20 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0">
+                      Audio
+                    </span>
+                  ) : (
+                    <span className="text-[9px] bg-text-muted/10 text-text-muted border border-border-subtle px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0">
+                      Importato
+                    </span>
+                  )}
+                </div>
+                {src.recording_id ? (
+                  <audio
+                    controls
+                    src={`/v1/recordings/${src.recording_id}/audio`}
+                    className="w-full h-8 mt-1"
+                  />
+                ) : (
+                  <p className="text-[10px] text-text-muted italic mt-1">
+                    {t('transcription.mergeAudioUnavailable') || 'Audio non riproducibile (importato)'}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
         </Card>
       )}
 

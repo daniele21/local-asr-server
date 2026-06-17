@@ -75,7 +75,8 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
   };
 
   const [step, setStep] = useState<'upload' | 'transcribe' | 'results'>('upload');
-  const [sourceMode, setSourceMode] = useState<'recordings' | 'file'>('recordings');
+  const [sourceMode, setSourceMode] = useState<'recordings' | 'file' | 'merge'>('recordings');
+  const [isMerging, setIsMerging] = useState(false);
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [recordingsCountText, setRecordingsCountText] = useState('0 elementi');
   const [recordingsFolder, setRecordingsFolder] = useState('');
@@ -217,6 +218,17 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
     setStep('transcribe');
   };
 
+  const selectTranscription = (tr: Transcription) => {
+    setTranscriptionResult(tr);
+    setStep('results');
+    if (tr.analysis) {
+      setResultTab('analysis');
+    } else {
+      setResultTab('text');
+    }
+    navigateTo('transcription', tr.id);
+  };
+
   const selectRecording = async (recording: Recording) => {
     const status = projectItemsMap.get(recording.id);
     if (status?.transcription?.id) {
@@ -254,6 +266,24 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
       handleSelectAudioFile(fileObj);
     } catch (err: any) {
       showToast(`Impossibile caricare l'audio: ${err.message}`, 'error');
+    }
+  };
+
+  const handleMergeTranscriptions = async (ids: string[], title: string) => {
+    try {
+      setIsMerging(true);
+      const result = await ApiClient.mergeTranscriptions(ids, title);
+      setTranscriptionResult(result);
+      setStep('results');
+      setResultTab('text');
+      showToast(t('transcription.successTitle'), 'success');
+      if (result.id) {
+        navigateTo('transcription', result.id);
+      }
+    } catch (err: any) {
+      showToast(`Impossibile unire le trascrizioni: ${err.message}`, 'error');
+    } finally {
+      setIsMerging(false);
     }
   };
 
@@ -448,6 +478,9 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
           selectRecording={selectRecording}
           handleSelectAudioFile={handleSelectAudioFile}
           fileInputRef={fileInputRef}
+          onMerge={handleMergeTranscriptions}
+          isMerging={isMerging}
+          onSelectTranscription={selectTranscription}
         />
       )}
 

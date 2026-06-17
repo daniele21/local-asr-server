@@ -45,6 +45,12 @@ export interface TranscriptionSegment {
   words?: Array<{ word: string; start: number; end: number }>;
 }
 
+export interface MergedSource {
+  id: string;
+  audio_filename: string;
+  recording_id?: string;
+}
+
 export interface Transcription {
   id: string;
   timestamp: string;
@@ -59,6 +65,7 @@ export interface Transcription {
   analysis?: any;
   saved_id?: string;
   recording_id?: string;
+  merged_sources?: MergedSource[];
 }
 
 export interface Settings {
@@ -190,6 +197,18 @@ export const ApiClient = {
 
   async deleteTranscription(id: string): Promise<{ ok: boolean }> {
     return (await request(`/v1/transcriptions/${id}`, { method: 'DELETE' })).json();
+  },
+
+  async mergeTranscriptions(transcriptionIds: string[], title?: string): Promise<Transcription> {
+    return (await request('/v1/transcriptions/merge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transcription_ids: transcriptionIds, title })
+    })).json();
+  },
+
+  async splitTranscription(id: string): Promise<{ ok: boolean; restored_ids: string[] }> {
+    return (await request(`/v1/transcriptions/${id}/split`, { method: 'POST' })).json();
   },
 
   async testAudioRoute(): Promise<any> {

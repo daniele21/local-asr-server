@@ -86,6 +86,12 @@ class SettingsRequest(BaseModel):
     default_condition_on_previous: Optional[bool] = True
 
 
+class MergeTranscriptionsRequest(BaseModel):
+    transcription_ids: list[str]
+    title: Optional[str] = None
+
+
+
 # (Transcription and caching helper methods have been refactored to local_asr_server.transcriber)
 
 
@@ -665,6 +671,20 @@ def create_app(
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+    @app.post("/v1/transcriptions/merge")
+    def merge_transcriptions(request: MergeTranscriptionsRequest):
+        try:
+            return app.state.transcription_store.merge(
+                transcription_ids=request.transcription_ids,
+                title=request.title
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Merge failed: {exc}") from exc
+
     @app.get("/v1/transcriptions")
     def list_transcriptions(page: int = 1, limit: int = 10):
         items, total = app.state.transcription_store.list(page=page, limit=limit)
@@ -683,5 +703,16 @@ def create_app(
         if not success:
             raise HTTPException(status_code=404, detail="Transcription not found")
         return {"ok": True}
+
+    @app.post("/v1/transcriptions/{transcription_id}/split")
+    def split_transcription(transcription_id: str):
+        try:
+            restored_ids = app.state.transcription_store.split(transcription_id)
+            return {"ok": True, "restored_ids": restored_ids}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    # Mount root static files at the end so it doesn't override API routes
+    app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="root_static")
 
     return app
