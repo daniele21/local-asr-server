@@ -1,0 +1,4 @@
+interface:
+  display_name: "Structured Change Guard"
+  short_description: "Enforce centralized robust repo changes"
+  default_prompt: "Use $structured-change-guard to review this change for centralized data, configuration, and robustness."

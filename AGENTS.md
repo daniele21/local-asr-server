@@ -21,7 +21,10 @@ routing audio e la build `.app` dipendono da API e strumenti macOS.
 2. Controlla `git status --short`; non sovrascrivere modifiche non correlate.
 3. Cerca simboli e chiamanti con `rg` prima di leggere file interi.
 4. Distingui sempre modalita sviluppo e bundle PyInstaller.
-5. Non usare una trascrizione Whisper reale come test rapido: puo scaricare un
+5. Se la richiesta comporta modifiche funzionali o tecniche, applica le skill
+   repo-locali `skills/maintain-feature-docs` e
+   `skills/structured-change-guard` prima di concludere.
+6. Non usare una trascrizione Whisper reale come test rapido: puo scaricare un
    modello grande e richiedere molto tempo.
 
 Directory generate o locali da non trattare come sorgente:
@@ -31,7 +34,26 @@ Directory generate o locali da non trattare come sorgente:
 - `build/`
 - `build_venv/`
 - `dist/`
+- `frontend/node_modules/`
 - `app_output.log`
+
+## Skill repo-locali obbligatorie
+
+- `skills/maintain-feature-docs`: da usare per ogni feature, fix
+  comportamentale, cambio API, workflow frontend, persistenza, impostazione,
+  build o routing audio. La modifica non e completa finche la documentazione
+  business e tecnica e aggiornata oppure il riepilogo finale spiega perche non
+  servono update.
+- `skills/structured-change-guard`: da usare per ogni modifica al codice. Prima
+  di editare individua la fonte di verita esistente; evita valori hardcoded,
+  duplicazioni di endpoint, chiavi settings, path, opzioni UI, stati e regole di
+  business.
+
+Fonte di tracciamento feature:
+
+- `docs/features.md`: registro business/tecnico delle feature. Aggiornalo
+  quando cambia cosa lo strumento permette di fare, come lo fa, dove persiste i
+  dati o come si verifica.
 
 ## Mappa del repository
 
@@ -46,6 +68,8 @@ Directory generate o locali da non trattare come sorgente:
 - `src/local_asr_server/transcriptions.py`: archivio JSON/TXT delle
   trascrizioni.
 - `src/local_asr_server/settings.py`: impostazioni utente persistenti.
+- `src/local_asr_server/catalog.py`: catalogo SQLite centrale per metadati
+  interrogabili di registrazioni, trascrizioni, progetti e analisi.
 - `src/local_asr_server/llm.py`: provider di analisi `mock` e Gemini.
 
 ### Audio e app macOS
@@ -63,7 +87,9 @@ Directory generate o locali da non trattare come sorgente:
 
 ### Frontend
 
-Il frontend e HTML/CSS/JavaScript statico, senza bundler e senza moduli ES.
+La UI runtime servita da FastAPI vive in `src/local_asr_server/static/`. I file
+statici legacy sono HTML/CSS/JavaScript senza moduli ES; se lavori su questa
+superficie non introdurre bundler, moduli ES o import dinamici.
 
 - `src/local_asr_server/static/index.html`: markup e ordine di caricamento.
 - `src/local_asr_server/static/config.js`: costanti, default ed endpoint.
@@ -82,8 +108,16 @@ Il frontend e HTML/CSS/JavaScript statico, senza bundler e senza moduli ES.
   trascrizione, storico e wiring tra controller.
 - `src/local_asr_server/static/styles.css`: stili completi dell'app.
 
-`public/` e `website/` non sono la UI servita normalmente da FastAPI. La UI
-runtime e `src/local_asr_server/static/`.
+`public/` e `website/` non sono la UI servita normalmente da FastAPI.
+
+Nel worktree esiste anche il frontend React/Vite in `frontend/`. Quando una
+modifica riguarda quella superficie, lavora sui sorgenti `frontend/src/`, usa
+`frontend/src/api/config.ts` per cataloghi e costanti,
+`frontend/src/api/apiClient.ts` per il contratto HTTP e
+`frontend/src/i18n/i18n.tsx` per testi UI. La build Vite scrive in
+`src/local_asr_server/static/`: non modificare a mano asset minificati o hashed
+in `src/local_asr_server/static/assets/` se possono essere rigenerati dai
+sorgenti.
 
 Hotspot frontend da non far crescere senza motivo:
 
@@ -163,10 +197,15 @@ rg -n 'AudioRouter|RecordingStore|TranscriptionStore' src test
 
 # Chiamate frontend verso il backend
 rg -n 'fetch\(|ApiClient\.|/v1/' src/local_asr_server/static
+rg -n 'fetch\(|ApiClient\.|/v1/' frontend/src
 
 # ID HTML e relativi accessi JavaScript
 rg -n 'id="NOME"|getElementById\(.NOME.|querySelector.*NOME' \
   src/local_asr_server/static
+
+# Documentazione e skill operative
+rg -n 'Feature|feature|settings|endpoint|hardcod|centralizz' \
+  docs AGENTS.md skills
 
 # Configurazione, path e differenze bundle/dev
 rg -n 'load_settings|get_.*_dir|is_bundled|sys\._MEIPASS' \
@@ -194,20 +233,32 @@ Per capire una modifica, ricostruisci in ordine:
 
 ## Regole di modifica
 
+- Ogni feature o fix comportamentale deve aggiornare `docs/features.md` e, se
+  cambia setup/uso pubblico, anche `README.md`. Se non aggiorni docs, indica il
+  motivo nel riepilogo finale.
+- Prima di introdurre un valore o una regola, cerca il relativo owner. Endpoint,
+  stati, chiavi settings, path, opzioni modello/lingua, limiti file, timer,
+  copy UI e mapping dati devono stare in una fonte centralizzata.
+- Non hardcodare path utente, directory macOS, URL API, nomi modello, chiavi
+  JSON, estensioni supportate o messaggi UI se esiste gia un helper, costante,
+  catalogo, settings, i18n o client API.
 - Mantieni `server.py` come composition root. Sposta logica riusabile nei
   moduli di dominio invece di aggiungere altro stato globale.
 - Per le registrazioni conserva sequenze chunk monotone, lock per sessione,
   scritture atomiche e transizioni in `VALID_STATUSES`.
 - Non costruire path di dati utente direttamente se esiste un helper in
   `paths.py` o un valore in `settings.py`.
+- Per metadati interrogabili o cross-feature usa `CatalogStore` invece di
+  scansioni duplicate o stati paralleli non sincronizzati.
 - Una modifica al contratto API richiede controllo coordinato di
-  `server.py`, `static/config.js`, `static/api.js`, chiamanti frontend e test.
+  `server.py`, `static/config.js`, `static/api.js`,
+  `frontend/src/api/apiClient.ts`, chiamanti frontend e test.
 - Nel frontend l'ordine degli `<script>` in `index.html` e un contratto:
   i file espongono globali come `ApiClient`, `Workflow` e
   `RecordingController`.
-- Quando estrai logica frontend, non introdurre bundler, moduli ES o import
-  dinamici: questa UI deve restare servibile come asset statico semplice sia in
-  dev sia nel bundle PyInstaller.
+- Quando estrai logica nel frontend statico legacy, non introdurre bundler,
+  moduli ES o import dinamici: quella UI deve restare servibile come asset
+  statico semplice sia in dev sia nel bundle PyInstaller.
 - Per una nuova pagina usa un file `*-page.js` o `*-view.js`, inizializzato da
   `app.js`, e lascia in `app.js` solo navigazione, routing e coordinamento.
 - Quando aggiungi un asset runtime, aggiorna package data e, se necessario,
@@ -290,6 +341,12 @@ indica quali test passano, quali falliscono e perche.
 ## Checklist finale
 
 - Il comportamento richiesto e coperto nel livello corretto?
+- `skills/maintain-feature-docs` e `skills/structured-change-guard` sono state
+  applicate quando la modifica lo richiedeva?
+- `docs/features.md` e gli altri documenti rilevanti sono aggiornati, oppure il
+  no-op documentale e motivato?
+- Dati, path, endpoint, stati, opzioni e testi sono centralizzati invece che
+  hardcodati?
 - Contratti backend e frontend sono ancora coerenti?
 - I path funzionano sia in dev sia nel bundle?
 - Stato e file sono lasciati consistenti in caso di errore?

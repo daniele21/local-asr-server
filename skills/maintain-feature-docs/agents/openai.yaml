@@ -1,0 +1,4 @@
+interface:
+  display_name: "Maintain Feature Docs"
+  short_description: "Keep product and technical docs current"
+  default_prompt: "Use $maintain-feature-docs to update ClosedRoom feature documentation after this change."
