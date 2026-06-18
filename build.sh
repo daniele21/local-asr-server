@@ -105,11 +105,51 @@ ok "Audio helper: $HELPER_DEST ($(du -sh "$HELPER_DEST" | cut -f1))"
 
 NATIVE_HELPER_CACHE="$SCRIPT_DIR/.cache/native-capture-helper/native-capture-helper"
 NATIVE_HELPER_DEST="$BUILD_ASSETS/native-capture-helper"
+NATIVE_HELPER_APP="$BUILD_ASSETS/ClosedRoomNativeCapture.app"
+NATIVE_HELPER_APP_EXE="$NATIVE_HELPER_APP/Contents/MacOS/ClosedRoomNativeCapture"
 log "  Compiling native capture helper..."
 uv run python -c "from local_asr_server.native_capture_helper.compile import compile_helper; compile_helper(force=False)"
 cp "$NATIVE_HELPER_CACHE" "$NATIVE_HELPER_DEST"
 chmod +x "$NATIVE_HELPER_DEST"
 ok "Native capture helper: $NATIVE_HELPER_DEST ($(du -sh "$NATIVE_HELPER_DEST" | cut -f1))"
+
+log "  Creating native capture helper app bundle..."
+rm -rf "$NATIVE_HELPER_APP"
+mkdir -p "$NATIVE_HELPER_APP/Contents/MacOS"
+cp "$NATIVE_HELPER_CACHE" "$NATIVE_HELPER_APP_EXE"
+chmod +x "$NATIVE_HELPER_APP_EXE"
+cat > "$NATIVE_HELPER_APP/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.closedroom.nativecapture</string>
+    <key>CFBundleName</key>
+    <string>ClosedRoom Native Capture</string>
+    <key>CFBundleDisplayName</key>
+    <string>ClosedRoom Native Capture</string>
+    <key>CFBundleExecutable</key>
+    <string>ClosedRoomNativeCapture</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleVersion</key>
+    <string>1.0.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>ClosedRoom uses the microphone to record your voice for local transcription.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>ClosedRoom records screen and system audio to capture computer audio.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>ClosedRoom records computer audio to transcribe meetings and local audio sources.</string>
+</dict>
+</plist>
+PLIST
+ok "Native capture helper app: $NATIVE_HELPER_APP ($(du -sh "$NATIVE_HELPER_APP" | cut -f1))"
 
 # ── Step 2: Bundle ffmpeg ──────────────────────────────────────────────────────
 log "Step 2/5: Bundling ffmpeg..."
@@ -261,6 +301,16 @@ if [[ ! -d "$APP_PATH" ]]; then
 fi
 ok "App bundle: $APP_PATH"
 
+log "  Embedding native capture helper app..."
+HELPERS_DIR="$APP_PATH/Contents/Helpers"
+NATIVE_HELPER_APP_IN_APP="$HELPERS_DIR/ClosedRoomNativeCapture.app"
+rm -rf "$NATIVE_HELPER_APP_IN_APP"
+mkdir -p "$HELPERS_DIR"
+ditto "$NATIVE_HELPER_APP" "$NATIVE_HELPER_APP_IN_APP"
+NATIVE_HELPER_IN_APP="$NATIVE_HELPER_APP_IN_APP/Contents/MacOS/ClosedRoomNativeCapture"
+chmod +x "$NATIVE_HELPER_IN_APP"
+ok "Embedded native capture helper app: $NATIVE_HELPER_APP_IN_APP"
+
 # ── Post-processing: fix permissions & ad-hoc code sign ──────────────────────
 log "  Fixing permissions..."
 find "$APP_PATH" -name "*.dylib" -exec chmod 755 {} \;
@@ -285,11 +335,10 @@ find_bundled_binary() {
 }
 
 AUDIO_HELPER_IN_APP="$(find_bundled_binary "audio-helper")"
-NATIVE_HELPER_IN_APP="$(find_bundled_binary "native-capture-helper")"
 FFMPEG_IN_APP="$(find_bundled_binary "ffmpeg")"
 
 [[ -n "$AUDIO_HELPER_IN_APP" ]] || die "audio-helper not found in app bundle"
-[[ -n "$NATIVE_HELPER_IN_APP" ]] || die "native-capture-helper not found in app bundle"
+[[ -f "$NATIVE_HELPER_IN_APP" ]] || die "ClosedRoomNativeCapture executable not found in helper app"
 [[ -n "$FFMPEG_IN_APP" ]] || die "ffmpeg not found in app bundle"
 
 chmod +x "$AUDIO_HELPER_IN_APP"
@@ -332,6 +381,7 @@ done < <(
 
 sign_entitled "$AUDIO_HELPER_IN_APP"
 sign_entitled "$NATIVE_HELPER_IN_APP"
+sign_entitled "$NATIVE_HELPER_APP_IN_APP"
 sign_entitled "$FFMPEG_IN_APP"
 sign_entitled "$APP_PATH/Contents/MacOS/$APP_NAME"
 sign_entitled "$APP_PATH"

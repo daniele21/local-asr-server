@@ -19,6 +19,8 @@ from pathlib import Path
 
 APP_NAME = "ClosedRoom"
 APP_BUNDLE_ID = "com.closedroom.app"
+NATIVE_CAPTURE_HELPER_APP_NAME = "ClosedRoomNativeCapture.app"
+NATIVE_CAPTURE_HELPER_EXECUTABLE = "ClosedRoomNativeCapture"
 
 
 # ── Bundle detection ──────────────────────────────────────────────────────────
@@ -184,11 +186,27 @@ def get_native_capture_helper_path() -> Path:
     """
     Return the path to the native ScreenCaptureKit capture helper.
 
-    Bundle mode expects a pre-compiled binary in Resources. Dev mode uses the
-    cache managed by ``native_capture_helper.compile``.
+    Bundle mode prefers the embedded helper app so macOS/TCC sees a stable
+    bundle identifier and usage-description Info.plist. Dev mode uses the cache
+    managed by ``native_capture_helper.compile``.
     """
     if is_bundled():
-        return get_bundle_dir() / "native-capture-helper"
+        contents_dir = Path(sys.executable).resolve().parents[1]
+        helper_relative = (
+            Path(NATIVE_CAPTURE_HELPER_APP_NAME)
+            / Path("Contents")
+            / "MacOS"
+            / NATIVE_CAPTURE_HELPER_EXECUTABLE
+        )
+        candidates = [
+            contents_dir / "Helpers" / helper_relative,
+            contents_dir / "Frameworks" / "native-capture-helper",
+            get_bundle_dir() / "native-capture-helper",
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return candidates[0]
 
     from local_asr_server.native_capture_helper.compile import _BINARY_PATH  # type: ignore
     return _BINARY_PATH

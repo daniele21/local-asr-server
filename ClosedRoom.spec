@@ -60,7 +60,6 @@ extra_binaries = [
     # PyInstaller may stage collected binaries under Contents/Frameworks in
     # macOS app bundles; build.sh discovers and signs the realized paths.
     (str(AUDIO_HELPER), "."),
-    (str(NATIVE_CAPTURE_HELPER), "."),
     (str(ffmpeg_bin), "."),
 ]
 
@@ -73,7 +72,7 @@ if lib_dir.exists():
 # ── Collect data: static web UI + mlx_whisper assets ──────────────────────────
 
 extra_datas = [
-    (str(STATIC_DIR), "static"),     # Web UI → Contents/MacOS/static/
+    (str(STATIC_DIR), "static"),
 ]
 
 # mlx_whisper ships tokenizer data (json / tiktoken files)

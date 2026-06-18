@@ -92,13 +92,18 @@ track under one recording item. Whisper is started later from the
 merges the resulting segments by timestamp, labeling them as local microphone
 or computer audio.
 
-In the macOS app bundle, `build.sh` signs the realized PyInstaller paths for
-`native-capture-helper`, `audio-helper`, `ffmpeg`, the main executable, and the
-final `.app`. The helper may be staged under `Contents/Frameworks` instead of
-`Contents/MacOS`; use `/v1/capture/diagnostics` to inspect the effective
-`executable_path`, `code_signature`, and TCC permission status. A failed
-`codesign` or bundle verification now stops the build, because an unsigned
-native helper cannot reliably request Microphone/System Audio permissions.
+In the macOS app bundle, native capture runs from an embedded helper app,
+`ClosedRoomNativeCapture.app`, with its own bundle identifier
+`com.closedroom.nativecapture` and microphone/screen/audio usage descriptions.
+`build.sh` creates the helper app before PyInstaller, copies it manually into
+`ClosedRoom.app/Contents/Helpers` after PyInstaller, then signs the helper
+executable, the helper app, `audio-helper`, `ffmpeg`, the main executable, and
+the final `.app`. Use
+`/v1/capture/diagnostics` to inspect the effective `executable_path`,
+`bundle_identifier`, `code_signature`, and TCC permission status. A failed
+`codesign` or bundle verification stops the build, because an unsigned or
+anonymous native helper cannot reliably request Microphone/System Audio
+permissions.
 
 If the native helper is unavailable, ClosedRoom makes that fallback explicit and
 uses browser recording with BlackHole compatibility. The one-time setup for each
