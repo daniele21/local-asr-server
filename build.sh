@@ -6,9 +6,25 @@
 #            dist/ClosedRoom.dmg   (distributable disk image)
 #
 # Usage:
-#   ./build.sh               # full build
-#   ./build.sh --no-dmg      # skip DMG creation
-#   ./build.sh --clean       # clean build artifacts first
+#   ./build.sh                           # full build (ad-hoc signed)
+#   ./build.sh --no-dmg                  # skip DMG creation
+#   ./build.sh --clean                   # clean build artifacts first
+#   ./build.sh --install                 # copy to /Applications after build
+#
+# Code Signing (TCC/Privacy Permissions):
+#   By default, the app is signed ad-hoc (--sign -), which causes macOS to
+#   treat every new build as a different identity and reset TCC permissions
+#   (microphone, screen recording) on each install.
+#
+#   To keep permissions stable across builds, set a real Apple signing identity:
+#
+#     export CLOSEDROOM_SIGN_IDENTITY="Apple Development: Your Name (TEAMID)"
+#     ./build.sh --no-dmg
+#
+#   List available identities:
+#     security find-identity -v -p codesigning
+#
+#   --install with ad-hoc signing is blocked to prevent TCC confusion.
 # =============================================================================
 set -euo pipefail
 
@@ -23,6 +39,12 @@ APP_PATH="$DIST_DIR/$APP_NAME.app"
 DMG_PATH="$DIST_DIR/$APP_NAME.dmg"
 CREATE_DMG=true
 CLEAN_BUILD=false
+INSTALL_TO_APPLICATIONS=false
+
+# Code signing identity.
+# Use a real Apple identity to keep TCC permissions stable across builds.
+# Falls back to '-' (ad-hoc) when not set.
+SIGN_IDENTITY="${CLOSEDROOM_SIGN_IDENTITY:-}"
 
 # Colours
 RED='\033[0;31m'
@@ -39,10 +61,17 @@ die()  { echo -e "${RED}✗ $*${NC}" >&2; exit 1; }
 # ── Parse arguments ───────────────────────────────────────────────────────────
 for arg in "$@"; do
     case $arg in
-        --no-dmg)  CREATE_DMG=false ;;
-        --clean)   CLEAN_BUILD=true ;;
+        --no-dmg)   CREATE_DMG=false ;;
+        --clean)    CLEAN_BUILD=true ;;
+        --install)  INSTALL_TO_APPLICATIONS=true ;;
+        --sign)     shift; SIGN_IDENTITY="$1" ;;
     esac
 done
+
+# Resolve empty identity to ad-hoc sentinel
+if [[ -z "$SIGN_IDENTITY" ]]; then
+    SIGN_IDENTITY="-"
+fi
 
 # ── Sanity checks ─────────────────────────────────────────────────────────────
 [[ "$(uname)" == "Darwin" ]] || die "Build is only supported on macOS."
@@ -52,9 +81,27 @@ command -v uv       >/dev/null 2>&1 || die "uv not found. Install: curl -Ls http
 command -v swiftc   >/dev/null 2>&1 || die "swiftc not found. Install Xcode Command Line Tools: xcode-select --install"
 
 
+# ── TCC / signing guards ─────────────────────────────────────────────────────
+if [[ "$SIGN_IDENTITY" == "-" ]]; then
+    warn "Ad-hoc signing: macOS TCC permissions (microphone, screen recording) will"
+    warn "reset on every install because macOS treats each build as a new identity."
+    warn "Set CLOSEDROOM_SIGN_IDENTITY to a real Apple identity to avoid this."
+    if $INSTALL_TO_APPLICATIONS; then
+        die "--install is not allowed with ad-hoc signing to prevent TCC confusion.\n" \
+            "  Use a real signing identity:\n" \
+            "    export CLOSEDROOM_SIGN_IDENTITY=\"Apple Development: Name (TEAMID)\"\n" \
+            "    ./build.sh --no-dmg --install"
+    fi
+fi
+
 echo ""
 echo "═══════════════════════════════════════════════════════════"
 echo "  Building $APP_NAME v$APP_VERSION"
+if [[ "$SIGN_IDENTITY" == "-" ]]; then
+    echo "  Signing:  ad-hoc (TCC permissions will reset on install)"
+else
+    echo "  Signing:  $SIGN_IDENTITY"
+fi
 echo "═══════════════════════════════════════════════════════════"
 echo ""
 
@@ -351,25 +398,37 @@ chmod +x "$AUDIO_HELPER_IN_APP"
 chmod +x "$NATIVE_HELPER_IN_APP"
 chmod +x "$FFMPEG_IN_APP"
 
-log "  Applying ad-hoc code signatures..."
+if [[ "$SIGN_IDENTITY" == "-" ]]; then
+    log "  Applying ad-hoc code signatures..."
+else
+    log "  Applying code signatures with identity: $SIGN_IDENTITY"
+fi
 ENTITLEMENTS="$BUILD_ASSETS/entitlements.plist"
 
 is_macho() {
     file "$1" | grep -q "Mach-O"
 }
 
+# sign_plain: sign a binary without entitlements (frameworks, dylibs, .so files).
+# Uses the global SIGN_IDENTITY so the entire bundle shares one identity.
 sign_plain() {
     local target="$1"
     if is_macho "$target"; then
-        codesign --force --sign - --timestamp=none "$target" \
+        codesign --force \
+            --sign "$SIGN_IDENTITY" \
+            --timestamp=none \
+            "$target" \
             || die "codesign failed for $target"
     fi
 }
 
+# sign_entitled: sign a binary or .app bundle with the app entitlements.
+# Must be called in dependency order (inner → outer) so the outer signature
+# covers all already-signed nested content.
 sign_entitled() {
     local target="$1"
     codesign --force \
-        --sign - \
+        --sign "$SIGN_IDENTITY" \
         --timestamp=none \
         --options runtime \
         --entitlements "$ENTITLEMENTS" \
@@ -385,6 +444,7 @@ done < <(
         -print0
 )
 
+# Sign inner binaries first, then their parent bundles (inside-out order).
 sign_entitled "$AUDIO_HELPER_IN_APP"
 sign_entitled "$NATIVE_HELPER_IN_APP"
 sign_entitled "$NATIVE_HELPER_APP_IN_APP"
@@ -413,7 +473,11 @@ if payload.get("screen_capture") not in {"granted", "required"}:
 if errors:
     raise SystemExit("Native helper diagnostics failed: " + "; ".join(errors))
 '
-ok "Ad-hoc signed"
+if [[ "$SIGN_IDENTITY" == "-" ]]; then
+    ok "Ad-hoc signed (TCC permissions will reset on every install)"
+else
+    ok "Signed with identity: $SIGN_IDENTITY"
+fi
 
 
 APP_SIZE=$(du -sh "$APP_PATH" | cut -f1)
@@ -427,6 +491,17 @@ else
     log "Step 5/5: Skipping DMG (--no-dmg)"
 fi
 
+# ── Optional: install to /Applications ───────────────────────────────────────
+# Guarded above: only reachable when SIGN_IDENTITY is not ad-hoc.
+if $INSTALL_TO_APPLICATIONS; then
+    log "Installing to /Applications..."
+    rm -rf "/Applications/$APP_NAME.app"
+    ditto "$APP_PATH" "/Applications/$APP_NAME.app"
+    # Remove quarantine so macOS does not gate the app on first open.
+    xattr -dr com.apple.quarantine "/Applications/$APP_NAME.app" 2>/dev/null || true
+    ok "Installed: /Applications/$APP_NAME.app"
+fi
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo "═══════════════════════════════════════════════════════════"
@@ -435,9 +510,24 @@ echo ""
 echo "  App:  $APP_PATH"
 $CREATE_DMG && echo "  DMG:  $DMG_PATH" || true
 echo ""
-echo "  To test locally:"
-echo "    open $APP_PATH"
-echo ""
-echo "  To install:"
-echo "    cp -r $APP_PATH /Applications/"
+if [[ "$SIGN_IDENTITY" == "-" ]]; then
+    echo "  To test locally:"
+    echo "    open $APP_PATH"
+    echo ""
+    echo "  To install (TCC permissions will reset):"
+    echo "    ditto $APP_PATH /Applications/$APP_NAME.app"
+    echo ""
+    echo "  ⚠  For stable TCC permissions across builds, use a real Apple identity:"
+    echo "    export CLOSEDROOM_SIGN_IDENTITY=\"Apple Development: Name (TEAMID)\""
+    echo "    security find-identity -v -p codesigning  # list available identities"
+    echo "    ./build.sh --no-dmg --install"
+else
+    echo "  To test locally:"
+    echo "    open $APP_PATH"
+    echo ""
+    echo "  To install with stable TCC permissions:"
+    echo "    ./build.sh --no-dmg --install"
+    echo "  or manually:"
+    echo "    ditto $APP_PATH /Applications/$APP_NAME.app"
+fi
 echo "═══════════════════════════════════════════════════════════"

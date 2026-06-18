@@ -78,7 +78,7 @@ extra_datas = [
 # mlx_whisper ships tokenizer data (json / tiktoken files)
 import mlx_whisper as _mlx_w
 mlx_w_dir = Path(_mlx_w.__file__).parent
-for ext in ("*.json", "*.tiktoken", "*.txt"):
+for ext in ("*.json", "*.tiktoken", "*.txt", "*.npz"):
     for f in mlx_w_dir.rglob(ext):
         rel = str(f.parent.relative_to(mlx_w_dir.parent))
         extra_datas.append((str(f), rel))
@@ -168,7 +168,11 @@ a = Analysis(                                                           # noqa: 
     hiddenimports=hidden_imports,
     hookspath=[str(BUILD_ASSETS / "hooks")] if (BUILD_ASSETS / "hooks").exists() else [],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[
+        # Pre-loads libmlx.dylib from mlx/lib/ before any user import so that
+        # MLX's dladdr-based metallib resolution points to the correct bundle path.
+        str(BUILD_ASSETS / "hooks" / "pyi_rth_mlx.py"),
+    ],
     excludes=excludes,
     noarchive=False,
     optimize=1,

@@ -23,15 +23,54 @@ import webbrowser
 from pathlib import Path
 from typing import Optional
 
-# Setup SSL certificates for PyInstaller bundled app on macOS.
-# Without this, downloading models from Hugging Face can fail with SSL handshake/verification errors.
-if getattr(sys, "frozen", False):
+# ── PyInstaller bundle setup (must run before any MLX or certifi import) ──────
+if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+    _meipass = Path(sys._MEIPASS)  # type: ignore[attr-defined]
+
+    # 1. SSL certificates — required for Hugging Face model downloads.
     try:
         import certifi
         os.environ["SSL_CERT_FILE"] = certifi.where()
         os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
     except ImportError:
         pass
+
+    # 2. PATH fix — mlx_whisper (via OpenAI Whisper's audio loader) calls
+    #    ffmpeg as a subprocess.  The bundled ffmpeg lives in _MEIPASS
+    #    (Contents/Resources/) which is not on the default PATH inside a
+    #    sandboxed .app.  Prepend it so `shutil.which("ffmpeg")` and direct
+    #    subprocess calls succeed.
+    _existing_path = os.environ.get("PATH", "")
+    os.environ["PATH"] = f"{_meipass}:{_existing_path}"
+
+    # 3. MLX metallib fix — MLX resolves mlx.metallib relative to the loaded
+    #    .so via dladdr/NSBundle.  In a PyInstaller bundle this path resolution
+    #    can fail because the bundle layout differs from a normal wheel install.
+    #    We pre-load libmlx.dylib from the known location so that dladdr returns
+    #    the correct path and MLX can find mlx.metallib alongside it.
+    _mlx_lib_dir = _meipass / "mlx" / "lib"
+    if _mlx_lib_dir.exists():
+        # Prepend to DYLD_LIBRARY_PATH so the dynamic linker finds libmlx.dylib
+        # and libjaccl.dylib from our bundled copies before any system path.
+        _existing_dyld = os.environ.get("DYLD_LIBRARY_PATH", "")
+        _new_dyld = str(_mlx_lib_dir)
+        if _existing_dyld:
+            _new_dyld = f"{_new_dyld}:{_existing_dyld}"
+        os.environ["DYLD_LIBRARY_PATH"] = _new_dyld
+
+        # Pre-load libmlx so that subsequent dladdr calls return paths inside
+        # _meipass/mlx/lib/, which lets MLX calculate the metallib path correctly.
+        import ctypes
+        _libmlx_path = _mlx_lib_dir / "libmlx.dylib"
+        if _libmlx_path.exists():
+            try:
+                ctypes.CDLL(str(_libmlx_path))
+            except OSError as _e:
+                # Non-fatal: log and continue; MLX will try its own resolution.
+                import logging as _logging
+                _logging.getLogger(__name__).warning(
+                    "Could not pre-load libmlx.dylib from %s: %s", _libmlx_path, _e
+                )
 
 from local_asr_server.window import ClosedRoomWindowManager
 
