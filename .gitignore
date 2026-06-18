@@ -163,3 +163,6 @@ dist/dmg_staging/
 .vscode/tasks.json
 */node_modules/*
 frontend/.vite/*
+test-out-2/mic.wav
+test-out-2/recording.wav
+test-out-2/system.wav

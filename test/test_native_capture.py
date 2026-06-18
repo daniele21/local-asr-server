@@ -21,7 +21,7 @@ cmd = sys.argv[1]
 if cmd == 'capabilities':
     print(json.dumps({'available': True, 'backend': 'native', 'modes': ['both']}))
 elif cmd == 'permissions':
-    print(json.dumps({'ok': True}))
+    print(json.dumps({'ok': True, 'microphone': 'authorized', 'screen_capture': 'granted', 'modes': {'mic_only': {'ok': True}, 'pc_only': {'ok': True}, 'both': {'ok': True}}}))
 elif cmd == 'start':
     print(json.dumps({'type': 'ready'}), flush=True)
     time.sleep(0.05)
@@ -61,6 +61,23 @@ else:
         res = validate_audio_file(empty_file)
         self.assertFalse(res["valid"])
         self.assertEqual(res["error"], "file_empty")
+
+    def test_stop_session_processes_events(self) -> None:
+        manager = NativeCaptureManager(helper_path=self.helper)
+        started = manager.start("rec-2", self.root, "both")
+        self.assertEqual(started["status"], "starting")
+        
+        # Let the process finish
+        time.sleep(0.5)
+        
+        # Stop session
+        result = manager.stop("rec-2")
+        self.assertEqual(result["status"], "stopped")
+        
+        # Check that events are returned
+        event_types = [evt["type"] for evt in result["events"]]
+        self.assertIn("ready", event_types)
+        self.assertIn("stopped", event_types)
 
 
 if __name__ == "__main__":

@@ -29,8 +29,15 @@ class CaptureSession:
     mode: str
     process: subprocess.Popen[str]
     output_dir: Path
+    reader_thread: threading.Thread | None = None
     started_at: float = field(default_factory=time.time)
     events: "queue.Queue[dict[str, Any]]" = field(default_factory=queue.Queue)
+    event_log: list[dict[str, Any]] = field(default_factory=list)
+    ready_event: dict[str, Any] | None = None
+    track_ready: dict[str, dict[str, Any]] = field(default_factory=dict)
+    track_written: dict[str, dict[str, Any]] = field(default_factory=dict)
+    last_volume: dict[str, float] = field(default_factory=dict)
+    warnings: list[dict[str, Any]] = field(default_factory=list)
     stopped: bool = False
 
 
@@ -146,7 +153,9 @@ class NativeCaptureManager:
                 output_dir=output_dir,
             )
             self._sessions[recording_id] = session
-            threading.Thread(target=self._read_events, args=(session,), daemon=True).start()
+            thread = threading.Thread(target=self._read_events, args=(session,), daemon=True)
+            session.reader_thread = thread
+            thread.start()
             return {
                 "recording_id": recording_id,
                 "capture_session_id": str(uuid.uuid4()),
@@ -182,9 +191,24 @@ class NativeCaptureManager:
                 timeout=10,
                 check=False,
             )
+            stdout = completed.stdout.strip()
+            stderr = completed.stderr.strip()
+            
+            parsed = None
+            if stdout:
+                try:
+                    parsed = json.loads(stdout.splitlines()[-1])
+                except (json.JSONDecodeError, IndexError):
+                    parsed = None
+                    
             if completed.returncode != 0:
-                return {"available": False, "backend": "native", "reason": fallback_reason, "error": completed.stderr.strip()}
-            return json.loads(completed.stdout or "{}")
+                return {
+                    "available": False,
+                    "backend": "native",
+                    "reason": parsed.get("reason", fallback_reason) if (parsed and isinstance(parsed, dict)) else fallback_reason,
+                    "error": parsed or stderr or stdout,
+                }
+            return parsed if (parsed and isinstance(parsed, dict)) else {}
         except Exception as exc:
             return {"available": False, "backend": "native", "reason": fallback_reason, "error": str(exc)}
 
@@ -200,6 +224,21 @@ class NativeCaptureManager:
                     event = json.loads(line)
                 except json.JSONDecodeError:
                     event = {"type": "warning", "message": line}
+                
+                session.event_log.append(event)
+                if event.get("type") == "ready":
+                    session.ready_event = event
+                elif event.get("type") == "track_first_sample":
+                    session.track_ready[event["source"]] = event
+                elif event.get("type") == "track_first_written_sample":
+                    session.track_written[event["source"]] = event
+                elif event.get("type") == "volume":
+                    session.last_volume[event["source"]] = event.get("db", -120.0)
+                elif event.get("type") in {"warning", "error"}:
+                    session.warnings.append(event)
+                    if event.get("type") == "error":
+                        session.stopped = True
+
                 session.events.put(event)
                 if event.get("type") in {"stopped", "error"}:
                     session.stopped = True
@@ -213,12 +252,25 @@ class NativeCaptureManager:
             session = self._sessions.get(recording_id)
         if session is None:
             return {"recording_id": recording_id, "backend": "native", "status": "not_active"}
+            
+        was_killed = False
         if session.process.poll() is None:
             session.process.terminate()
             try:
                 session.process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 session.process.kill()
+                was_killed = True
+                
+        if session.reader_thread:
+            session.reader_thread.join(timeout=2)
+            if session.reader_thread.is_alive():
+                events.append({
+                    "type": "warning",
+                    "source": "backend",
+                    "message": "Native helper stdout reader did not finish before post-processing."
+                })
+            
         events = []
         while True:
             try:
@@ -226,8 +278,15 @@ class NativeCaptureManager:
             except queue.Empty:
                 break
                 
+        if was_killed:
+            events.append({
+                "type": "error",
+                "source": "backend",
+                "message": "Native helper did not stop cleanly and was killed. Audio files may be incomplete or corrupted."
+            })
+            
         # Post-process mixing and validation
-        if not cancel:
+        if not cancel and not was_killed:
             output_dir = session.output_dir
             mode = session.mode
             mic_path = output_dir / "mic.wav"
@@ -241,6 +300,21 @@ class NativeCaptureManager:
                 
                 if mic_exists and system_exists:
                     try:
+                        # Get durations to calculate dynamic timeout
+                        mic_duration = 0.0
+                        system_duration = 0.0
+                        
+                        mic_report = validate_audio_file(mic_path)
+                        if mic_report["valid"]:
+                            mic_duration = mic_report["duration"]
+                        
+                        system_report = validate_audio_file(system_path)
+                        if system_report["valid"]:
+                            system_duration = system_report["duration"]
+                            
+                        max_duration = max(mic_duration, system_duration)
+                        ffmpeg_timeout = max(120.0, min(3600.0, max_duration * 0.5))
+                        
                         ffmpeg_path = get_ffmpeg_path()
                         cmd = [
                             ffmpeg_path,
@@ -252,7 +326,7 @@ class NativeCaptureManager:
                             "-ac", "1",
                             str(recording_path)
                         ]
-                        subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=True)
+                        subprocess.run(cmd, capture_output=True, text=True, timeout=ffmpeg_timeout, check=True)
                     except Exception as e:
                         error_msg = f"Failed to mix audio tracks with ffmpeg: {e}"
                         events.append({"type": "error", "source": "backend", "message": error_msg})
@@ -272,28 +346,39 @@ class NativeCaptureManager:
             # Build and save timeline.json
             timeline_data = {
                 "recording_ready_at": None,
+                "recording_ready_uptime": None,
                 "tracks": {}
             }
             
-            for event in events:
-                if event.get("type") == "ready":
-                    timeline_data["recording_ready_at"] = event.get("recording_ready_at")
-                elif event.get("type") == "track_ready":
-                    src = event.get("source")
-                    if src:
-                        timeline_data["tracks"][src] = {
-                            "first_sample_wall_time": event.get("first_sample_wall_time"),
-                            "first_sample_pts": event.get("first_sample_pts")
-                        }
-            
-            # Compute offsets relative to recording_ready_at if possible
-            ready_at = timeline_data.get("recording_ready_at")
-            if ready_at is not None:
-                for src, track_info in list(timeline_data["tracks"].items()):
-                    wall_time = track_info.get("first_sample_wall_time")
-                    if wall_time is not None:
-                        offset_ms = int((wall_time - ready_at) * 1000)
-                        timeline_data["tracks"][src]["offset_ms"] = offset_ms
+            if session.ready_event:
+                timeline_data["recording_ready_at"] = session.ready_event.get("recording_ready_at")
+                timeline_data["recording_ready_uptime"] = session.ready_event.get("recording_ready_uptime")
+                
+            for src in ["mic", "system"]:
+                track_info = {}
+                
+                # Track observed time
+                if src in session.track_ready:
+                    evt = session.track_ready[src]
+                    track_info["first_observed_wall_time"] = evt.get("observed_wall_time")
+                    track_info["first_observed_uptime"] = evt.get("observed_uptime")
+                    track_info["first_observed_pts"] = evt.get("pts")
+                    
+                # Track written time
+                if src in session.track_written:
+                    evt = session.track_written[src]
+                    track_info["first_written_wall_time"] = evt.get("written_wall_time")
+                    track_info["first_written_uptime"] = evt.get("written_uptime")
+                    track_info["first_written_pts"] = evt.get("pts")
+                    
+                if track_info:
+                    # Compute offset using uptime
+                    ready_uptime = timeline_data.get("recording_ready_uptime")
+                    written_uptime = track_info.get("first_written_uptime")
+                    if ready_uptime is not None and written_uptime is not None:
+                        offset_ms = int((written_uptime - ready_uptime) * 1000)
+                        track_info["offset_ms"] = offset_ms
+                    timeline_data["tracks"][src] = track_info
             
             timeline_path = output_dir / "timeline.json"
             try:
@@ -330,6 +415,6 @@ class NativeCaptureManager:
         return {
             "recording_id": recording_id,
             "backend": "native",
-            "status": "cancelled" if cancel else "stopped",
+            "status": "cancelled" if cancel else ("interrupted" if was_killed else "stopped"),
             "events": events,
         }
