@@ -160,6 +160,30 @@ class RecordingStoreTests(unittest.TestCase):
         self.assertEqual(tracks["mixed"]["bytes_written"], len(b"mixed wav"))
         self.assertEqual(finalized["bytes_written"], len(b"mic wav") + len(b"system wav") + len(b"mixed wav"))
 
+    def test_native_capture_finalized_files_are_not_replaced_by_empty_part_placeholders(self) -> None:
+        recording = self.store.create(
+            title="Native Call",
+            mime_type="audio/wav",
+            model="test-model",
+            language="it",
+            capture_mode="both",
+            capture_backend="native",
+        )
+        session_dir = self.store.session_dir(recording["id"])
+        (session_dir / "mic.wav").write_bytes(b"mic wav")
+        (session_dir / "system.wav").write_bytes(b"system wav")
+        (session_dir / "recording.wav").write_bytes(b"mixed wav")
+
+        finalized, _ = self.store.finalize(recording["id"])
+
+        tracks = {track["id"]: track for track in finalized["audio_tracks"]}
+        self.assertEqual(self.store.track_audio_path(recording["id"], "mic").read_bytes(), b"mic wav")
+        self.assertEqual(self.store.track_audio_path(recording["id"], "system").read_bytes(), b"system wav")
+        self.assertEqual(self.store.audio_path(recording["id"]).read_bytes(), b"mixed wav")
+        self.assertEqual(tracks["mic"]["bytes_written"], len(b"mic wav"))
+        self.assertEqual(tracks["system"]["bytes_written"], len(b"system wav"))
+        self.assertEqual(tracks["mixed"]["bytes_written"], len(b"mixed wav"))
+
 
 if __name__ == "__main__":
     unittest.main()

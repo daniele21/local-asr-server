@@ -357,7 +357,11 @@ class RecordingStore:
                 part_path = self._track_part_path(session_dir, track)
                 audio_path = self._track_audio_path(session_dir, track)
                 if part_path.exists():
-                    part_path.replace(audio_path)
+                    part_size = part_path.stat().st_size
+                    if part_size > 0 or not audio_path.exists():
+                        part_path.replace(audio_path)
+                    else:
+                        part_path.unlink()
                 elif audio_path.exists():
                     pass
                 elif not audio_path.exists():
