@@ -441,6 +441,37 @@ export const ApiClient = {
     return (await request('/v1/system/audio/status')).json();
   },
 
+  async getActiveRecording(): Promise<{
+    active: boolean;
+    recording_id?: string;
+    title?: string;
+    capture_backend?: 'browser' | 'native';
+    capture_mode?: 'both' | 'mic_only' | 'pc_only';
+    started_at?: number;
+    bytes_written?: number;
+    mic_db?: number;
+    system_db?: number;
+    warnings?: string[];
+  }> {
+    return (await request('/v1/recordings/active')).json();
+  },
+
+  async stopRecordingControl(recordingId: string): Promise<any> {
+    return (await request(`/v1/recordings/${recordingId}/control/stop`, { method: 'POST' })).json();
+  },
+
+  async resizeOverlay(width: number, height: number): Promise<{ success: boolean; error?: string }> {
+    try {
+      return (await request('/v1/system/window/overlay/resize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ width, height })
+      })).json();
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
   async toggleOverlay(show: boolean): Promise<{ success: boolean; error?: string }> {
     try {
       return (await request('/v1/system/window/overlay', {

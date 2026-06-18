@@ -264,6 +264,53 @@ class RecordingApiTests(unittest.TestCase):
         self.assertEqual(status["status"], "completed")
         self.assertEqual(status["result"]["text"], "[00:00] Tu: Ciao")
 
+    def test_active_recording_and_overlay_flow(self) -> None:
+        # 1. Initially active is False
+        res = self.client.get("/v1/recordings/active")
+        self.assertEqual(res.status_code, 200)
+        self.assertFalse(res.json()["active"])
+
+        # 2. Create a recording
+        created = self.client.post(
+            "/v1/recordings",
+            json={
+                "title": "Test Active Flow",
+                "mime_type": "audio/webm",
+                "capture_backend": "browser",
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        recording_id = created.json()["id"]
+
+        # 3. Check active recording details
+        res = self.client.get("/v1/recordings/active")
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.json()["active"])
+        self.assertEqual(res.json()["recording_id"], recording_id)
+        self.assertEqual(res.json()["capture_backend"], "browser")
+
+        # 4. Append chunk and verify bytes_written changes
+        chunk = self.client.post(
+            f"/v1/recordings/{recording_id}/chunks",
+            data={"sequence": "0"},
+            files={"file": ("chunk.webm", b"audio-data", "audio/webm")},
+        )
+        self.assertEqual(chunk.status_code, 200)
+
+        res = self.client.get("/v1/recordings/active")
+        self.assertEqual(res.json()["bytes_written"], len(b"audio-data"))
+
+        # 5. Connect to SSE events endpoint is not called here to prevent blocking/hanging in synchronous tests.
+
+        # 6. Stop via unified control endpoint
+        stopped = self.client.post(f"/v1/recordings/{recording_id}/control/stop")
+        self.assertEqual(stopped.status_code, 202)
+
+        # 7. Verify active is False again
+        res = self.client.get("/v1/recordings/active")
+        self.assertEqual(res.status_code, 200)
+        self.assertFalse(res.json()["active"])
+
 
 if __name__ == "__main__":
     unittest.main()

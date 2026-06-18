@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from local_asr_server.audio_diagnostics import build_quality_report
 from local_asr_server.recordings import (
@@ -22,6 +22,7 @@ router = APIRouter()
 
 @router.post("/v1/recordings", status_code=201)
 def create_recording(request: Request, body: CreateRecordingRequest):
+    import time
     store: RecordingStore = request.app.state.recording_store
     try:
         res = store.create(
@@ -34,6 +35,16 @@ def create_recording(request: Request, body: CreateRecordingRequest):
             capture_backend=body.capture_backend or "browser",
         )
         request.app.state.is_recording = True
+        request.app.state.active_recording = {
+            "recording_id": res["id"],
+            "title": res.get("title") or body.title or "Nuova Registrazione",
+            "capture_backend": body.capture_backend or "browser",
+            "capture_mode": body.capture_mode or "legacy_mixed",
+            "started_at": time.time(),
+            "bytes_written": 0,
+            "chunk_count": 0,
+            "stopped": False,
+        }
         return res
     except OSError as exc:
         raise HTTPException(status_code=507, detail=str(exc)) from exc
@@ -54,7 +65,7 @@ async def append_recording_chunk(
     store: RecordingStore = request.app.state.recording_store
     try:
         content = await file.read()
-        return store.append_chunk(
+        res = store.append_chunk(
             recording_id,
             sequence,
             content,
@@ -64,6 +75,14 @@ async def append_recording_chunk(
             client_chunk_start_ms=client_chunk_start_ms,
             client_chunk_end_ms=client_chunk_end_ms,
         )
+        
+        # Update active_recording metadata
+        active = getattr(request.app.state, "active_recording", None)
+        if active and active.get("recording_id") == recording_id:
+            active["bytes_written"] = active.get("bytes_written", 0) + len(content)
+            active["chunk_count"] = active.get("chunk_count", 0) + 1
+            
+        return res
     except RecordingNotFound as exc:
         raise HTTPException(status_code=404, detail="Recording not found") from exc
     except RecordingConflict as exc:
@@ -88,7 +107,7 @@ async def append_recording_track_chunk(
     store: RecordingStore = request.app.state.recording_store
     try:
         content = await file.read()
-        return store.append_track_chunk(
+        res = store.append_track_chunk(
             recording_id,
             track_id,
             sequence,
@@ -99,6 +118,19 @@ async def append_recording_track_chunk(
             client_chunk_start_ms=client_chunk_start_ms,
             client_chunk_end_ms=client_chunk_end_ms,
         )
+        
+        # Update active_recording bytes_written and chunk_count
+        active = getattr(request.app.state, "active_recording", None)
+        if active and active.get("recording_id") == recording_id:
+            try:
+                rec_meta = store.get(recording_id, include_result=False)
+                active["bytes_written"] = sum(t.get("bytes_written", 0) for t in rec_meta.get("audio_tracks", []))
+                active["chunk_count"] = sum(t.get("chunk_count", 0) for t in rec_meta.get("audio_tracks", []))
+            except Exception:
+                active["bytes_written"] = active.get("bytes_written", 0) + len(content)
+                active["chunk_count"] = active.get("chunk_count", 0) + 1
+                
+        return res
     except RecordingNotFound as exc:
         raise HTTPException(status_code=404, detail="Recording not found") from exc
     except RecordingConflict as exc:
@@ -131,6 +163,9 @@ def recover_recording(recording_id: str, request: Request):
 def discard_recording(recording_id: str, request: Request):
     try:
         request.app.state.recording_store.discard(recording_id)
+        if getattr(request.app.state, "active_recording", None) and request.app.state.active_recording.get("recording_id") == recording_id:
+            request.app.state.active_recording = None
+            request.app.state.is_recording = False
         return Response(status_code=204)
     except RecordingNotFound as exc:
         raise HTTPException(status_code=404, detail="Recording not found") from exc
@@ -156,7 +191,49 @@ def stop_recording(recording_id: str, request: Request):
     except OSError as exc:
         raise HTTPException(status_code=507, detail=str(exc)) from exc
     finally:
+        request.app.state.active_recording = None
         request.app.state.is_recording = False
+
+
+@router.get("/v1/recordings/active")
+def get_active_recording(request: Request):
+    active = getattr(request.app.state, "active_recording", None)
+    if not active:
+        return {"active": False}
+    
+    recording_id = active["recording_id"]
+    # Check if native capture session is active to fetch volume and real status
+    session = request.app.state.capture_manager._sessions.get(recording_id)
+    
+    mic_db = -120.0
+    system_db = -120.0
+    warnings = []
+    
+    if session:
+        mic_db = session.last_volume.get("mic", -120.0)
+        system_db = session.last_volume.get("system", -120.0)
+        warnings = [w.get("message", "") for w in session.warnings]
+        
+        # Calculate actual bytes written on disk
+        bytes_written = 0
+        for f_name in ["mic.wav", "system.wav"]:
+            p = session.output_dir / f_name
+            if p.exists():
+                bytes_written += p.stat().st_size
+        active["bytes_written"] = bytes_written
+        
+    return {
+        "active": True,
+        "recording_id": recording_id,
+        "title": active.get("title"),
+        "capture_backend": active.get("capture_backend"),
+        "capture_mode": active.get("capture_mode"),
+        "started_at": active.get("started_at"),
+        "bytes_written": active.get("bytes_written", 0),
+        "mic_db": mic_db,
+        "system_db": system_db,
+        "warnings": warnings,
+    }
 
 
 @router.get("/v1/recordings/{recording_id}")
@@ -232,3 +309,94 @@ def get_recording_project(recording_id: str, request: Request):
         "transcription": transcription,
         "analysis": transcription.get("analysis") if transcription else None,
     }
+
+
+# get_active_recording moved above get_recording to resolve dynamic path parameter resolution issues
+
+
+@router.post("/v1/recordings/{recording_id}/control/stop", status_code=202)
+def control_stop_recording(recording_id: str, request: Request):
+    active = getattr(request.app.state, "active_recording", None)
+    backend = active.get("capture_backend") if active else "browser"
+    
+    # Check if there is an active native session to be absolutely sure
+    if request.app.state.capture_manager._sessions.get(recording_id):
+        backend = "native"
+        
+    if backend == "native":
+        from local_asr_server.routers.system import stop_capture
+        res = stop_capture(recording_id, request)
+        request.app.state.active_recording = None
+        request.app.state.is_recording = False
+        return res
+    else:
+        res = stop_recording(recording_id, request)
+        request.app.state.active_recording = None
+        request.app.state.is_recording = False
+        return {"recording": res}
+
+
+@router.get("/v1/recordings/{recording_id}/overlay/events")
+def overlay_events(recording_id: str, request: Request):
+    store = request.app.state.recording_store
+    try:
+        store.get(recording_id, include_result=False)
+    except RecordingNotFound as exc:
+        raise HTTPException(status_code=404, detail="Recording not found") from exc
+
+    def event_stream():
+        import json
+        import time
+        last_sent = None
+        while True:
+            active = getattr(request.app.state, "active_recording", None)
+            if not active or active.get("recording_id") != recording_id:
+                yield f"data: {json.dumps({'active': False})}\n\n"
+                return
+
+            session = request.app.state.capture_manager._sessions.get(recording_id)
+            
+            mic_db = -120.0
+            system_db = -120.0
+            warnings = []
+            
+            if session:
+                mic_db = session.last_volume.get("mic", -120.0)
+                system_db = session.last_volume.get("system", -120.0)
+                warnings = [w.get("message", "") for w in session.warnings]
+                
+                # Check actual bytes written on disk for native capture
+                bytes_written = 0
+                for f_name in ["mic.wav", "system.wav"]:
+                    p = session.output_dir / f_name
+                    if p.exists():
+                        bytes_written += p.stat().st_size
+                active["bytes_written"] = bytes_written
+            else:
+                # For browser recording, query total bytes from the store metadata
+                try:
+                    rec = store.get(recording_id, include_result=False)
+                    active["bytes_written"] = sum(t.get("bytes_written", 0) for t in rec.get("audio_tracks", []))
+                except Exception:
+                    pass
+
+            status_payload = {
+                "active": True,
+                "recording_id": recording_id,
+                "title": active.get("title"),
+                "capture_backend": active.get("capture_backend"),
+                "capture_mode": active.get("capture_mode"),
+                "started_at": active.get("started_at"),
+                "bytes_written": active.get("bytes_written", 0),
+                "mic_db": mic_db,
+                "system_db": system_db,
+                "warnings": warnings,
+            }
+
+            if status_payload != last_sent:
+                yield f"data: {json.dumps(status_payload)}\n\n"
+                last_sent = status_payload
+
+            time.sleep(0.25)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")

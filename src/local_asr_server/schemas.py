@@ -64,6 +64,11 @@ class TranscribeRecordingRequest(BaseModel):
 class OverlayRequest(BaseModel):
     show: bool
 
+class OverlayResizeRequest(BaseModel):
+    width: int
+    height: int
+
+
 class CaptureStartRequest(BaseModel):
     mode: str = "both"
 

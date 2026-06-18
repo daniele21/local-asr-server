@@ -166,3 +166,4 @@ frontend/.vite/*
 test-out-2/mic.wav
 test-out-2/recording.wav
 test-out-2/system.wav
+build_assets/native-capture-helper

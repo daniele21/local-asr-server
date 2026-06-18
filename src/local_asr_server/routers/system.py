@@ -15,6 +15,7 @@ from local_asr_server.llm import LLMService
 from local_asr_server.recordings import RecordingConflict, RecordingNotFound
 from local_asr_server.schemas import (
     OverlayRequest,
+    OverlayResizeRequest,
     CaptureStartRequest,
     SettingsRequest,
     AnalysisRequest,
@@ -146,6 +147,19 @@ def start_capture(recording_id: str, request: Request, body: CaptureStartRequest
         result = request.app.state.capture_manager.start(recording_id, session_dir, body.mode)
         store.mark_capture_started(recording_id, backend="native")
         request.app.state.is_recording = True
+        
+        # Initialize/update active recording metadata
+        rec_meta = store.get(recording_id, include_result=False)
+        request.app.state.active_recording = {
+            "recording_id": recording_id,
+            "title": rec_meta.get("title") or "Registrazione nativa",
+            "capture_backend": "native",
+            "capture_mode": body.mode,
+            "started_at": time.time(),
+            "bytes_written": 0,
+            "chunk_count": 0,
+            "stopped": False,
+        }
         return result
     except RecordingNotFound as exc:
         raise HTTPException(status_code=404, detail="Recording not found") from exc
@@ -194,6 +208,7 @@ def stop_capture(recording_id: str, request: Request):
             metadata = store.save_quality_report(recording_id, report)
         except Exception as exc:
             logger.warning("Failed to build recording quality report: %s", exc)
+        request.app.state.active_recording = None
         request.app.state.is_recording = False
         return {"capture": result, "recording": metadata}
     except RecordingNotFound as exc:
@@ -207,6 +222,7 @@ def cancel_capture(recording_id: str, request: Request):
     try:
         result = request.app.state.capture_manager.cancel(recording_id)
         request.app.state.recording_store.discard(recording_id)
+        request.app.state.active_recording = None
         request.app.state.is_recording = False
         return result
     except RecordingNotFound as exc:
@@ -288,6 +304,17 @@ def toggle_overlay_window(request: Request, body: OverlayRequest):
     else:
         run_on_main_thread(window_manager.hide_overlay)
         
+    return {"success": True}
+
+
+@router.post("/v1/system/window/overlay/resize")
+def resize_overlay_window(request: Request, body: OverlayResizeRequest):
+    window_manager = getattr(request.app.state, "window_manager", None)
+    if not window_manager:
+        return {"success": False, "error": "Native window manager not available"}
+        
+    from local_asr_server.window import run_on_main_thread
+    run_on_main_thread(lambda: window_manager.set_overlay_size(body.width, body.height))
     return {"success": True}
 
 

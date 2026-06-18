@@ -76,6 +76,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
   const eventSourceRef = useRef<EventSource | null>(null);
   const currentMicDbRef = useRef<number>(-120);
   const currentSysDbRef = useRef<number>(-120);
+  const bcRef = useRef<BroadcastChannel | null>(null);
 
   // Canvas Ref
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -251,8 +252,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     }
     
     // Broadcast final offline status to overlay
-    const finalBc = new BroadcastChannel('closedroom-recording');
-    finalBc.postMessage({
+    bcRef.current?.postMessage({
       type: 'status',
       isRecording: false,
       timer: '00:00',
@@ -261,7 +261,6 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
       signalLevelSystem: '-∞ dB',
       progressText: t('recording.progressNone')
     });
-    finalBc.close();
 
     // Hide native overlay
     ApiClient.toggleOverlay(false).catch(() => {});
@@ -293,19 +292,20 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     }
   }, [t, onSaved, releaseMedia, restoreAudioRoute, showToast]);
 
-  // Listen for remote overlay command and status requests
+  // Listen for remote overlay command and status requests and hold persistent BroadcastChannel
   useEffect(() => {
     const bc = new BroadcastChannel('closedroom-recording');
+    bcRef.current = bc;
     
     const handleMessage = (e: MessageEvent) => {
       const data = e.data;
       if (!data) return;
       
       if (data.type === 'command' && data.action === 'stop') {
+        bc.postMessage({ type: 'ack', action: 'stop' });
         stopRecording();
       } else if (data.type === 'request-status') {
-        const replyBc = new BroadcastChannel('closedroom-recording');
-        replyBc.postMessage({
+        bc.postMessage({
           type: 'status',
           isRecording: isRecordingRef.current,
           timer: timerRef.current,
@@ -314,7 +314,6 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
           signalLevelSystem: signalLevelSystemRef.current,
           progressText: progressTextRef.current
         });
-        replyBc.close();
       }
     };
     
@@ -323,6 +322,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     return () => {
       bc.removeEventListener('message', handleMessage);
       bc.close();
+      bcRef.current = null;
     };
   }, [stopRecording]);
 
@@ -430,10 +430,9 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
           setTimer(`${mins}:${secs}`);
         }, 250);
 
-        // Start status broadcast interval for the overlay window
+        // Start status broadcast interval for the overlay window (every 300ms)
         broadcastIntervalRef.current = setInterval(() => {
-          const bc = new BroadcastChannel('closedroom-recording');
-          bc.postMessage({
+          bcRef.current?.postMessage({
             type: 'status',
             isRecording: true,
             timer: timerRef.current,
@@ -442,8 +441,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
             signalLevelSystem: signalLevelSystemRef.current,
             progressText: progressTextRef.current
           });
-          bc.close();
-        }, 100);
+        }, 300);
 
         // Request showing the native overlay panel
         ApiClient.toggleOverlay(true).then((res) => {
@@ -642,10 +640,9 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
         setTimer(`${mins}:${secs}`);
       }, 250);
 
-      // Start status broadcast interval for the overlay window
+      // Start status broadcast interval for the overlay window (every 300ms)
       broadcastIntervalRef.current = setInterval(() => {
-        const bc = new BroadcastChannel('closedroom-recording');
-        bc.postMessage({
+        bcRef.current?.postMessage({
           type: 'status',
           isRecording: true,
           timer: timerRef.current,
@@ -654,8 +651,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
           signalLevelSystem: signalLevelSystemRef.current,
           progressText: progressTextRef.current
         });
-        bc.close();
-      }, 100);
+      }, 300);
 
       // Request showing the native overlay panel, fallback to browser window.open if unavailable
       ApiClient.toggleOverlay(true).then((res) => {

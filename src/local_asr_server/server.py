@@ -62,6 +62,7 @@ def create_app(
 
     app.state.default_model = default_model
     app.state.is_recording = False
+    app.state.active_recording = None
     app.state.is_transcribing = False
     app.state.capture_manager = NativeCaptureManager()
     app.state.transcription_jobs = TranscriptionJobManager()

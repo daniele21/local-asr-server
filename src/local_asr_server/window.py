@@ -268,8 +268,33 @@ class ClosedRoomWindowManager:
     def hide_overlay(self) -> None:
         """Hide the floating recording overlay panel."""
         if self.overlay_window:
+            self._save_overlay_position()
             self.overlay_window.orderOut_(None)
             logger.info("Hiding overlay window.")
+
+    def _save_overlay_position(self) -> None:
+        if self.overlay_window:
+            frame = self.overlay_window.frame()
+            x = frame.origin.x
+            y = frame.origin.y
+            try:
+                from local_asr_server.settings import load_settings, save_settings
+                settings = load_settings()
+                settings["overlay_position"] = {"x": float(x), "y": float(y)}
+                save_settings(settings)
+                logger.info("Saved overlay position: x=%s, y=%s", x, y)
+            except Exception as e:
+                logger.warning("Failed to save overlay position: %s", e)
+
+    def set_overlay_size(self, width: int, height: int) -> None:
+        """Resize the overlay window panel, keeping top-left corner fixed and animating the transition."""
+        if self.overlay_window:
+            frame = self.overlay_window.frame()
+            old_h = frame.size.height
+            new_y = frame.origin.y + old_h - height
+            new_frame = ((frame.origin.x, new_y), (width, height))
+            self.overlay_window.setFrame_display_animate_(new_frame, True, True)
+            logger.info("Resized overlay window to %dx%d", width, height)
 
     def _create_overlay_window(self) -> None:
         """Initialize the floating NSPanel for recording status monitoring."""
@@ -278,16 +303,37 @@ class ClosedRoomWindowManager:
         # Non-activating panel, borderless, always on top
         style_mask = NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
 
-        # Place the panel at the top-right of the screen by default
+        # Place the panel on the active screen visible frame (respecting menu bar and Dock)
         screen = NSScreen.mainScreen()
-        screen_frame = screen.frame()
+        screen_frame = screen.visibleFrame()
         screen_w = screen_frame.size.width
         screen_h = screen_frame.size.height
+        screen_x = screen_frame.origin.x
+        screen_y = screen_frame.origin.y
 
-        width = 290
-        height = 110
-        # Position: 40px from top of screen, 40px from right edge
-        rect = ((screen_w - width - 40, screen_h - height - 80), (width, height))
+        # Default compact dimensions
+        width = 300
+        height = 130
+
+        # Load saved position if available
+        saved_pos = None
+        try:
+            from local_asr_server.settings import load_settings
+            settings = load_settings()
+            saved_pos = settings.get("overlay_position")
+        except Exception:
+            pass
+
+        if saved_pos and "x" in saved_pos and "y" in saved_pos:
+            x = saved_pos["x"]
+            y = saved_pos["y"]
+            # Clamp to screen visible frame to avoid being out of bounds
+            x = max(screen_x, min(x, screen_x + screen_w - width))
+            y = max(screen_y, min(y, screen_y + screen_h - height))
+            rect = ((x, y), (width, height))
+        else:
+            # Position: 40px from right of visible frame, 40px below top of visible frame
+            rect = ((screen_x + screen_w - width - 40, screen_y + screen_h - height - 40), (width, height))
 
         # Create overlay window (NSPanel)
         self.overlay_window = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
@@ -296,7 +342,15 @@ class ClosedRoomWindowManager:
         
         # Configure floating panel behavior
         self.overlay_window.setLevel_(NSFloatingWindowLevel)
-        self.overlay_window.setCollectionBehavior_(NSWindowCollectionBehaviorCanJoinAllSpaces)
+        
+        # Include FullScreenAuxiliary behaviour (allows panel on full-screen Spaces and Stage Manager)
+        try:
+            from AppKit import NSWindowCollectionBehaviorFullScreenAuxiliary
+            behavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary
+        except ImportError:
+            behavior = NSWindowCollectionBehaviorCanJoinAllSpaces | 256  # 256 is FullScreenAuxiliary
+            
+        self.overlay_window.setCollectionBehavior_(behavior)
         self.overlay_window.setHidesOnDeactivate_(False)
         self.overlay_window.setMovableByWindowBackground_(True) # Allow dragging from anywhere
         self.overlay_window.setHasShadow_(True)
@@ -331,6 +385,7 @@ class ClosedRoomWindowManager:
             self.window.close()
             self.window = None
         if self.overlay_window:
+            self._save_overlay_position()
             self.overlay_window.close()
             self.overlay_window = None
         self._delegate = None
