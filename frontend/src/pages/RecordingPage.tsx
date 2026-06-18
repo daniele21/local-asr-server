@@ -65,10 +65,16 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
     return nativeCaptureUnavailableReason || t('recording.nativeCaptureUnavailableUnknown');
   })();
   const needsComputerAudio = sourceMode !== 'mic_only';
-  const micReady = sourceMode === 'pc_only' || recorder.microphones.length > 0 || recorder.selectedMicrophone === '';
-  const computerReady = !needsComputerAudio || nativeCaptureReady || Boolean(recorder.audioRouteStatus?.ready_to_record) || recorder.systemDevices.length > 0;
+  const micReady = nativeCaptureReady
+    ? (sourceMode === 'pc_only' || recorder.capturePermissions?.microphone === 'authorized')
+    : (sourceMode === 'pc_only' || recorder.microphones.length > 0 || recorder.selectedMicrophone === '');
+  const computerReady = nativeCaptureReady
+    ? (sourceMode === 'mic_only' || recorder.capturePermissions?.screen_capture === 'granted')
+    : (!needsComputerAudio || Boolean(recorder.audioRouteStatus?.ready_to_record) || recorder.systemDevices.length > 0);
   const storageReady = recordingsDir.trim().length > 0;
-  const readyToRecord = micReady && computerReady && storageReady;
+  const readyToRecord = nativeCaptureReady
+    ? ((recorder.capturePermissions?.modes?.[sourceMode]?.ok ?? false) && storageReady)
+    : (micReady && computerReady && storageReady);
   const captureModeOptions = [
     { value: 'both', label: t('recording.captureModeBoth') },
     { value: 'mic_only', label: t('recording.captureModeMicOnly') },
@@ -465,6 +471,54 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
               </div>
             </div>
 
+            {recorder.permissionsErrorDetails && (
+              <div className="p-5 border border-danger/30 bg-danger/5 rounded-xl flex flex-col gap-4 text-xs text-text-secondary animate-in fade-in duration-200">
+                <div className="flex items-center gap-2 text-danger font-bold text-sm">
+                  <span>⚠️</span>
+                  <span>{t('recording.permissionsErrorTitle') || 'Dettagli Errore Permessi macOS'}</span>
+                </div>
+                <p className="text-text-primary font-medium">
+                  {t('recording.permissionsErrorDesc') || 'ClosedRoom non riesce ad accedere al microfono o all\'audio di sistema dal processo di cattura nativo.'}
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 rounded-lg bg-bg-surface/50 border border-border-subtle/70 font-mono text-[10px] text-text-muted">
+                  <div>
+                    <span className="block text-text-secondary font-bold mb-1">Processo effettivo:</span>
+                    <span className="block break-all bg-bg-surface p-1.5 rounded border border-border-subtle select-all">
+                      {recorder.permissionsErrorDetails.executable_path || 'N/A'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="block text-text-secondary font-bold mb-1">Stato macOS rilevato:</span>
+                    <span className="block mt-1">
+                      🎤 Microphone: <strong className={recorder.permissionsErrorDetails.microphone === 'authorized' ? 'text-success' : 'text-danger'}>
+                        {recorder.permissionsErrorDetails.microphone}
+                      </strong>
+                    </span>
+                    <span className="block mt-1">
+                      🖥️ Screen Capture: <strong className={recorder.permissionsErrorDetails.screen_capture === 'granted' ? 'text-success' : 'text-danger'}>
+                        {recorder.permissionsErrorDetails.screen_capture}
+                      </strong>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <span className="font-bold text-text-primary">{t('recording.permissionsActionsTitle') || 'Azioni consigliate:'}</span>
+                  <ul className="list-disc pl-4 flex flex-col gap-1.5 text-text-secondary">
+                    <li>{t('recording.permissionsAction1') || 'Riavvia ClosedRoom dopo aver concesso i permessi in Impostazioni di Sistema.'}</li>
+                    <li>
+                      {t('recording.permissionsAction2') || 'Se sei in dev mode, esegui il reset pratico dei permessi TCC dal terminale:'}
+                      <pre className="mt-1.5 p-2 bg-bg-surface rounded border border-border-subtle text-[10px] font-mono text-text-muted select-all">
+                        tccutil reset Microphone{"\n"}
+                        tccutil reset ScreenCapture
+                      </pre>
+                    </li>
+                    <li>{t('recording.permissionsAction3') || 'Se il problema persiste, verifica che l\'eseguibile sia firmato e abbia gli entitlements corretti.'}</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
             {/* Controls Actions */}
             <div className="flex flex-wrap gap-4 mt-2">
               {!recorder.isRecording ? (
@@ -473,7 +527,7 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
                     size="lg"
                     className="flex-1 min-w-[200px]"
                     onClick={() => recorder.startRecording(title, projectName, '', sourceMode)}
-                    disabled={recorder.isVerifying}
+                    disabled={recorder.isVerifying || !readyToRecord}
                   >
                     🎙️ {t('recording.btnStart')}
                   </Button>
@@ -668,9 +722,28 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
             </div>
 
             <div className="grid grid-cols-1 gap-1.5 text-[11px] text-text-secondary">
-              <span>{micReady ? '✅' : '⚠️'} {t('recording.microphone')}</span>
-              <span>{computerReady ? '✅' : '⚠️'} {t('recording.computerAudio')}</span>
-              <span>{storageReady ? '✅' : '⚠️'} {t('recording.storageConfigTitle')}</span>
+              <span>
+                {sourceMode === 'pc_only'
+                  ? `✅ ${t('recording.microphone')} (${t('recording.notNeeded') || 'Non richiesto'})`
+                  : micReady
+                    ? `✅ ${t('recording.readinessMicAuthorized') || 'Microfono autorizzato'}`
+                    : `❌ ${t('recording.readinessMicUnauthorized') || 'Microfono non autorizzato'}`
+                }
+              </span>
+              <span>
+                {sourceMode === 'mic_only'
+                  ? `✅ ${t('recording.computerAudio')} (${t('recording.notNeeded') || 'Non richiesto'})`
+                  : computerReady
+                    ? `✅ ${t('recording.readinessComputerAuthorized') || 'Audio computer autorizzato'}`
+                    : `❌ ${t('recording.readinessComputerUnauthorized') || 'Audio computer non autorizzato'}`
+                }
+              </span>
+              <span>
+                {storageReady
+                  ? `✅ ${t('recording.storageConfigTitle')}`
+                  : `❌ ${t('recording.storageConfigTitle')} (${t('recording.storageConfigMissing') || 'Configurazione cartella mancante'})`
+                }
+              </span>
             </div>
 
             <Button

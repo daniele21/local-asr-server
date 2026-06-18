@@ -133,6 +133,21 @@ func requireArg(_ name: String, in args: [String]) -> String? {
     return args[index + 1]
 }
 
+func micStatusString(_ status: AVAuthorizationStatus) -> String {
+    switch status {
+    case .authorized:
+        return "authorized"
+    case .denied:
+        return "denied"
+    case .restricted:
+        return "restricted"
+    case .notDetermined:
+        return "notDetermined"
+    @unknown default:
+        return "unknown"
+    }
+}
+
 func capabilityPayload() -> [String: Any] {
     let processInfo = ProcessInfo.processInfo
     let isAtLeastMacOS13 = processInfo.isOperatingSystemAtLeast(
@@ -156,7 +171,7 @@ func capabilityPayload() -> [String: Any] {
         "modes": available ? ["both", "mic_only", "pc_only"] : [],
         "minimum_macos": "13.0",
         "screen_recording_permission": screenCaptureAllowed ? "granted" : "required",
-        "microphone_permission": "\(micStatus)",
+        "microphone_permission": micStatusString(micStatus),
     ]
 }
 
@@ -167,7 +182,7 @@ func permissionsPayload() -> [String: Any] {
     let screenOk = screenCaptureAllowed
     return [
         "ok": micOk && screenOk,
-        "microphone": "\(micStatus)",
+        "microphone": micStatusString(micStatus),
         "screen_capture": screenCaptureAllowed ? "granted" : "required",
         "modes": [
             "mic_only": ["ok": micOk],
@@ -226,15 +241,6 @@ func getCodeSignatureInfo() -> [String: Any] {
 func diagnosticsPayload() -> [String: Any] {
     let processInfo = ProcessInfo.processInfo
     let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
-    let micStatusString: String
-    switch micStatus {
-    case .authorized: micStatusString = "authorized"
-    case .denied: micStatusString = "denied"
-    case .restricted: micStatusString = "restricted"
-    case .notDetermined: micStatusString = "notDetermined"
-    @unknown default: micStatusString = "unknown"
-    }
-    
     let screenCaptureAllowed = CGPreflightScreenCaptureAccess()
     let sigInfo = getCodeSignatureInfo()
     
@@ -244,7 +250,7 @@ func diagnosticsPayload() -> [String: Any] {
         "bundle_identifier": Bundle.main.bundleIdentifier ?? "",
         "bundle_path": Bundle.main.bundlePath,
         "screen_capture": screenCaptureAllowed ? "granted" : "required",
-        "microphone": micStatusString,
+        "microphone": micStatusString(micStatus),
         "code_signature": sigInfo["signature"] ?? "unsigned",
         "team_id": sigInfo["team_id"] ?? "",
         "identifier": sigInfo["identifier"] ?? "",
@@ -789,22 +795,14 @@ func runStart(recordingID: String, outputDir: String, mode: String) {
     }
 
     if !missing.isEmpty {
-        let micStatusString: String
-        switch micStatus {
-        case .authorized: micStatusString = "authorized"
-        case .denied: micStatusString = "denied"
-        case .restricted: micStatusString = "restricted"
-        case .notDetermined: micStatusString = "notDetermined"
-        @unknown default: micStatusString = "unknown"
-        }
-
         JSONEmitter.shared.emitAndExit([
             "type": "error",
             "recording_id": recordingID,
             "reason": "permissions_missing",
             "missing_permissions": missing,
-            "microphone": micStatusString,
+            "microphone": micStatusString(micStatus),
             "screen_capture": screenCaptureAllowed ? "granted" : "required",
+            "executable_path": Bundle.main.executablePath ?? CommandLine.arguments.first ?? "",
             "message": "Required permissions are missing: \(missing.joined(separator: ", "))"
         ], exitCode: 3)
     }

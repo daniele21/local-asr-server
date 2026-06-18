@@ -230,7 +230,18 @@ const en = {
     noActiveRecording: 'No active recording',
     healthAbsent: 'Absent/Mute',
     healthSilent: 'Silent',
-    healthActive: 'Active'
+    healthActive: 'Active',
+    readinessMicAuthorized: 'Microphone authorized',
+    readinessMicUnauthorized: 'Microphone unauthorized (permissions missing)',
+    readinessComputerAuthorized: 'Computer audio authorized',
+    readinessComputerUnauthorized: 'Computer audio unauthorized (permissions missing)',
+    permissionsErrorTitle: 'macOS Permissions Error Details',
+    permissionsErrorDesc: 'ClosedRoom cannot access the microphone or system audio from the native capture process.',
+    permissionsActionsTitle: 'Recommended Actions:',
+    permissionsAction1: 'Restart ClosedRoom after granting permissions in System Settings.',
+    permissionsAction2: 'If you are in dev mode, reset TCC permissions from terminal and relaunch:',
+    permissionsAction3: 'If the problem persists, verify the executable is signed and has correct entitlements.',
+    notNeeded: 'Not required'
   },
   transcription: {
     title: 'Transcription',

@@ -230,7 +230,18 @@ const it = {
     noActiveRecording: 'Nessuna registrazione attiva',
     healthAbsent: 'Assente/Muto',
     healthSilent: 'Silente',
-    healthActive: 'Attivo'
+    healthActive: 'Attivo',
+    readinessMicAuthorized: 'Microfono autorizzato',
+    readinessMicUnauthorized: 'Microfono non autorizzato (permessi mancanti)',
+    readinessComputerAuthorized: 'Audio computer autorizzato',
+    readinessComputerUnauthorized: 'Audio computer non autorizzato (permessi mancanti)',
+    permissionsErrorTitle: 'Dettagli Errore Permessi macOS',
+    permissionsErrorDesc: 'ClosedRoom non riesce ad accedere al microfono o all\'audio di sistema dal processo di cattura nativo.',
+    permissionsActionsTitle: 'Azioni consigliate:',
+    permissionsAction1: 'Riavvia ClosedRoom dopo aver concesso i permessi in Impostazioni di Sistema.',
+    permissionsAction2: 'Se sei in dev mode, esegui il reset pratico dei permessi TCC dal terminale e rilancia:',
+    permissionsAction3: 'Se il problema persiste, verifica che l\'eseguibile sia firmato e abbia gli entitlements corretti.',
+    notNeeded: 'Non richiesto'
   },
   transcription: {
     title: 'Trascrizione',

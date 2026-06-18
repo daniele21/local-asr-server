@@ -45,14 +45,23 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     setSelectedSystemDevice,
     audioRouteStatus,
     captureCapabilities,
+    capturePermissions,
     isTestRouted,
     setIsTestRouted,
     isVerifying,
     setIsVerifying,
     loadDevices,
     refreshAudioStatus,
-    refreshCaptureCapabilities
+    refreshCaptureCapabilities,
+    refreshCapturePermissions
   } = useAudioDevices();
+
+  const [permissionsErrorDetails, setPermissionsErrorDetails] = useState<{
+    missing_permissions: string[];
+    microphone: string;
+    screen_capture: string;
+    executable_path: string;
+  } | null>(null);
 
   // Audio Context Ref
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -371,6 +380,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
       return;
     }
 
+    setPermissionsErrorDetails(null);
     setStatusText(t('recording.audioSetupTitle'));
     setStatusState('working');
     try {
@@ -453,6 +463,12 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
               setIsRecording(false);
 
               if (data.reason === 'permissions_missing') {
+                setPermissionsErrorDetails({
+                  missing_permissions: data.missing_permissions || [],
+                  microphone: data.microphone || 'unknown',
+                  screen_capture: data.screen_capture || 'required',
+                  executable_path: data.executable_path || '',
+                });
                 const missingPerms = data.missing_permissions || [];
                 let errorMsg = '';
                 if (missingPerms.includes('microphone') && missingPerms.includes('screen_capture')) {
@@ -786,6 +802,9 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     signalLevelSystem,
     progressText,
     captureCapabilities,
+    capturePermissions,
+    refreshCapturePermissions,
+    permissionsErrorDetails,
     statusText,
     statusState,
     microphones,

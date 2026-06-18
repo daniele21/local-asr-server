@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ApiClient, CaptureCapabilities } from '../api/apiClient';
+import { ApiClient, CaptureCapabilities, CapturePermissions } from '../api/apiClient';
 import { useTranslation } from '../i18n/i18n';
 
 export interface AudioDevice {
@@ -24,6 +24,7 @@ export function useAudioDevices() {
   const [selectedSystemDevice, setSelectedSystemDevice] = useState('');
   const [audioRouteStatus, setAudioRouteStatus] = useState<AudioRouteStatus | null>(null);
   const [captureCapabilities, setCaptureCapabilities] = useState<CaptureCapabilities | null>(null);
+  const [capturePermissions, setCapturePermissions] = useState<CapturePermissions | null>(null);
   const [isTestRouted, setIsTestRouted] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
 
@@ -81,21 +82,31 @@ export function useAudioDevices() {
     }
   }, []);
 
+  const refreshCapturePermissions = useCallback(async () => {
+    try {
+      setCapturePermissions(await ApiClient.capturePermissions());
+    } catch {
+      setCapturePermissions(null);
+    }
+  }, []);
+
   useEffect(() => {
     loadDevices();
     refreshAudioStatus();
     refreshCaptureCapabilities();
+    refreshCapturePermissions();
 
     const handleDeviceChange = () => {
       loadDevices();
       refreshAudioStatus();
+      refreshCapturePermissions();
     };
 
     navigator.mediaDevices?.addEventListener?.('devicechange', handleDeviceChange);
     return () => {
       navigator.mediaDevices?.removeEventListener?.('devicechange', handleDeviceChange);
     };
-  }, [loadDevices, refreshAudioStatus, refreshCaptureCapabilities]);
+  }, [loadDevices, refreshAudioStatus, refreshCaptureCapabilities, refreshCapturePermissions]);
 
   return {
     microphones,
@@ -108,12 +119,15 @@ export function useAudioDevices() {
     setAudioRouteStatus,
     captureCapabilities,
     setCaptureCapabilities,
+    capturePermissions,
+    setCapturePermissions,
     isTestRouted,
     setIsTestRouted,
     isVerifying,
     setIsVerifying,
     loadDevices,
     refreshAudioStatus,
-    refreshCaptureCapabilities
+    refreshCaptureCapabilities,
+    refreshCapturePermissions
   };
 }

@@ -78,6 +78,17 @@ export interface ExpectedSequence {
   audio_file_exists: boolean;
 }
 
+export interface CapturePermissions {
+  ok: boolean;
+  microphone: 'authorized' | 'denied' | 'restricted' | 'notDetermined' | 'unknown';
+  screen_capture: 'granted' | 'required';
+  modes: {
+    mic_only: { ok: boolean };
+    pc_only: { ok: boolean };
+    both: { ok: boolean };
+  };
+}
+
 export interface CaptureCapabilities {
   default_backend: 'native' | 'browser';
   native: {
@@ -223,6 +234,10 @@ export const ApiClient = {
 
   async captureCapabilities(): Promise<CaptureCapabilities> {
     return (await request('/v1/capture/capabilities')).json();
+  },
+
+  async capturePermissions(): Promise<CapturePermissions> {
+    return (await request('/v1/capture/permissions')).json();
   },
 
   async listRecordings(): Promise<{ items: Recording[] }> {
