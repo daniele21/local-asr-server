@@ -73,7 +73,7 @@ if ! command -v pnpm &> /dev/null; then
     die "pnpm not found. Please install it: npm install -g pnpm"
 fi
 cd "$SCRIPT_DIR/frontend"
-pnpm install
+CI=true pnpm install --frozen-lockfile
 pnpm run build
 cd "$SCRIPT_DIR"
 ok "React frontend built successfully"
@@ -266,18 +266,78 @@ log "  Fixing permissions..."
 find "$APP_PATH" -name "*.dylib" -exec chmod 755 {} \;
 find "$APP_PATH" -name "*.so" -exec chmod 755 {} \;
 chmod +x "$APP_PATH/Contents/MacOS/$APP_NAME"
-chmod +x "$APP_PATH/Contents/MacOS/audio-helper" 2>/dev/null || true
-chmod +x "$APP_PATH/Contents/MacOS/native-capture-helper" 2>/dev/null || true
-chmod +x "$APP_PATH/Contents/MacOS/ffmpeg" 2>/dev/null || true
 
-log "  Applying ad-hoc code signature..."
+find_bundled_binary() {
+    local name="$1"
+    local path
+
+    for path in \
+        "$APP_PATH/Contents/MacOS/$name" \
+        "$APP_PATH/Contents/Frameworks/$name" \
+        "$APP_PATH/Contents/Resources/$name"; do
+        if [[ -f "$path" ]]; then
+            echo "$path"
+            return 0
+        fi
+    done
+
+    find "$APP_PATH/Contents" -type f -name "$name" -print -quit
+}
+
+AUDIO_HELPER_IN_APP="$(find_bundled_binary "audio-helper")"
+NATIVE_HELPER_IN_APP="$(find_bundled_binary "native-capture-helper")"
+FFMPEG_IN_APP="$(find_bundled_binary "ffmpeg")"
+
+[[ -n "$AUDIO_HELPER_IN_APP" ]] || die "audio-helper not found in app bundle"
+[[ -n "$NATIVE_HELPER_IN_APP" ]] || die "native-capture-helper not found in app bundle"
+[[ -n "$FFMPEG_IN_APP" ]] || die "ffmpeg not found in app bundle"
+
+chmod +x "$AUDIO_HELPER_IN_APP"
+chmod +x "$NATIVE_HELPER_IN_APP"
+chmod +x "$FFMPEG_IN_APP"
+
+log "  Applying ad-hoc code signatures..."
 ENTITLEMENTS="$BUILD_ASSETS/entitlements.plist"
-codesign --force --deep --sign - \
-    --entitlements "$ENTITLEMENTS" \
-    --options runtime \
-    "$APP_PATH" \
-    && ok "Ad-hoc signed" \
-    || warn "codesign failed — app may show Gatekeeper warnings"
+
+is_macho() {
+    file "$1" | grep -q "Mach-O"
+}
+
+sign_plain() {
+    local target="$1"
+    if is_macho "$target"; then
+        codesign --force --sign - --timestamp=none "$target" \
+            || die "codesign failed for $target"
+    fi
+}
+
+sign_entitled() {
+    local target="$1"
+    codesign --force \
+        --sign - \
+        --timestamp=none \
+        --options runtime \
+        --entitlements "$ENTITLEMENTS" \
+        "$target" \
+        || die "codesign failed for $target"
+}
+
+while IFS= read -r -d '' target; do
+    sign_plain "$target"
+done < <(
+    find "$APP_PATH/Contents/Frameworks" \
+        -type f \( -name "*.dylib" -o -name "*.so" -o -perm -111 \) \
+        -print0
+)
+
+sign_entitled "$AUDIO_HELPER_IN_APP"
+sign_entitled "$NATIVE_HELPER_IN_APP"
+sign_entitled "$FFMPEG_IN_APP"
+sign_entitled "$APP_PATH/Contents/MacOS/$APP_NAME"
+sign_entitled "$APP_PATH"
+codesign --verify --strict --verbose=2 "$APP_PATH" \
+    || die "codesign verification failed for $APP_PATH"
+ok "Ad-hoc signed"
 
 
 APP_SIZE=$(du -sh "$APP_PATH" | cut -f1)

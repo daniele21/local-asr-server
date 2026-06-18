@@ -237,6 +237,7 @@ const it = {
     readinessComputerUnauthorized: 'Audio computer non autorizzato (permessi mancanti)',
     permissionsErrorTitle: 'Dettagli Errore Permessi macOS',
     permissionsErrorDesc: 'ClosedRoom non riesce ad accedere al microfono o all\'audio di sistema dal processo di cattura nativo.',
+    permissionsUnsignedHelper: 'Il componente nativo di registrazione non è firmato correttamente. Reinstalla o ricompila ClosedRoom.',
     permissionsActionsTitle: 'Azioni consigliate:',
     permissionsAction1: 'Riavvia ClosedRoom dopo aver concesso i permessi in Impostazioni di Sistema.',
     permissionsAction2: 'Se sei in dev mode, esegui il reset pratico dei permessi TCC dal terminale e rilancia:',

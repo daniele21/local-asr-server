@@ -102,6 +102,19 @@ export interface CaptureCapabilities {
   fallbacks: string[];
 }
 
+export interface CaptureDiagnostics {
+  process_name?: string;
+  executable_path?: string;
+  bundle_identifier?: string;
+  bundle_path?: string;
+  screen_capture?: 'granted' | 'required' | string;
+  microphone?: 'authorized' | 'denied' | 'restricted' | 'notDetermined' | 'unknown' | string;
+  code_signature?: 'signed' | 'unsigned' | string;
+  team_id?: string;
+  identifier?: string;
+  macos_version?: string;
+}
+
 export interface TranscriptionJob {
   id: string;
   recording_id: string;
@@ -499,7 +512,7 @@ export const ApiClient = {
     }
   },
 
-  async getCaptureDiagnostics(): Promise<any> {
+  async getCaptureDiagnostics(): Promise<CaptureDiagnostics> {
     return (await request('/v1/capture/diagnostics')).json();
   }
 };

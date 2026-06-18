@@ -237,6 +237,7 @@ const en = {
     readinessComputerUnauthorized: 'Computer audio unauthorized (permissions missing)',
     permissionsErrorTitle: 'macOS Permissions Error Details',
     permissionsErrorDesc: 'ClosedRoom cannot access the microphone or system audio from the native capture process.',
+    permissionsUnsignedHelper: 'The native recording component is not signed correctly. Reinstall or rebuild ClosedRoom.',
     permissionsActionsTitle: 'Recommended Actions:',
     permissionsAction1: 'Restart ClosedRoom after granting permissions in System Settings.',
     permissionsAction2: 'If you are in dev mode, reset TCC permissions from terminal and relaunch:',

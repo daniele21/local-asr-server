@@ -61,6 +61,10 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     microphone: string;
     screen_capture: string;
     executable_path: string;
+    bundle_identifier: string;
+    code_signature: string;
+    team_id: string;
+    identifier: string;
   } | null>(null);
 
   // Audio Context Ref
@@ -468,10 +472,16 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
                   microphone: data.microphone || 'unknown',
                   screen_capture: data.screen_capture || 'required',
                   executable_path: data.executable_path || '',
+                  bundle_identifier: data.bundle_identifier || '',
+                  code_signature: data.code_signature || 'unknown',
+                  team_id: data.team_id || '',
+                  identifier: data.identifier || '',
                 });
                 const missingPerms = data.missing_permissions || [];
                 let errorMsg = '';
-                if (missingPerms.includes('microphone') && missingPerms.includes('screen_capture')) {
+                if (data.code_signature === 'unsigned') {
+                  errorMsg = t('recording.permissionsUnsignedHelper') || 'The native recording component is not signed correctly. Reinstall or rebuild ClosedRoom.';
+                } else if (missingPerms.includes('microphone') && missingPerms.includes('screen_capture')) {
                   errorMsg = t('recording.permissionsMissingBoth') || 'Mancano i permessi per il Microfono e la Registrazione dello schermo.';
                 } else if (missingPerms.includes('microphone')) {
                   errorMsg = t('recording.permissionsMissingMic') || 'Manca il permesso per il Microfono. Apri Impostazioni di Sistema -> Privacy e Sicurezza -> Microfono e abilita ClosedRoom.';

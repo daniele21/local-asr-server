@@ -57,9 +57,11 @@ if not ffmpeg_bin.exists():
 # ── Collect binaries: audio-helper + ffmpeg ────────────────────────────────────
 
 extra_binaries = [
-    (str(AUDIO_HELPER), "."),        # → Contents/MacOS/audio-helper
-    (str(NATIVE_CAPTURE_HELPER), "."),  # → Contents/MacOS/native-capture-helper
-    (str(ffmpeg_bin), "."),          # → Contents/MacOS/ffmpeg
+    # PyInstaller may stage collected binaries under Contents/Frameworks in
+    # macOS app bundles; build.sh discovers and signs the realized paths.
+    (str(AUDIO_HELPER), "."),
+    (str(NATIVE_CAPTURE_HELPER), "."),
+    (str(ffmpeg_bin), "."),
 ]
 
 # Collect ffmpeg dylibs from build_assets/lib/ if present (bundled by build.sh)
@@ -227,6 +229,8 @@ app = BUNDLE(                                                           # noqa: 
         "NSHighResolutionCapable": True,
         "NSMicrophoneUsageDescription":
             "ClosedRoom needs microphone access to record meetings.",
+        "NSAudioCaptureUsageDescription":
+            "ClosedRoom records computer audio to transcribe meetings and local audio sources.",
         "NSScreenCaptureUsageDescription":
             "ClosedRoom needs screen and system audio capture access for native recording.",
         "NSAppleEventsUsageDescription":

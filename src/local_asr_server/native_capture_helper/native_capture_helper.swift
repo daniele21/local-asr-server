@@ -223,6 +223,12 @@ func getCodeSignatureInfo() -> [String: Any] {
         info["error"] = "SecCodeCopyStaticCode failed with status \(staticStatus)"
         return info
     }
+    let validityStatus = SecStaticCodeCheckValidity(sCode, SecCSFlags(), nil)
+    if validityStatus == errSecSuccess {
+        info["signature"] = "signed"
+    } else {
+        info["validation_error"] = "SecStaticCodeCheckValidity failed with status \(validityStatus)"
+    }
     var infoDict: CFDictionary?
     let infoStatus = SecCodeCopySigningInformation(sCode, SecCSFlags(rawValue: kSecCSSigningInformation), &infoDict)
     guard infoStatus == errSecSuccess, let dict = infoDict as? [String: Any] else {
@@ -231,7 +237,6 @@ func getCodeSignatureInfo() -> [String: Any] {
     }
     
     if dict["teamid"] != nil {
-        info["signature"] = "signed"
         info["team_id"] = dict["teamid"] as? String ?? ""
     }
     info["identifier"] = dict["identifier"] as? String ?? ""
@@ -795,6 +800,7 @@ func runStart(recordingID: String, outputDir: String, mode: String) {
     }
 
     if !missing.isEmpty {
+        let sigInfo = getCodeSignatureInfo()
         JSONEmitter.shared.emitAndExit([
             "type": "error",
             "recording_id": recordingID,
@@ -803,6 +809,10 @@ func runStart(recordingID: String, outputDir: String, mode: String) {
             "microphone": micStatusString(micStatus),
             "screen_capture": screenCaptureAllowed ? "granted" : "required",
             "executable_path": Bundle.main.executablePath ?? CommandLine.arguments.first ?? "",
+            "bundle_identifier": Bundle.main.bundleIdentifier ?? "",
+            "code_signature": sigInfo["signature"] ?? "unsigned",
+            "team_id": sigInfo["team_id"] ?? "",
+            "identifier": sigInfo["identifier"] ?? "",
             "message": "Required permissions are missing: \(missing.joined(separator: ", "))"
         ], exitCode: 3)
     }

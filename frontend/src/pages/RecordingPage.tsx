@@ -478,7 +478,9 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
                   <span>{t('recording.permissionsErrorTitle') || 'Dettagli Errore Permessi macOS'}</span>
                 </div>
                 <p className="text-text-primary font-medium">
-                  {t('recording.permissionsErrorDesc') || 'ClosedRoom non riesce ad accedere al microfono o all\'audio di sistema dal processo di cattura nativo.'}
+                  {recorder.permissionsErrorDetails.code_signature === 'unsigned'
+                    ? (t('recording.permissionsUnsignedHelper') || 'Il componente nativo di registrazione non è firmato correttamente. Reinstalla o ricompila ClosedRoom.')
+                    : (t('recording.permissionsErrorDesc') || 'ClosedRoom non riesce ad accedere al microfono o all\'audio di sistema dal processo di cattura nativo.')}
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 rounded-lg bg-bg-surface/50 border border-border-subtle/70 font-mono text-[10px] text-text-muted">
                   <div>
@@ -486,9 +488,18 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
                     <span className="block break-all bg-bg-surface p-1.5 rounded border border-border-subtle select-all">
                       {recorder.permissionsErrorDetails.executable_path || 'N/A'}
                     </span>
+                    <span className="block mt-2 text-text-secondary font-bold mb-1">Bundle identifier:</span>
+                    <span className="block break-all bg-bg-surface p-1.5 rounded border border-border-subtle select-all">
+                      {recorder.permissionsErrorDetails.bundle_identifier || 'N/A'}
+                    </span>
                   </div>
                   <div>
                     <span className="block text-text-secondary font-bold mb-1">Stato macOS rilevato:</span>
+                    <span className="block">
+                      🔏 Code Signature: <strong className={recorder.permissionsErrorDetails.code_signature === 'signed' ? 'text-success' : 'text-danger'}>
+                        {recorder.permissionsErrorDetails.code_signature}
+                      </strong>
+                    </span>
                     <span className="block mt-1">
                       🎤 Microphone: <strong className={recorder.permissionsErrorDetails.microphone === 'authorized' ? 'text-success' : 'text-danger'}>
                         {recorder.permissionsErrorDetails.microphone}
@@ -499,6 +510,11 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
                         {recorder.permissionsErrorDetails.screen_capture}
                       </strong>
                     </span>
+                    {recorder.permissionsErrorDetails.identifier && (
+                      <span className="block mt-1">
+                        Identifier: <strong className="text-text-primary">{recorder.permissionsErrorDetails.identifier}</strong>
+                      </span>
+                    )}
                   </div>
                 </div>
 
