@@ -46,6 +46,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     audioRouteStatus,
     captureCapabilities,
     capturePermissions,
+    setCapturePermissions,
     isTestRouted,
     setIsTestRouted,
     isVerifying,
@@ -390,6 +391,37 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     try {
       const capabilities = captureCapabilities || await ApiClient.captureCapabilities().catch(() => null);
       if (capabilities?.default_backend === 'native' && capabilities.native.available) {
+        const permissionResult = await ApiClient.ensureCapturePermissions(mode);
+        setCapturePermissions(permissionResult.permissions);
+
+        if (!permissionResult.ok) {
+          const diagnostics = permissionResult.diagnostics || {};
+          setPermissionsErrorDetails({
+            missing_permissions: [],
+            microphone: permissionResult.permissions?.microphone || diagnostics.microphone || 'unknown',
+            screen_capture: permissionResult.permissions?.screen_capture || diagnostics.screen_capture || 'required',
+            executable_path: diagnostics.executable_path || '',
+            bundle_identifier: diagnostics.bundle_identifier || '',
+            code_signature: diagnostics.code_signature || 'unknown',
+            team_id: diagnostics.team_id || '',
+            identifier: diagnostics.identifier || '',
+          });
+
+          let errorMsg = t('recording.permissionsRequired') || 'Native capture permissions are required.';
+          if (diagnostics.bundle_identifier && diagnostics.bundle_identifier !== 'com.closedroom.nativecapture') {
+            errorMsg = t('recording.permissionsInvalidHelper') || 'The native recording component is installed incorrectly.';
+          } else if (diagnostics.code_signature && diagnostics.code_signature !== 'signed') {
+            errorMsg = t('recording.permissionsUnsignedHelper') || 'The native recording component is not signed correctly. Reinstall or rebuild ClosedRoom.';
+          } else if (mode !== 'pc_only' && permissionResult.permissions?.microphone === 'notDetermined') {
+            errorMsg = t('recording.permissionsMicNotDetermined') || 'Microphone permission has not been requested yet.';
+          } else if (mode !== 'pc_only' && permissionResult.permissions?.microphone === 'denied') {
+            errorMsg = t('recording.permissionsMissingMic') || 'Microphone permission is missing.';
+          } else if (mode !== 'mic_only' && permissionResult.permissions?.screen_capture === 'required') {
+            errorMsg = t('recording.permissionsMissingSystem') || 'Screen Recording permission is missing.';
+          }
+          throw new Error(errorMsg);
+        }
+
         const session = await ApiClient.createRecording({
           title: title || t('recording.untitledRecording'),
           project_name: projectName,
@@ -740,7 +772,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
       setStatusState('error');
       showToast(t('recording.startFailed', { error: error.message }), 'error');
     }
-  }, [t, selectedMicrophone, selectedSystemDevice, captureCapabilities, startAudioMeter, loadDevices, releaseMedia, restoreAudioRoute, showToast]);
+  }, [t, selectedMicrophone, selectedSystemDevice, captureCapabilities, setCapturePermissions, startAudioMeter, loadDevices, releaseMedia, restoreAudioRoute, showToast]);
 
   const toggleTestAudioRoute = async () => {
     setIsVerifying(true);

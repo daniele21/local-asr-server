@@ -309,6 +309,12 @@ mkdir -p "$HELPERS_DIR"
 ditto "$NATIVE_HELPER_APP" "$NATIVE_HELPER_APP_IN_APP"
 NATIVE_HELPER_IN_APP="$NATIVE_HELPER_APP_IN_APP/Contents/MacOS/ClosedRoomNativeCapture"
 chmod +x "$NATIVE_HELPER_IN_APP"
+if find "$APP_PATH" -name "*__dot__app*" -print -quit | grep -q .; then
+    die "Invalid packaged .app found as __dot__app"
+fi
+if [[ ! -x "$NATIVE_HELPER_IN_APP" ]]; then
+    die "ClosedRoomNativeCapture helper app missing"
+fi
 ok "Embedded native capture helper app: $NATIVE_HELPER_APP_IN_APP"
 
 # ── Post-processing: fix permissions & ad-hoc code sign ──────────────────────
@@ -387,6 +393,26 @@ sign_entitled "$APP_PATH/Contents/MacOS/$APP_NAME"
 sign_entitled "$APP_PATH"
 codesign --verify --strict --verbose=2 "$APP_PATH" \
     || die "codesign verification failed for $APP_PATH"
+
+log "  Verifying native capture helper diagnostics..."
+HELPER_DIAG="$("$NATIVE_HELPER_IN_APP" diagnostics || true)"
+HELPER_DIAG="$HELPER_DIAG" python3 -c '
+import json
+import os
+
+payload = json.loads(os.environ.get("HELPER_DIAG") or "{}")
+errors = []
+
+if payload.get("bundle_identifier") != "com.closedroom.nativecapture":
+    errors.append("bad bundle_identifier: {}".format(payload.get("bundle_identifier")))
+if payload.get("code_signature") != "signed":
+    errors.append("bad code_signature: {}".format(payload.get("code_signature")))
+if payload.get("screen_capture") not in {"granted", "required"}:
+    errors.append("bad screen_capture: {}".format(payload.get("screen_capture")))
+
+if errors:
+    raise SystemExit("Native helper diagnostics failed: " + "; ".join(errors))
+'
 ok "Ad-hoc signed"
 
 

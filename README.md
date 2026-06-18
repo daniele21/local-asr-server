@@ -98,12 +98,24 @@ In the macOS app bundle, native capture runs from an embedded helper app,
 `build.sh` creates the helper app before PyInstaller, copies it manually into
 `ClosedRoom.app/Contents/Helpers` after PyInstaller, then signs the helper
 executable, the helper app, `audio-helper`, `ffmpeg`, the main executable, and
-the final `.app`. Use
+the final `.app`. The build fails if the helper app is repackaged as a
+`__dot__app` directory, if
+`ClosedRoom.app/Contents/Helpers/ClosedRoomNativeCapture.app/Contents/MacOS/ClosedRoomNativeCapture`
+is missing, or if helper diagnostics after signing do not report the expected
+bundle identifier and signed code state. Use
 `/v1/capture/diagnostics` to inspect the effective `executable_path`,
 `bundle_identifier`, `code_signature`, and TCC permission status. A failed
 `codesign` or bundle verification stops the build, because an unsigned or
 anonymous native helper cannot reliably request Microphone/System Audio
 permissions.
+
+The app checks `/v1/capture/permissions` and `/v1/capture/diagnostics` on load.
+When the selected native capture mode requires a permission whose status is not
+determined, the recording screen shows an authorization CTA and calls
+`POST /v1/capture/ensure-permissions` with `{ "mode": "both" | "mic_only" |
+"pc_only" }`. Starting a native recording runs the same mode-specific preflight
+before capture starts; the timer and overlay are shown only after the helper
+emits its `ready` event.
 
 If the native helper is unavailable, ClosedRoom makes that fallback explicit and
 uses browser recording with BlackHole compatibility. The one-time setup for each

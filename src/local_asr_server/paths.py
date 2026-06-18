@@ -44,6 +44,23 @@ def get_bundle_dir() -> Path:
     return Path(__file__).parent
 
 
+def get_app_contents_dir() -> Path | None:
+    """Return ``ClosedRoom.app/Contents`` when running from a bundled app."""
+    if not is_bundled():
+        return None
+
+    executable = Path(sys.executable).resolve()
+    if executable.parent.name == "MacOS" and executable.parent.parent.name == "Contents":
+        return executable.parent.parent
+
+    meipass = Path(sys._MEIPASS).resolve()  # type: ignore[attr-defined]
+    for candidate in [meipass, *meipass.parents]:
+        if candidate.name == "Contents":
+            return candidate
+
+    return None
+
+
 # ── macOS standard directories ─────────────────────────────────────────────────
 
 def get_app_support_dir() -> Path:
@@ -191,18 +208,21 @@ def get_native_capture_helper_path() -> Path:
     managed by ``native_capture_helper.compile``.
     """
     if is_bundled():
-        contents_dir = Path(sys.executable).resolve().parents[1]
+        contents_dir = get_app_contents_dir()
         helper_relative = (
             Path(NATIVE_CAPTURE_HELPER_APP_NAME)
             / Path("Contents")
             / "MacOS"
             / NATIVE_CAPTURE_HELPER_EXECUTABLE
         )
-        candidates = [
-            contents_dir / "Helpers" / helper_relative,
-            contents_dir / "Frameworks" / "native-capture-helper",
-            get_bundle_dir() / "native-capture-helper",
-        ]
+        candidates: list[Path] = []
+        if contents_dir is not None:
+            candidates.extend([
+                contents_dir / "Helpers" / helper_relative,
+                contents_dir / "Frameworks" / "native-capture-helper",
+                contents_dir / "Resources" / "native-capture-helper",
+            ])
+        candidates.append(get_bundle_dir() / "native-capture-helper")
         for candidate in candidates:
             if candidate.exists():
                 return candidate

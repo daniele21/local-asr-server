@@ -40,6 +40,39 @@ class RecordingApiTests(unittest.TestCase):
         self.client.close()
         self.temp_dir.cleanup()
 
+    def test_ensure_capture_permissions_endpoint_delegates_to_manager(self) -> None:
+        class FakeCaptureManager:
+            def ensure_permissions(self, mode: str) -> dict:
+                return {
+                    "ok": mode == "pc_only",
+                    "requested": False,
+                    "permissions": {
+                        "ok": mode == "pc_only",
+                        "microphone": "notDetermined",
+                        "screen_capture": "granted",
+                        "modes": {
+                            "mic_only": {"ok": False},
+                            "pc_only": {"ok": True},
+                            "both": {"ok": False},
+                        },
+                    },
+                    "diagnostics": {
+                        "bundle_identifier": "com.closedroom.nativecapture",
+                        "code_signature": "signed",
+                    },
+                }
+
+        self.app.state.capture_manager = FakeCaptureManager()
+
+        response = self.client.post(
+            "/v1/capture/ensure-permissions",
+            json={"mode": "pc_only"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+        self.assertEqual(response.json()["permissions"]["modes"]["pc_only"]["ok"], True)
+
     @patch("local_asr_server.server.transcribe_file_sync")
     def test_stop_only_saves_audio_without_transcribing(self, transcribe) -> None:
         created = self.client.post(

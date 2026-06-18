@@ -72,5 +72,9 @@ class OverlayResizeRequest(BaseModel):
 class CaptureStartRequest(BaseModel):
     mode: str = "both"
 
+
+class CaptureEnsurePermissionsRequest(BaseModel):
+    mode: str = "both"
+
 class TranscriptionJobRequest(TranscribeRecordingRequest):
     pass

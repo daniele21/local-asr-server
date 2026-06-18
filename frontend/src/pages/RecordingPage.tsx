@@ -36,6 +36,8 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
   const [showAdvancedAudio, setShowAdvancedAudio] = useState(false);
   const [showSetupInfo, setShowSetupInfo] = useState(false);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  const [permissionLoading, setPermissionLoading] = useState(false);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
 
   const onRecordingSaved = (recording: Recording) => {
     // Navigate directly to the project view
@@ -85,6 +87,45 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
         : t('recording.captureModeComputerOnlyFallback'),
     },
   ] as const;
+  const microphoneStatusLabel = (status?: string) => {
+    switch (status) {
+      case 'authorized':
+        return t('recording.permissionMicAuthorized');
+      case 'notDetermined':
+        return t('recording.permissionMicNotDetermined');
+      case 'denied':
+        return t('recording.permissionMicDenied');
+      case 'restricted':
+        return t('recording.permissionMicRestricted');
+      default:
+        return t('recording.permissionMicUnknown');
+    }
+  };
+  const screenCaptureStatusLabel = (status?: string) => {
+    if (status === 'granted') return t('recording.permissionScreenGranted');
+    if (status === 'required') return t('recording.permissionScreenRequired');
+    return t('recording.permissionScreenUnknown');
+  };
+  const handleAuthorizeCapture = async () => {
+    setPermissionLoading(true);
+    setPermissionError(null);
+    try {
+      const result = await ApiClient.ensureCapturePermissions(sourceMode);
+      await recorder.refreshCapturePermissions();
+      if (!result.ok) {
+        const message = result.diagnostics?.code_signature && result.diagnostics.code_signature !== 'signed'
+          ? t('recording.permissionsUnsignedHelper')
+          : result.diagnostics?.bundle_identifier && result.diagnostics.bundle_identifier !== 'com.closedroom.nativecapture'
+            ? t('recording.permissionsInvalidHelper')
+            : t('recording.permissionsRequired');
+        setPermissionError(message);
+      }
+    } catch (err) {
+      setPermissionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPermissionLoading(false);
+    }
+  };
   const userQualityWarnings = (recording?: Recording | null) => {
     const warnings = recording?.warnings || [];
     return warnings
@@ -608,11 +649,33 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
               {showAdvancedAudio && (
                 <div className="p-4 flex flex-col gap-4 border-t border-border-subtle bg-bg-surface/10 animate-in fade-in duration-200">
                   {nativeCaptureReady ? (
-                    <div className="rounded-lg border border-success/30 bg-success/10 p-3 text-xs text-text-secondary">
-                      <strong className="block text-text-primary mb-1">
-                        {t('recording.nativeCaptureTitle')}
-                      </strong>
-                      <p>{t('recording.nativeCaptureDesc')}</p>
+                    <div className="rounded-lg border border-success/30 bg-success/10 p-3 text-xs text-text-secondary flex flex-col gap-3">
+                      <div>
+                        <strong className="block text-text-primary mb-1">
+                          {t('recording.nativeCaptureTitle')}
+                        </strong>
+                        <p>{t('recording.nativeCaptureDesc')}</p>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <span>{microphoneStatusLabel(recorder.capturePermissions?.microphone)}</span>
+                        <span>{screenCaptureStatusLabel(recorder.capturePermissions?.screen_capture)}</span>
+                      </div>
+                      {!readyToRecord && (
+                        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center pt-2 border-t border-success/20">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={handleAuthorizeCapture}
+                            disabled={permissionLoading}
+                          >
+                            {permissionLoading ? t('common.loading') : t('recording.btnAuthorizeCapture')}
+                          </Button>
+                          {permissionError && (
+                            <span className="text-[11px] text-danger">{permissionError}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <>
@@ -742,16 +805,16 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
                 {sourceMode === 'pc_only'
                   ? `✅ ${t('recording.microphone')} (${t('recording.notNeeded') || 'Non richiesto'})`
                   : micReady
-                    ? `✅ ${t('recording.readinessMicAuthorized') || 'Microfono autorizzato'}`
-                    : `❌ ${t('recording.readinessMicUnauthorized') || 'Microfono non autorizzato'}`
+                    ? `✅ ${nativeCaptureReady ? microphoneStatusLabel(recorder.capturePermissions?.microphone) : t('recording.readinessMicOk')}`
+                    : `⚠️ ${nativeCaptureReady ? microphoneStatusLabel(recorder.capturePermissions?.microphone) : t('recording.readinessMicMissing')}`
                 }
               </span>
               <span>
                 {sourceMode === 'mic_only'
                   ? `✅ ${t('recording.computerAudio')} (${t('recording.notNeeded') || 'Non richiesto'})`
                   : computerReady
-                    ? `✅ ${t('recording.readinessComputerAuthorized') || 'Audio computer autorizzato'}`
-                    : `❌ ${t('recording.readinessComputerUnauthorized') || 'Audio computer non autorizzato'}`
+                    ? `✅ ${nativeCaptureReady ? screenCaptureStatusLabel(recorder.capturePermissions?.screen_capture) : t('recording.readinessComputerOk')}`
+                    : `⚠️ ${nativeCaptureReady ? screenCaptureStatusLabel(recorder.capturePermissions?.screen_capture) : t('recording.readinessComputerMissing')}`
                 }
               </span>
               <span>

@@ -16,6 +16,7 @@ from local_asr_server.recordings import RecordingConflict, RecordingNotFound
 from local_asr_server.schemas import (
     OverlayRequest,
     OverlayResizeRequest,
+    CaptureEnsurePermissionsRequest,
     CaptureStartRequest,
     SettingsRequest,
     AnalysisRequest,
@@ -49,6 +50,7 @@ def health(request: Request) -> dict:
             "GET /v1/capture/capabilities",
             "GET /v1/capture/permissions",
             "POST /v1/capture/request-permissions",
+            "POST /v1/capture/ensure-permissions",
             "GET /v1/capture/diagnostics",
             "POST /v1/recordings/{id}/capture/start",
             "GET /v1/recordings/{id}/capture/events",
@@ -140,6 +142,14 @@ def capture_permissions(request: Request):
 @router.post("/v1/capture/request-permissions")
 def request_capture_permissions(request: Request):
     return request.app.state.capture_manager.request_permissions()
+
+
+@router.post("/v1/capture/ensure-permissions")
+def ensure_capture_permissions(request: Request, body: CaptureEnsurePermissionsRequest):
+    try:
+        return request.app.state.capture_manager.ensure_permissions(body.mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/v1/capture/diagnostics")

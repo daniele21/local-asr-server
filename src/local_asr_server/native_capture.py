@@ -23,6 +23,12 @@ from local_asr_server.paths import (
 VALID_NATIVE_MODES = {"both", "mic_only", "pc_only"}
 
 
+def mode_permission_ok(payload: dict[str, Any], mode: str) -> bool:
+    modes = payload.get("modes") or {}
+    mode_info = modes.get(mode) or {}
+    return bool(mode_info.get("ok"))
+
+
 @dataclass
 class CaptureSession:
     recording_id: str
@@ -125,6 +131,46 @@ class NativeCaptureManager:
         if not self.helper_path.exists():
             return {"ok": False, "reason": "helper_missing"}
         return self._run_json(["diagnostics"], fallback_reason="diagnostics_failed")
+
+    def ensure_permissions(self, mode: str) -> dict[str, Any]:
+        if mode not in VALID_NATIVE_MODES:
+            raise ValueError(f"Invalid native capture mode: {mode}")
+
+        permissions = self.permissions()
+        if mode_permission_ok(permissions, mode):
+            return {
+                "ok": True,
+                "permissions": permissions,
+                "diagnostics": self.diagnostics(),
+                "requested": False,
+            }
+
+        microphone = permissions.get("microphone")
+        screen_capture = permissions.get("screen_capture")
+        should_request = False
+
+        if mode in {"both", "mic_only"} and microphone == "notDetermined":
+            should_request = True
+        if mode in {"both", "pc_only"} and screen_capture == "required":
+            should_request = True
+
+        if should_request:
+            request_result = self.request_permissions()
+            permissions = self.permissions()
+            return {
+                "ok": mode_permission_ok(permissions, mode),
+                "permissions": permissions,
+                "diagnostics": self.diagnostics(),
+                "requested": True,
+                "request_result": request_result,
+            }
+
+        return {
+            "ok": False,
+            "permissions": permissions,
+            "diagnostics": self.diagnostics(),
+            "requested": False,
+        }
 
     def start(self, recording_id: str, output_dir: Path, mode: str) -> dict[str, Any]:
         if mode not in VALID_NATIVE_MODES:

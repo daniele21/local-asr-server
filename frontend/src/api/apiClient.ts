@@ -89,6 +89,16 @@ export interface CapturePermissions {
   };
 }
 
+export type CaptureMode = 'both' | 'mic_only' | 'pc_only';
+
+export interface CaptureEnsurePermissionsResult {
+  ok: boolean;
+  requested: boolean;
+  permissions: CapturePermissions;
+  diagnostics: CaptureDiagnostics;
+  request_result?: any;
+}
+
 export interface CaptureCapabilities {
   default_backend: 'native' | 'browser';
   native: {
@@ -251,6 +261,18 @@ export const ApiClient = {
 
   async capturePermissions(): Promise<CapturePermissions> {
     return (await request('/v1/capture/permissions')).json();
+  },
+
+  async requestCapturePermissions(): Promise<any> {
+    return (await request('/v1/capture/request-permissions', { method: 'POST' })).json();
+  },
+
+  async ensureCapturePermissions(mode: CaptureMode): Promise<CaptureEnsurePermissionsResult> {
+    return (await request('/v1/capture/ensure-permissions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    })).json();
   },
 
   async listRecordings(): Promise<{ items: Recording[] }> {

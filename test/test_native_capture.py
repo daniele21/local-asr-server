@@ -22,6 +22,10 @@ if cmd == 'capabilities':
     print(json.dumps({'available': True, 'backend': 'native', 'modes': ['both']}))
 elif cmd == 'permissions':
     print(json.dumps({'ok': True, 'microphone': 'authorized', 'screen_capture': 'granted', 'modes': {'mic_only': {'ok': True}, 'pc_only': {'ok': True}, 'both': {'ok': True}}}))
+elif cmd == 'request-permissions':
+    print(json.dumps({'ok': True, 'requested': True}))
+elif cmd == 'diagnostics':
+    print(json.dumps({'bundle_identifier': 'com.closedroom.nativecapture', 'code_signature': 'signed', 'screen_capture': 'granted'}))
 elif cmd == 'start':
     print(json.dumps({'type': 'ready'}), flush=True)
     time.sleep(0.05)
@@ -78,6 +82,21 @@ else:
         event_types = [evt["type"] for evt in result["events"]]
         self.assertIn("ready", event_types)
         self.assertIn("stopped", event_types)
+
+    def test_ensure_permissions_returns_ready_state_without_prompt(self) -> None:
+        manager = NativeCaptureManager(helper_path=self.helper)
+        result = manager.ensure_permissions("both")
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["requested"])
+        self.assertEqual(result["permissions"]["microphone"], "authorized")
+        self.assertEqual(result["diagnostics"]["bundle_identifier"], "com.closedroom.nativecapture")
+
+    def test_ensure_permissions_rejects_invalid_mode(self) -> None:
+        manager = NativeCaptureManager(helper_path=self.helper)
+
+        with self.assertRaises(ValueError):
+            manager.ensure_permissions("browser")
 
 
 if __name__ == "__main__":
