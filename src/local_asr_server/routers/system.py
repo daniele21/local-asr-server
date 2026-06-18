@@ -47,6 +47,9 @@ def health(request: Request) -> dict:
             "POST /v1/recordings/{id}/recover",
             "POST /v1/recordings/{id}/discard",
             "GET /v1/capture/capabilities",
+            "GET /v1/capture/permissions",
+            "POST /v1/capture/request-permissions",
+            "GET /v1/capture/diagnostics",
             "POST /v1/recordings/{id}/capture/start",
             "GET /v1/recordings/{id}/capture/events",
             "POST /v1/recordings/{id}/capture/stop",
@@ -139,6 +142,11 @@ def request_capture_permissions(request: Request):
     return request.app.state.capture_manager.request_permissions()
 
 
+@router.get("/v1/capture/diagnostics")
+def capture_diagnostics(request: Request):
+    return request.app.state.capture_manager.diagnostics()
+
+
 @router.post("/v1/recordings/{recording_id}/capture/start", status_code=202)
 def start_capture(recording_id: str, request: Request, body: CaptureStartRequest):
     store = request.app.state.recording_store
@@ -185,6 +193,8 @@ def capture_events(recording_id: str, request: Request):
                     logger.warning("Failed to persist capture event", exc_info=True)
                 yield f"data: {json.dumps(event)}\n\n"
                 if event.get("type") in {"stopped", "error"}:
+                    request.app.state.active_recording = None
+                    request.app.state.is_recording = False
                     return
             time.sleep(0.5)
 

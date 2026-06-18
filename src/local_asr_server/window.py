@@ -33,6 +33,8 @@ from AppKit import (
     NSFloatingWindowLevel,
     NSWindowCollectionBehaviorCanJoinAllSpaces,
     NSColor,
+    NSView,
+    NSViewMinYMargin,
 )
 from Foundation import NSURL, NSURLRequest
 
@@ -83,6 +85,16 @@ class ClosedRoomActivationObserver(NSObject):
         """Callback triggered when the application becomes active."""
         logger.info("App became active. Re-opening window.")
         self._callback()
+
+
+class DragHandleView(NSView):
+    """A transparent custom NSView subclass overlaying the WKWebView to enable window dragging."""
+
+    def mouseDownCanMoveWindow(self) -> bool:
+        return True
+
+    def acceptsFirstMouse_(self, event) -> bool:
+        return True
 
 
 class ClosedRoomWindowManager:
@@ -367,7 +379,30 @@ class ClosedRoomWindowManager:
         # Set transparent webview background (works for WebKit)
         self.overlay_webview.setValue_forKey_(False, "drawsBackground")
 
+        # Set corner radius and masksToBounds for overlay window contentView and webview
+        corner_radius = 22.0
+        content = self.overlay_window.contentView()
+        content.setWantsLayer_(True)
+        content.layer().setCornerRadius_(corner_radius)
+        content.layer().setMasksToBounds_(True)
+
+        self.overlay_webview.setWantsLayer_(True)
+        self.overlay_webview.layer().setCornerRadius_(corner_radius)
+        self.overlay_webview.layer().setMasksToBounds_(True)
+
         self.overlay_window.setContentView_(self.overlay_webview)
+
+        # Add native transparent drag handle above the WKWebView on the top-left area
+        drag_handle = DragHandleView.alloc().initWithFrame_(
+            ((12, height - 42), (190, 34))
+        )
+        drag_handle.setAutoresizingMask_(NSViewMinYMargin)
+        self.overlay_window.contentView().addSubview_positioned_relativeTo_(
+            drag_handle,
+            1,  # NSWindowAbove
+            None
+        )
+        self.overlay_drag_handle = drag_handle
 
         # Load overlay hash route
         ns_url = NSURL.URLWithString_(f"{self.url}/#overlay")

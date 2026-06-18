@@ -121,6 +121,11 @@ class NativeCaptureManager:
             return {"ok": False, "reason": "helper_missing"}
         return self._run_json(["request-permissions"], fallback_reason="request_permissions_failed")
 
+    def diagnostics(self) -> dict[str, Any]:
+        if not self.helper_path.exists():
+            return {"ok": False, "reason": "helper_missing"}
+        return self._run_json(["diagnostics"], fallback_reason="diagnostics_failed")
+
     def start(self, recording_id: str, output_dir: Path, mode: str) -> dict[str, Any]:
         if mode not in VALID_NATIVE_MODES:
             raise ValueError(f"Invalid native capture mode: {mode}")
@@ -262,6 +267,7 @@ class NativeCaptureManager:
                 session.process.kill()
                 was_killed = True
                 
+        events = []
         if session.reader_thread:
             session.reader_thread.join(timeout=2)
             if session.reader_thread.is_alive():
@@ -270,8 +276,6 @@ class NativeCaptureManager:
                     "source": "backend",
                     "message": "Native helper stdout reader did not finish before post-processing."
                 })
-            
-        events = []
         while True:
             try:
                 events.append(session.events.get_nowait())

@@ -222,7 +222,15 @@ const it = {
     tooltipNotAnalyzed: 'Analisi non ancora disponibile',
     btnProject: 'Progetto',
     tooltipProject: 'Associa a un progetto',
-    btnShowOverlay: 'Miniatura'
+    btnShowOverlay: 'Miniatura',
+    permissionsMissingBoth: 'Mancano i permessi per il Microfono e la Registrazione dello schermo.',
+    permissionsMissingMic: 'Manca il permesso per il Microfono. Apri Impostazioni di Sistema ➔ Privacy e Sicurezza ➔ Microfono e abilita ClosedRoom.',
+    permissionsMissingSystem: 'Manca il permesso per la Registrazione dello schermo. Apri Impostazioni di Sistema ➔ Privacy e Sicurezza ➔ Registrazione schermo (e Registrazione audio di sistema) e abilita ClosedRoom.',
+    waitingForSignal: 'In attesa...',
+    noActiveRecording: 'Nessuna registrazione attiva',
+    healthAbsent: 'Assente/Muto',
+    healthSilent: 'Silente',
+    healthActive: 'Attivo'
   },
   transcription: {
     title: 'Trascrizione',

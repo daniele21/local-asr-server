@@ -222,7 +222,15 @@ const en = {
     tooltipNotAnalyzed: 'Analysis not yet available',
     btnProject: 'Project',
     tooltipProject: 'Associate with a project',
-    btnShowOverlay: 'Overlay'
+    btnShowOverlay: 'Overlay',
+    permissionsMissingBoth: 'Microphone and Screen Recording permissions are missing.',
+    permissionsMissingMic: 'Microphone permission is missing. Open System Settings ➔ Privacy & Security ➔ Microphone and enable ClosedRoom.',
+    permissionsMissingSystem: 'Screen Recording permission is missing. Open System Settings ➔ Privacy & Security ➔ Screen & System Audio Recording and enable ClosedRoom.',
+    waitingForSignal: 'Waiting...',
+    noActiveRecording: 'No active recording',
+    healthAbsent: 'Absent/Mute',
+    healthSilent: 'Silent',
+    healthActive: 'Active'
   },
   transcription: {
     title: 'Transcription',

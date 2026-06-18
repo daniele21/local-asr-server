@@ -1,21 +1,39 @@
 import { useState, useEffect, useRef } from 'react';
 import { ApiClient } from '../api/apiClient';
+import { useTranslation } from '../i18n/i18n';
 
 export default function RecordingOverlayPage() {
+  const { t } = useTranslation();
   const [timer, setTimer] = useState('00:00');
   const [signalLevelMic, setSignalLevelMic] = useState('-∞ dB');
   const [signalLevelSystem, setSignalLevelSystem] = useState('-∞ dB');
-  const [progressText, setProgressText] = useState('In attesa...');
   const [isRecording, setIsRecording] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [recordingId, setRecordingId] = useState<string | null>(null);
-  const [title, setTitle] = useState('Nessuna registrazione attiva');
+  const [title, setTitle] = useState('');
   const [captureBackend, setCaptureBackend] = useState<'browser' | 'native'>('browser');
   const [captureMode, setCaptureMode] = useState<string>('both');
   const [bytesWritten, setBytesWritten] = useState(0);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Dynamic body class for transparency
+  useEffect(() => {
+    document.documentElement.classList.add('overlay-active');
+    document.body.classList.add('overlay-active');
+    return () => {
+      document.documentElement.classList.remove('overlay-active');
+      document.body.classList.remove('overlay-active');
+    };
+  }, []);
+
+  const displaySignalLevel = (dbStr: string) => {
+    if (dbStr === '-∞ dB' || dbStr === '-inf dB') {
+      return t('recording.waitingForSignal') || 'In attesa...';
+    }
+    return dbStr;
+  };
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const timerIntervalRef = useRef<any>(null);
@@ -53,7 +71,6 @@ export default function RecordingOverlayPage() {
         setTimer(data.timer);
         setSignalLevelMic(data.signalLevelMic || '-∞ dB');
         setSignalLevelSystem(data.signalLevelSystem || '-∞ dB');
-        setProgressText(data.progressText);
 
         // Auto-close browser popup after a short delay when recording completes
         if (!data.isRecording && window.name === 'ClosedRoomOverlay') {
@@ -237,16 +254,16 @@ export default function RecordingOverlayPage() {
   // Device health status check
   const getDeviceHealth = (dbStr: string) => {
     const val = parseFloat(dbStr.replace(' dB', ''));
-    if (isNaN(val) || val <= -100) return { label: 'Assente/Muto', color: 'text-red-400 font-semibold' };
-    if (val <= -45) return { label: 'Silente', color: 'text-yellow-400 font-semibold' };
-    return { label: 'Attivo', color: 'text-green-400 font-semibold' };
+    if (isNaN(val) || val <= -100) return { label: t('recording.healthAbsent') || 'Assente/Muto', color: 'text-red-400 font-semibold' };
+    if (val <= -45) return { label: t('recording.healthSilent') || 'Silente', color: 'text-yellow-400 font-semibold' };
+    return { label: t('recording.healthActive') || 'Attivo', color: 'text-green-400 font-semibold' };
   };
 
   const micHealth = getDeviceHealth(signalLevelMic);
   const systemHealth = getDeviceHealth(signalLevelSystem);
 
   return (
-    <div className="h-screen w-screen bg-[rgba(15,12,38,0.95)] text-white p-3 select-none flex flex-col justify-between overflow-hidden border border-white/10 rounded-2xl shadow-2xl backdrop-blur-md">
+    <div className="overlay-shell p-3 select-none flex flex-col justify-between">
       {/* Top Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
@@ -295,7 +312,7 @@ export default function RecordingOverlayPage() {
           // Expanded view
           <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-[10px] text-white/70 animate-fadeIn">
             <div className="col-span-2 font-medium truncate text-white border-b border-white/5 pb-1 mb-1">
-              🎙️ {title}
+              🎙️ {title || t('recording.noActiveRecording') || 'Nessuna registrazione attiva'}
             </div>
             <div>
               <span className="opacity-50">Backend:</span> <span className="font-semibold text-white/90 capitalize">{captureBackend}</span>
@@ -323,7 +340,13 @@ export default function RecordingOverlayPage() {
         ) : (
           // Compact view
           <div className="text-[11px] text-white/80 truncate font-medium flex items-center justify-between">
-            <span className="truncate pr-2">{isStopping ? 'Terminazione...' : isRecording ? `In registrazione: ${title}` : 'In attesa...'}</span>
+            <span className="truncate pr-2">
+              {isStopping 
+                ? t('recording.finalizing') || 'Terminazione...' 
+                : isRecording 
+                ? `${t('recording.statusRecording').replace('...', '')}: ${title || t('recording.noActiveRecording')}` 
+                : t('recording.statusReady') || 'In attesa...'}
+            </span>
             {errorMsg && <span className="text-red-400 text-[9px] shrink-0 font-semibold">⚠️ Errore</span>}
           </div>
         )}
@@ -343,7 +366,7 @@ export default function RecordingOverlayPage() {
                   style={{ width: `${micPercentage}%` }}
                 ></div>
               </div>
-              <span className="text-[8px] font-mono font-bold text-white/60 min-w-[32px] text-right">{signalLevelMic}</span>
+              <span className="text-[8px] font-mono font-bold text-white/60 min-w-[64px] text-right">{displaySignalLevel(signalLevelMic)}</span>
             </div>
           )}
 
@@ -357,7 +380,7 @@ export default function RecordingOverlayPage() {
                   style={{ width: `${systemPercentage}%` }}
                 ></div>
               </div>
-              <span className="text-[8px] font-mono font-bold text-white/60 min-w-[32px] text-right">{signalLevelSystem}</span>
+              <span className="text-[8px] font-mono font-bold text-white/60 min-w-[64px] text-right">{displaySignalLevel(signalLevelSystem)}</span>
             </div>
           )}
         </div>

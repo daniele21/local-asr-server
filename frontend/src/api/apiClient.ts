@@ -482,5 +482,9 @@ export const ApiClient = {
     } catch (err: any) {
       return { success: false, error: err.message };
     }
+  },
+
+  async getCaptureDiagnostics(): Promise<any> {
+    return (await request('/v1/capture/diagnostics')).json();
   }
 };

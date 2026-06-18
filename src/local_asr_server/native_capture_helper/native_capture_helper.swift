@@ -3,6 +3,7 @@ import CoreGraphics
 import CoreMedia
 import Foundation
 import ScreenCaptureKit
+import Security
 
 final class JSONEmitter {
     static let shared = JSONEmitter()
@@ -139,7 +140,6 @@ func capabilityPayload() -> [String: Any] {
     )
     let screenCaptureAllowed = CGPreflightScreenCaptureAccess()
     let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
-    let micAllowed = micStatus == .authorized
     let available = isAtLeastMacOS13
     
     let reason: Any
@@ -188,6 +188,68 @@ func requestPermissions() {
         _ = semaphore.wait(timeout: .now() + 5.0)
     }
     JSONEmitter.shared.emitAndExit(permissionsPayload(), exitCode: 0)
+}
+
+func getCodeSignatureInfo() -> [String: Any] {
+    var info: [String: Any] = [
+        "signature": "unsigned",
+        "team_id": "",
+        "identifier": ""
+    ]
+    var selfCode: SecCode?
+    let status = SecCodeCopySelf(SecCSFlags(), &selfCode)
+    guard status == errSecSuccess, let code = selfCode else {
+        info["error"] = "SecCodeCopySelf failed with status \(status)"
+        return info
+    }
+    var staticCode: SecStaticCode?
+    let staticStatus = SecCodeCopyStaticCode(code, SecCSFlags(), &staticCode)
+    guard staticStatus == errSecSuccess, let sCode = staticCode else {
+        info["error"] = "SecCodeCopyStaticCode failed with status \(staticStatus)"
+        return info
+    }
+    var infoDict: CFDictionary?
+    let infoStatus = SecCodeCopySigningInformation(sCode, SecCSFlags(rawValue: kSecCSSigningInformation), &infoDict)
+    guard infoStatus == errSecSuccess, let dict = infoDict as? [String: Any] else {
+        info["error"] = "SecCodeCopySigningInformation failed with status \(infoStatus)"
+        return info
+    }
+    
+    if dict["teamid"] != nil {
+        info["signature"] = "signed"
+        info["team_id"] = dict["teamid"] as? String ?? ""
+    }
+    info["identifier"] = dict["identifier"] as? String ?? ""
+    return info
+}
+
+func diagnosticsPayload() -> [String: Any] {
+    let processInfo = ProcessInfo.processInfo
+    let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+    let micStatusString: String
+    switch micStatus {
+    case .authorized: micStatusString = "authorized"
+    case .denied: micStatusString = "denied"
+    case .restricted: micStatusString = "restricted"
+    case .notDetermined: micStatusString = "notDetermined"
+    @unknown default: micStatusString = "unknown"
+    }
+    
+    let screenCaptureAllowed = CGPreflightScreenCaptureAccess()
+    let sigInfo = getCodeSignatureInfo()
+    
+    return [
+        "process_name": processInfo.processName,
+        "executable_path": Bundle.main.executablePath ?? CommandLine.arguments.first ?? "",
+        "bundle_identifier": Bundle.main.bundleIdentifier ?? "",
+        "bundle_path": Bundle.main.bundlePath,
+        "screen_capture": screenCaptureAllowed ? "granted" : "required",
+        "microphone": micStatusString,
+        "code_signature": sigInfo["signature"] ?? "unsigned",
+        "team_id": sigInfo["team_id"] ?? "",
+        "identifier": sigInfo["identifier"] ?? "",
+        "macos_version": processInfo.operatingSystemVersionString
+    ]
 }
 
 final class SampleBufferWavSink {
@@ -710,29 +772,40 @@ func runStart(recordingID: String, outputDir: String, mode: String) {
         ], exitCode: 3)
     }
 
-    let micAllowed = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+    let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+    let micAllowed = micStatus == .authorized
     let screenCaptureAllowed = CGPreflightScreenCaptureAccess()
 
-    if mode == "both" && (!micAllowed || !screenCaptureAllowed) {
+    var missing: [String] = []
+    if mode == "both" || mode == "mic_only" {
+        if !micAllowed {
+            missing.append("microphone")
+        }
+    }
+    if mode == "both" || mode == "pc_only" {
+        if !screenCaptureAllowed {
+            missing.append("screen_capture")
+        }
+    }
+
+    if !missing.isEmpty {
+        let micStatusString: String
+        switch micStatus {
+        case .authorized: micStatusString = "authorized"
+        case .denied: micStatusString = "denied"
+        case .restricted: micStatusString = "restricted"
+        case .notDetermined: micStatusString = "notDetermined"
+        @unknown default: micStatusString = "unknown"
+        }
+
         JSONEmitter.shared.emitAndExit([
             "type": "error",
             "recording_id": recordingID,
-            "message": "Permissions required for both mic and system audio.",
-            "reason": !micAllowed ? "microphone_permission_required" : "screen_recording_permission_required"
-        ], exitCode: 3)
-    } else if mode == "mic_only" && !micAllowed {
-        JSONEmitter.shared.emitAndExit([
-            "type": "error",
-            "recording_id": recordingID,
-            "message": "Microphone permission required.",
-            "reason": "microphone_permission_required"
-        ], exitCode: 3)
-    } else if mode == "pc_only" && !screenCaptureAllowed {
-        JSONEmitter.shared.emitAndExit([
-            "type": "error",
-            "recording_id": recordingID,
-            "message": "Screen recording permission required.",
-            "reason": "screen_recording_permission_required"
+            "reason": "permissions_missing",
+            "missing_permissions": missing,
+            "microphone": micStatusString,
+            "screen_capture": screenCaptureAllowed ? "granted" : "required",
+            "message": "Required permissions are missing: \(missing.joined(separator: ", "))"
         ], exitCode: 3)
     }
 
@@ -768,6 +841,8 @@ case "permissions":
     JSONEmitter.shared.emitAndExit(permissionsPayload(), exitCode: 0)
 case "request-permissions":
     requestPermissions()
+case "diagnostics":
+    JSONEmitter.shared.emitAndExit(diagnosticsPayload(), exitCode: 0)
 case "start":
     guard let recordingID = requireArg("--recording-id", in: args),
           let outputDir = requireArg("--output-dir", in: args),

@@ -389,17 +389,54 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
         localStorage.setItem('asr-active-recording-id', session.id);
         
         await ApiClient.startNativeCapture(session.id, mode);
-        startedAtRef.current = Date.now();
         
         // Connect EventSource to receive real-time levels and capture status
         currentMicDbRef.current = -120;
         currentSysDbRef.current = -120;
         const eventSource = new EventSource(`/v1/recordings/${session.id}/capture/events`);
         eventSourceRef.current = eventSource;
+        
         eventSource.onmessage = (e) => {
           try {
             const data = JSON.parse(e.data);
-            if (data.type === 'volume') {
+            if (data.type === 'ready') {
+              // Capture helper is ready, we can start the timers and show the overlay now!
+              startedAtRef.current = Date.now();
+              
+              timerIntervalRef.current = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - startedAtRef.current) / 1000);
+                const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
+                const secs = (elapsed % 60).toString().padStart(2, '0');
+                setTimer(`${mins}:${secs}`);
+              }, 250);
+
+              // Start status broadcast interval for the overlay window (every 300ms)
+              broadcastIntervalRef.current = setInterval(() => {
+                bcRef.current?.postMessage({
+                  type: 'status',
+                  isRecording: true,
+                  timer: timerRef.current,
+                  signalLevel: signalLevelRef.current,
+                  signalLevelMic: signalLevelMicRef.current,
+                  signalLevelSystem: signalLevelSystemRef.current,
+                  progressText: progressTextRef.current
+                });
+              }, 300);
+
+              // Request showing the native overlay panel
+              ApiClient.toggleOverlay(true).then((res) => {
+                if (!res || !res.success) {
+                  openBrowserPopup();
+                }
+              }).catch(() => {
+                openBrowserPopup();
+              });
+
+              setIsRecording(true);
+              setStatusState('recording');
+              setStatusText(t('recording.statusRecording'));
+              setProgressText(t('recording.progressSaving') || 'Salvataggio in corso...');
+            } else if (data.type === 'volume') {
               const dbVal = Number(data.db) || -120;
               if (data.source === 'mic') {
                 currentMicDbRef.current = dbVal;
@@ -407,7 +444,33 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
                 currentSysDbRef.current = dbVal;
               }
             } else if (data.type === 'error') {
-              showToast(t('recording.error', { error: data.message }), 'error');
+              eventSource.close();
+              releaseMedia();
+              ApiClient.cancelNativeCapture(session.id).catch(() => {});
+              localStorage.removeItem('asr-active-recording-id');
+              sessionIdRef.current = null;
+              setStatusState('error');
+              setIsRecording(false);
+
+              if (data.reason === 'permissions_missing') {
+                const missingPerms = data.missing_permissions || [];
+                let errorMsg = '';
+                if (missingPerms.includes('microphone') && missingPerms.includes('screen_capture')) {
+                  errorMsg = t('recording.permissionsMissingBoth') || 'Mancano i permessi per il Microfono e la Registrazione dello schermo.';
+                } else if (missingPerms.includes('microphone')) {
+                  errorMsg = t('recording.permissionsMissingMic') || 'Manca il permesso per il Microfono. Apri Impostazioni di Sistema -> Privacy e Sicurezza -> Microfono e abilita ClosedRoom.';
+                } else if (missingPerms.includes('screen_capture')) {
+                  errorMsg = t('recording.permissionsMissingSystem') || 'Manca il permesso per la Registrazione dello schermo. Apri Impostazioni di Sistema -> Privacy e Sicurezza -> Registrazione schermo e abilita ClosedRoom.';
+                } else {
+                  errorMsg = data.message || t('recording.permissionsRequired') || 'Permessi richiesti per microfono e audio di sistema.';
+                }
+                setStatusText(errorMsg);
+                showToast(errorMsg, 'error');
+              } else {
+                const errorMsg = data.message || t('recording.startFailed');
+                setStatusText(errorMsg);
+                showToast(errorMsg, 'error');
+              }
             } else if (data.type === 'stopped') {
               eventSource.close();
             }
@@ -415,47 +478,24 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
             console.error('Failed to parse capture event:', err);
           }
         };
+
         eventSource.onerror = (err) => {
           console.error('EventSource error:', err);
           eventSource.close();
+          // If we haven't successfully started recording yet, handle it as start failure
+          if (!isRecordingRef.current) {
+            releaseMedia();
+            ApiClient.cancelNativeCapture(session.id).catch(() => {});
+            localStorage.removeItem('asr-active-recording-id');
+            sessionIdRef.current = null;
+            setStatusState('error');
+            setStatusText(t('recording.startFailed'));
+            showToast(t('recording.startFailed'), 'error');
+          }
         };
 
         stopAudioMeter(false);
         drawAudioMeter();
-
-        timerIntervalRef.current = setInterval(() => {
-          const elapsed = Math.floor((Date.now() - startedAtRef.current) / 1000);
-          const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
-          const secs = (elapsed % 60).toString().padStart(2, '0');
-          setTimer(`${mins}:${secs}`);
-        }, 250);
-
-        // Start status broadcast interval for the overlay window (every 300ms)
-        broadcastIntervalRef.current = setInterval(() => {
-          bcRef.current?.postMessage({
-            type: 'status',
-            isRecording: true,
-            timer: timerRef.current,
-            signalLevel: signalLevelRef.current,
-            signalLevelMic: signalLevelMicRef.current,
-            signalLevelSystem: signalLevelSystemRef.current,
-            progressText: progressTextRef.current
-          });
-        }, 300);
-
-        // Request showing the native overlay panel
-        ApiClient.toggleOverlay(true).then((res) => {
-          if (!res || !res.success) {
-            openBrowserPopup();
-          }
-        }).catch(() => {
-          openBrowserPopup();
-        });
-
-        setIsRecording(true);
-        setStatusState('recording');
-        setStatusText(t('recording.statusRecording'));
-        setProgressText(t('recording.progressSaving') || 'Salvataggio in corso...');
         return;
       }
 
