@@ -163,8 +163,54 @@ export interface TranscriptionSegment {
   text: string;
   track_id?: string;
   source?: 'mixed' | 'mic' | 'system';
+  channel?: 'mixed' | 'mic' | 'system' | string;
   speaker_label?: string;
+  pause_before?: number;
+  speech_rate_wpm?: number;
+  energy?: 'low' | 'medium_low' | 'medium' | 'high' | string | null;
+  overlap?: boolean;
   words?: Array<{ word: string; start: number; end: number }>;
+}
+
+export interface AudioIntelligenceEvent {
+  start: number;
+  end?: number;
+  duration?: number;
+  channels?: string[];
+}
+
+export interface AudioIntelligence {
+  version: number;
+  backend: string;
+  mode: string;
+  mock?: boolean;
+  channels: Record<string, {
+    track_id: string;
+    label: string;
+    available: boolean;
+    error?: string | null;
+    duration_seconds?: number;
+    speech_threshold?: number;
+  }>;
+  speech_windows?: Array<AudioIntelligenceEvent & { channel: string; speech: boolean; pause_before?: number | null }>;
+  conversation_metrics?: {
+    duration_seconds?: number;
+    speaking_time_seconds?: Record<string, number>;
+    speaking_time_pct?: Record<string, number>;
+    speech_rate_wpm?: Record<string, number>;
+    long_pauses?: AudioIntelligenceEvent[];
+    overlaps?: AudioIntelligenceEvent[];
+    high_energy_moments?: AudioIntelligenceEvent[];
+  };
+  insight_candidates?: Array<{
+    type: string;
+    title?: string;
+    start?: number;
+    confidence?: string;
+    evidence?: string[];
+    mock?: boolean;
+  }>;
+  segments?: TranscriptionSegment[];
 }
 
 export interface MergedSource {
@@ -293,6 +339,10 @@ export const ApiClient = {
 
   async recordingProject(recordingId: string): Promise<ProjectItem> {
     return (await request(`/v1/recordings/${recordingId}/project`)).json();
+  },
+
+  async recordingIntelligence(recordingId: string): Promise<AudioIntelligence> {
+    return (await request(`/v1/recordings/${recordingId}/intelligence`)).json();
   },
 
   async transcriptionSourceData(limit = 100): Promise<TranscriptionSourceData> {

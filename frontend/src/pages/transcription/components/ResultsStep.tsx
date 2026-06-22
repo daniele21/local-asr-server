@@ -7,6 +7,11 @@ import { formatTime } from '../../../utils/formatters';
 import { useToast } from '../../../context/ToastContext';
 import { ProjectPromptModal } from '../../../components/ui/ProjectPromptModal';
 
+function energyLabel(energy?: string | null) {
+  if (!energy) return null;
+  return energy.replace('_', ' ');
+}
+
 interface ResultsStepProps {
   transcriptionResult: Transcription;
   copiedText: string;
@@ -387,6 +392,30 @@ export default function ResultsStep({
                   </span>
                 </div>
                 <p className="text-text-primary text-sm font-medium">{seg.text}</p>
+                {(seg.pause_before != null || seg.speech_rate_wpm != null || seg.energy || seg.overlap) && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {seg.pause_before != null && seg.pause_before >= 1 && (
+                      <span className="text-[10px] border border-border-subtle/70 bg-bg-hover text-text-secondary px-2 py-0.5 rounded-full">
+                        {t('audioIntelligence.longPause')} {seg.pause_before.toFixed(1)}s
+                      </span>
+                    )}
+                    {seg.speech_rate_wpm != null && (
+                      <span className="text-[10px] border border-border-subtle/70 bg-bg-hover text-text-secondary px-2 py-0.5 rounded-full">
+                        {seg.speech_rate_wpm} WPM
+                      </span>
+                    )}
+                    {seg.energy && (
+                      <span className="text-[10px] border border-info/30 bg-info/10 text-info px-2 py-0.5 rounded-full">
+                        {t('audioIntelligence.highEnergy')} {energyLabel(seg.energy)}
+                      </span>
+                    )}
+                    {seg.overlap && (
+                      <span className="text-[10px] border border-warning/30 bg-warning/10 text-warning px-2 py-0.5 rounded-full">
+                        {t('audioIntelligence.overlap')}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 {/* Word-level pills */}
                 {seg.words && seg.words.length > 0 && (

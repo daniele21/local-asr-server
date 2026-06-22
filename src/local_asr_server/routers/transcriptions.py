@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from local_asr_server.recordings import RecordingConflict, RecordingNotFound, RecordingStore
 from local_asr_server.transcription_jobs import TranscriptionJob, TranscriptionJobManager
 from local_asr_server.settings import load_settings
+from local_asr_server.audio_intelligence import build_audio_intelligence
 from local_asr_server.transcriber import (
     str_to_bool,
     generate_cache_key,
@@ -100,6 +101,7 @@ def run_recording_transcription(
         elapsed=elapsed,
         recording_id=recording_id,
     )
+    payload = _attach_audio_intelligence(store, recording_id, track_paths, payload)
     payload = _clean_nan_values(payload)
     job_event("saving", "saving", 95)
     saved_meta = app.state.transcription_store.save(
@@ -109,6 +111,36 @@ def run_recording_transcription(
     )
     payload["saved_id"] = saved_meta["id"]
     payload["saved_file_path"] = str(app.state.transcription_store.root)
+    return payload
+
+
+def _attach_audio_intelligence(
+    store: RecordingStore,
+    recording_id: str,
+    track_paths: list[tuple[dict[str, Any], Path]],
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        intelligence = build_audio_intelligence(track_paths, payload.get("segments", []))
+        store.save_intelligence(recording_id, intelligence)
+        payload["segments"] = intelligence.get("segments", payload.get("segments", []))
+        payload["insight_candidates"] = intelligence.get("insight_candidates", [])
+        payload.setdefault("stats", {})["audio_intelligence"] = {
+            "enabled": True,
+            "version": intelligence.get("version"),
+            "backend": intelligence.get("backend"),
+            "mode": intelligence.get("mode"),
+            "mock_insights": True,
+            "speaking_time_pct": intelligence.get("conversation_metrics", {}).get("speaking_time_pct", {}),
+            "long_pause_count": len(intelligence.get("conversation_metrics", {}).get("long_pauses", []) or []),
+            "overlap_count": len(intelligence.get("conversation_metrics", {}).get("overlaps", []) or []),
+        }
+    except Exception as exc:
+        logger.warning("Audio intelligence failed for recording %s: %s", recording_id, exc)
+        payload.setdefault("stats", {})["audio_intelligence"] = {
+            "enabled": False,
+            "error": str(exc)[:500],
+        }
     return payload
 
 

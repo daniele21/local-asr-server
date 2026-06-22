@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ApiClient, ProjectItem, Recording } from '../api/apiClient';
+import { ApiClient, AudioIntelligence, ProjectItem, Recording } from '../api/apiClient';
 import { useTranslation } from '../i18n/i18n';
 import { useToast } from '../context/ToastContext';
 import { useRecorder, openBrowserPopup } from '../hooks/useRecorder';
@@ -10,6 +10,7 @@ import { Select } from '../components/ui/Select';
 import { Badge } from '../components/ui/Badge';
 import { ProjectPromptModal } from '../components/ui/ProjectPromptModal';
 import { formatBytes, formatProjectDate } from '../utils/formatters';
+import AudioIntelligencePanel from './recording/AudioIntelligencePanel';
 
 interface RecordingPageProps {
   detailId: string | null;
@@ -21,7 +22,9 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
   const { showToast } = useToast();
 
   const [projectDetail, setProjectDetail] = useState<ProjectItem | null>(null);
+  const [audioIntelligence, setAudioIntelligence] = useState<AudioIntelligence | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [intelligenceLoading, setIntelligenceLoading] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitleValue, setEditTitleValue] = useState('');
 
@@ -164,12 +167,23 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
     const loadProjectDetail = async () => {
       if (!detailId) {
         setProjectDetail(null);
+        setAudioIntelligence(null);
         return;
       }
       try {
         setDetailLoading(true);
         const data = await ApiClient.recordingProject(detailId);
         setProjectDetail(data);
+        if (data.transcription) {
+          setIntelligenceLoading(true);
+          ApiClient.recordingIntelligence(detailId)
+            .then(setAudioIntelligence)
+            .catch(() => setAudioIntelligence(null))
+            .finally(() => setIntelligenceLoading(false));
+        } else {
+          setIntelligenceLoading(false);
+          setAudioIntelligence(null);
+        }
       } catch (err: any) {
         showToast(err.message || 'Errore nel caricamento dei dettagli del progetto', 'error');
         navigateTo('recording');
@@ -418,6 +432,12 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
                 {!transcription ? 'Trascrivi prima' : (analysis ? 'Apri analisi' : 'Genera analisi')}
               </Button>
             </Card>
+            <AudioIntelligencePanel
+              intelligence={audioIntelligence}
+              loading={intelligenceLoading}
+              hasTranscription={Boolean(transcription)}
+              onTranscribe={() => navigateTo('transcription', `file-${recording.id}`)}
+            />
           </div>
         )}
         <ProjectPromptModal

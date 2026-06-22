@@ -335,6 +335,20 @@ class RecordingStore:
             self._upsert_catalog(metadata)
             return self.public_metadata(metadata)
 
+    def save_intelligence(self, recording_id: str, intelligence: dict[str, Any]) -> dict[str, Any]:
+        with self._lock_for(recording_id):
+            session_dir, metadata = self._load(recording_id)
+            self._write_json_atomic(session_dir / "intelligence.json", intelligence)
+            return self.public_metadata(metadata)
+
+    def get_intelligence(self, recording_id: str) -> dict[str, Any]:
+        session_dir, _ = self._load(recording_id)
+        intelligence_path = session_dir / "intelligence.json"
+        if not intelligence_path.exists():
+            raise FileNotFoundError("Audio intelligence not found")
+        with intelligence_path.open("r", encoding="utf-8") as intelligence_file:
+            return json.load(intelligence_file)
+
     def finalize(self, recording_id: str) -> tuple[dict[str, Any], bool]:
         with self._lock_for(recording_id):
             session_dir, metadata = self._load(recording_id)

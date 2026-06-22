@@ -92,6 +92,18 @@ track under one recording item. Whisper is started later from the
 merges the resulting segments by timestamp, labeling them as local microphone
 or computer audio.
 
+When a multi-track recording is transcribed, ClosedRoom also runs a lightweight
+audio intelligence pass in shadow mode. It reads the finalized source tracks in
+small audio windows, computes local metadata such as speaking time, long pauses,
+channel overlap, speech rate and relative energy, enriches transcript segments,
+and stores a compact `intelligence.json` next to the recording. This pass does
+not create persistent audio clips and does not call an LLM; any insight
+candidates are marked as mock placeholders for a future local text analysis
+step. The recording detail screen shows the generated speaking-time, pause,
+overlap, speech-rate and energy metrics after transcription, and the
+transcription segment view displays small badges for the same per-segment
+signals when available.
+
 In the macOS app bundle, native capture runs from an embedded helper app,
 `ClosedRoomNativeCapture.app`, with its own bundle identifier
 `com.closedroom.nativecapture` and microphone/screen/audio usage descriptions.

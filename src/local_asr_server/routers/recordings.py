@@ -260,6 +260,16 @@ def get_recording_audio(recording_id: str, request: Request):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@router.get("/v1/recordings/{recording_id}/intelligence")
+def get_recording_intelligence(recording_id: str, request: Request):
+    try:
+        return request.app.state.recording_store.get_intelligence(recording_id)
+    except RecordingNotFound as exc:
+        raise HTTPException(status_code=404, detail="Recording not found") from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Audio intelligence not found") from exc
+
+
 @router.get("/v1/recordings/{recording_id}/tracks/{track_id}/audio")
 def get_recording_track_audio(recording_id: str, track_id: str, request: Request):
     store: RecordingStore = request.app.state.recording_store

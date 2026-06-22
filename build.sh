@@ -30,13 +30,13 @@ set -euo pipefail
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 APP_NAME="ClosedRoom"
-APP_VERSION="1.0.0"
-BUNDLE_ID="com.closedroom.app"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('$SCRIPT_DIR/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || python3 -c "import re; print(re.search(r'version\s*=\s*\"([^\"]+)\"', open('$SCRIPT_DIR/pyproject.toml').read()).group(1))" 2>/dev/null || echo "1.0.0")
+BUNDLE_ID="com.closedroom.app"
 BUILD_ASSETS="$SCRIPT_DIR/build_assets"
 DIST_DIR="$SCRIPT_DIR/dist"
 APP_PATH="$DIST_DIR/$APP_NAME.app"
-DMG_PATH="$DIST_DIR/$APP_NAME.dmg"
+DMG_PATH="$DIST_DIR/${APP_NAME}-${APP_VERSION}.dmg"
 CREATE_DMG=true
 CLEAN_BUILD=false
 INSTALL_TO_APPLICATIONS=false

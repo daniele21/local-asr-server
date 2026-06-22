@@ -16,6 +16,22 @@ from pathlib import Path
 # ── Project layout ─────────────────────────────────────────────────────────────
 
 PROJECT_ROOT   = Path(SPECPATH)                                     # noqa: F821
+# Try to extract the app version from pyproject.toml
+APP_VERSION = "1.0.0"
+try:
+    import tomllib
+    with open(PROJECT_ROOT / "pyproject.toml", "rb") as _f:
+        APP_VERSION = tomllib.load(_f)["project"]["version"]
+except Exception:
+    try:
+        import re
+        _content = (PROJECT_ROOT / "pyproject.toml").read_text()
+        _m = re.search(r'version\s*=\s*"([^"]+)"', _content)
+        if _m:
+            APP_VERSION = _m.group(1)
+    except Exception:
+        pass
+
 CACHE_DIR      = PROJECT_ROOT / ".cache"
 AUDIO_HELPER   = CACHE_DIR / "audio-helper" / "audio-helper"
 NATIVE_CAPTURE_HELPER = CACHE_DIR / "native-capture-helper" / "native-capture-helper"
@@ -219,15 +235,15 @@ app = BUNDLE(                                                           # noqa: 
     name="ClosedRoom.app",
     icon=str(icns_path) if icns_path.exists() else None,
     bundle_identifier="com.closedroom.app",
-    version="1.0.0",
+    version=APP_VERSION,
     info_plist={
         # Run as a regular application (visible in Dock when running, stays in menu bar)
         "LSUIElement": False,
         "CFBundleName": "ClosedRoom",
         "CFBundleDisplayName": "ClosedRoom",
         "CFBundleIdentifier": "com.closedroom.app",
-        "CFBundleVersion": "1.0.0",
-        "CFBundleShortVersionString": "1.0.0",
+        "CFBundleVersion": APP_VERSION,
+        "CFBundleShortVersionString": APP_VERSION,
         "NSHumanReadableCopyright": "© 2026 ClosedRoom",
         "NSHighResolutionCapable": True,
         "NSMicrophoneUsageDescription":

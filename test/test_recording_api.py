@@ -2,12 +2,26 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import wave
 from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from local_asr_server.server import AudioRouter, create_app
+
+
+def _wav_bytes() -> bytes:
+    path = Path(tempfile.gettempdir()) / "closedroom-test-tone.wav"
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(16_000)
+        wav.writeframes((b"\x00\x20" * 16_000))
+    try:
+        return path.read_bytes()
+    finally:
+        path.unlink(missing_ok=True)
 
 
 class RecordingApiTests(unittest.TestCase):
@@ -260,6 +274,61 @@ class RecordingApiTests(unittest.TestCase):
         self.assertIn("[00:01] Computer: Salve", data["text"])
         self.assertIn("[00:02] Tu: Ciao", data["text"])
         self.assertEqual({track["id"] for track in data["source_tracks"]}, {"mic", "system"})
+
+    @patch("local_asr_server.server.transcribe_file_sync")
+    def test_transcribe_recording_saves_audio_intelligence_shadow_metadata(self, transcribe) -> None:
+        transcribe.side_effect = [
+            {
+                "text": "Ciao",
+                "language": "it",
+                "segments": [{"id": 0, "start": 0.1, "end": 0.8, "text": "Ciao"}],
+            },
+            {
+                "text": "Salve",
+                "language": "it",
+                "segments": [{"id": 0, "start": 0.2, "end": 0.9, "text": "Salve"}],
+            },
+        ]
+        created = self.client.post(
+            "/v1/recordings",
+            json={
+                "title": "Native Call",
+                "mime_type": "audio/wav",
+                "language": "it",
+                "capture_mode": "both",
+                "capture_backend": "native",
+            },
+        )
+        recording_id = created.json()["id"]
+        wav_content = _wav_bytes()
+        for track_id in ["mic", "system", "mixed"]:
+            response = self.client.post(
+                f"/v1/recordings/{recording_id}/tracks/{track_id}/chunks",
+                data={"sequence": "0"},
+                files={"file": (f"{track_id}.wav", wav_content, "audio/wav")},
+            )
+            self.assertEqual(response.status_code, 200)
+        self.client.post(f"/v1/recordings/{recording_id}/stop")
+
+        response = self.client.post(
+            f"/v1/recordings/{recording_id}/transcriptions",
+            json={"language": "it", "response_format": "verbose_json"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["stats"]["audio_intelligence"]["enabled"])
+        self.assertTrue(data["stats"]["audio_intelligence"]["mock_insights"])
+        self.assertIn("channel", data["segments"][0])
+        self.assertIn("speech_rate_wpm", data["segments"][0])
+
+        intelligence = self.client.get(f"/v1/recordings/{recording_id}/intelligence")
+        self.assertEqual(intelligence.status_code, 200)
+        self.assertEqual(intelligence.json()["backend"], "energy-rms-v1")
+        self.assertTrue(intelligence.json()["mock"])
+
+        saved = self.app.state.transcription_store.get(data["saved_id"])
+        self.assertIsNone(saved.get("analysis"))
 
     @patch("local_asr_server.server.transcribe_file_sync")
     def test_transcription_job_for_recording(self, transcribe) -> None:
