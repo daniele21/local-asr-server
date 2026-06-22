@@ -25,11 +25,17 @@ class TrackFeatures:
     error: str | None = None
 
 
-def build_track_features(track: dict[str, Any], windows: list[EnergyWindow]) -> TrackFeatures:
+def build_track_features(
+    track: dict[str, Any],
+    windows: list[EnergyWindow],
+    speech_windows: list[dict[str, Any]] | None = None,
+    threshold: float = 0.0,
+) -> TrackFeatures:
     source = track.get("source") or track.get("id") or "audio"
     duration = windows[-1].end if windows else 0.0
-    threshold = _speech_threshold(windows)
-    speech_windows = _speech_windows(windows, threshold=threshold, channel=source)
+    if speech_windows is None:
+        threshold = _speech_threshold(windows)
+        speech_windows = _speech_windows(windows, threshold=threshold, channel=source)
     return TrackFeatures(
         track_id=track.get("id") or source,
         source=source,
@@ -39,6 +45,36 @@ def build_track_features(track: dict[str, Any], windows: list[EnergyWindow]) -> 
         speech_windows=speech_windows,
         threshold=threshold,
     )
+
+
+def format_vad_speech_windows(
+    raw_windows: list[dict[str, float]],
+    windows: list[EnergyWindow],
+    channel: str,
+    duration: float,
+) -> list[dict[str, Any]]:
+    result = []
+    previous_end = None
+    for item in raw_windows:
+        source_start = item["start"]
+        source_end = item["end"]
+        start = max(0.0, source_start - PADDING_SECONDS)
+        end = min(duration, source_end + PADDING_SECONDS)
+        overlap_rms = [w.rms for w in windows if w.end > source_start and w.start < source_end]
+        peak_rms = max(overlap_rms) if overlap_rms else 0.0
+        payload = {
+            "channel": channel,
+            "start": round(start, 3),
+            "end": round(end, 3),
+            "speech": True,
+            "pause_before": round(source_start - previous_end, 3) if previous_end is not None else None,
+            "source_start": round(source_start, 3),
+            "source_end": round(source_end, 3),
+            "peak_rms": round(peak_rms, 6),
+        }
+        result.append(payload)
+        previous_end = source_end
+    return result
 
 
 def build_error_track_features(track: dict[str, Any], error: str) -> TrackFeatures:

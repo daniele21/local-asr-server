@@ -104,6 +104,7 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
   const [temperature, setTemperature] = useState('');
   const [wordTimestamps, setWordTimestamps] = useState(false);
   const [conditionOnPrevious, setConditionOnPrevious] = useState(true);
+  const [vadGuided, setVadGuided] = useState(true);
   const [modelCacheStatus, setModelCacheStatus] = useState('Verifica...');
 
   // Processing state
@@ -186,8 +187,10 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
   // Handle URL Preselections (e.g. from Recording detail action)
   useEffect(() => {
     if (detailPath) {
-      if (detailPath.startsWith('file-')) {
-        const recordingId = detailPath.replace('file-', '');
+      if (detailPath.startsWith('file-') || detailPath.startsWith('retranscribe-')) {
+        const recordingId = detailPath.startsWith('file-')
+          ? detailPath.replace('file-', '')
+          : detailPath.replace('retranscribe-', '');
         // Load recording details and select it
         ApiClient.getRecording(recordingId).then(async (rec: Recording) => {
           setSelectedRecordingId(rec.id);
@@ -348,6 +351,7 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
           word_timestamps: wordTimestamps,
           condition_on_previous_text: conditionOnPrevious,
           temperature: temperature ? Number(temperature) : null,
+          vad_guided: vadGuided,
         });
         let currentJob = job;
         while (!['completed', 'failed', 'cancelled'].includes(currentJob.status)) {
@@ -380,6 +384,7 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
       formData.append('response_format', 'verbose_json');
       formData.append('word_timestamps', String(wordTimestamps));
       formData.append('condition_on_previous_text', String(conditionOnPrevious));
+      formData.append('vad_guided', String(vadGuided));
       if (temperature) formData.append('temperature', temperature);
 
       const duration = audioDuration || audioRef.current?.duration || 0;
@@ -552,6 +557,8 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
           setWordTimestamps={setWordTimestamps}
           conditionOnPrevious={conditionOnPrevious}
           setConditionOnPrevious={setConditionOnPrevious}
+          vadGuided={vadGuided}
+          setVadGuided={setVadGuided}
           audioRef={audioRef}
           startTranscription={startTranscription}
         />

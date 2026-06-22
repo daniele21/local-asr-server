@@ -1,52 +1,86 @@
+"""
+llm.py — LLM provider abstraction for ClosedRoom analysis.
+
+Providers:
+  - MockProvider         — simulated response, no dependencies
+  - GeminiProvider       — Google Gemini cloud API
+  - NemotronLocalProvider — local Nemotron 4B via local-llm-server (text)
+  - VoxtralLocalProvider  — local Voxtral 3B via local-llm-server (audio + text)
+"""
+from __future__ import annotations
+
 import json
+import logging
 import time
 import urllib.request
 import urllib.error
-import logging
+from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger("uvicorn.error")
 
+
+# ── Base class ────────────────────────────────────────────────────────────────
+
 class BaseLLMProvider:
-    def analyze(self, text: str) -> dict:
+    """Base interface for all LLM analysis providers."""
+
+    def analyze(self, text: str, prompt: Optional[str] = None) -> dict:
+        """Analyze a transcript text and return a structured result dict."""
         raise NotImplementedError("Subclasses must implement analyze()")
 
+
+# ── Mock provider ─────────────────────────────────────────────────────────────
+
 class MockProvider(BaseLLMProvider):
-    def analyze(self, text: str) -> dict:
-        time.sleep(1.5) # Simulate API latency
-        
+    """Simulated provider for development and testing (no external calls)."""
+
+    def analyze(self, text: str, prompt: Optional[str] = None) -> dict:
+        time.sleep(1.5)  # Simulate API latency
+
         words = text.split()
         word_count = len(words)
         preview = " ".join(words[:5]) + "..." if word_count > 5 else text
-        
-        # Generate dummy content based on text length
+
         return {
             "title": f"Analisi di: {preview}",
-            "summary": f"Questo è un riepilogo simulato della trascrizione che contiene {word_count} parole. Il testo analizza i temi principali introdotti nel discorso, evidenziando i passaggi chiave discussi dall'utente.",
+            "summary": (
+                f"Questo è un riepilogo simulato della trascrizione che contiene {word_count} parole. "
+                "Il testo analizza i temi principali introdotti nel discorso, evidenziando i passaggi chiave."
+            ),
             "key_points": [
                 "Punto chiave 1: Introduzione e contesto iniziale della registrazione.",
                 f"Punto chiave 2: Analisi quantitativa dei dati (rilevate {word_count} parole nel testo).",
-                "Punto chiave 3: Conclusioni e considerazioni finali emerse durante la sessione."
+                "Punto chiave 3: Conclusioni e considerazioni finali emerse durante la sessione.",
             ],
             "action_items": [
                 "Verificare la correttezza della trascrizione importata.",
-                "Configurare una chiave API Gemini reale per ottenere analisi reali.",
-                "Condividere i punti chiave del riepilogo con il team."
-            ]
+                "Configurare un provider LLM reale per ottenere analisi effettive.",
+                "Condividere i punti chiave del riepilogo con il team.",
+            ],
         }
 
+
+# ── Gemini cloud provider ─────────────────────────────────────────────────────
+
 class GeminiProvider(BaseLLMProvider):
-    def __init__(self, api_key: str):
+    """Google Gemini cloud API provider."""
+
+    def __init__(self, api_key: str) -> None:
         self.api_key = api_key
 
-    def analyze(self, text: str) -> dict:
+    def analyze(self, text: str, prompt: Optional[str] = None) -> dict:
         if not self.api_key:
             raise ValueError("Chiave API Gemini mancante o non configurata.")
-            
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.api_key}"
-        
-        prompt = (
-            "Analizza la seguente trascrizione audio e restituisci un oggetto JSON strutturato. "
+
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"gemini-2.5-flash:generateContent?key={self.api_key}"
+        )
+
+        prompt_instruction = prompt or "Analizza la seguente trascrizione audio e restituisci un oggetto JSON strutturato."
+        prompt_str = (
+            f"{prompt_instruction}\n\n"
             "La trascrizione è la seguente:\n\n"
             f"{text}\n\n"
             "Il JSON di risposta deve avere esattamente questo schema:\n"
@@ -57,13 +91,9 @@ class GeminiProvider(BaseLLMProvider):
             '  "action_items": ["Azione da intraprendere 1", ... (se presenti, altrimenti lista vuota, in italiano)]\n'
             "}"
         )
-        
+
         payload = {
-            "contents": [{
-                "parts": [{
-                    "text": prompt
-                }]
-            }],
+            "contents": [{"parts": [{"text": prompt_str}]}],
             "generationConfig": {
                 "responseMimeType": "application/json",
                 "responseSchema": {
@@ -71,50 +101,214 @@ class GeminiProvider(BaseLLMProvider):
                     "properties": {
                         "title": {"type": "STRING"},
                         "summary": {"type": "STRING"},
-                        "key_points": {
-                            "type": "ARRAY",
-                            "items": {"type": "STRING"}
-                        },
-                        "action_items": {
-                            "type": "ARRAY",
-                            "items": {"type": "STRING"}
-                        }
+                        "key_points": {"type": "ARRAY", "items": {"type": "STRING"}},
+                        "action_items": {"type": "ARRAY", "items": {"type": "STRING"}},
                     },
-                    "required": ["title", "summary", "key_points", "action_items"]
-                }
-            }
+                    "required": ["title", "summary", "key_points", "action_items"],
+                },
+            },
         }
-        
+
         req = urllib.request.Request(
             url,
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
-            method="POST"
+            method="POST",
         )
-        
+
         try:
             with urllib.request.urlopen(req, timeout=30) as response:
                 res_data = json.loads(response.read().decode("utf-8"))
-                
-                # Extract text response from Gemini structure
                 candidates = res_data.get("candidates", [])
                 if not candidates:
                     raise ValueError("Nessuna risposta generata da Gemini.")
-                    
                 content_text = candidates[0]["content"]["parts"][0]["text"]
                 return json.loads(content_text)
-                
+
         except urllib.error.HTTPError as e:
             err_body = e.read().decode("utf-8")
-            logger.error(f"Gemini HTTP Error: {e.code} - {err_body}")
+            logger.error("Gemini HTTP Error: %s - %s", e.code, err_body)
             raise Exception(f"Errore Gemini API: {e.code} - {err_body}")
         except Exception as e:
-            logger.error(f"Errore durante la chiamata a Gemini: {e}")
-            raise Exception(f"Errore durante l'analisi con Gemini: {str(e)}")
+            logger.error("Errore durante la chiamata a Gemini: %s", e)
+            raise Exception(f"Errore durante l'analisi con Gemini: {e}")
+
+
+# ── Local providers (via local-llm-server) ────────────────────────────────────
+
+class NemotronLocalProvider(BaseLLMProvider):
+    """
+    Local text analysis via Nemotron 4B GGUF running in local-llm-server.
+
+    Expects a running local-llm-server instance at `base_url` (default port 1235).
+    Does NOT auto-start the server — the user must run local-llm-server separately.
+    """
+
+    def __init__(self, base_url: str = "http://127.0.0.1:1235") -> None:
+        self.base_url = base_url.rstrip("/")
+
+    def analyze(self, text: str, language: str = "it", prompt: Optional[str] = None) -> dict:
+        try:
+            from local_llm_server.client import LocalLLMClient  # lazy import
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "local-llm-server non è installato. "
+                "Installa il wheel con: uv pip install local_llm_server-0.2.0-py3-none-any.whl"
+            ) from exc
+
+        client = LocalLLMClient(base_url=self.base_url)
+        if not client.is_ready():
+            raise RuntimeError(
+                f"Il server LLM locale non è raggiungibile su {self.base_url}. "
+                "Avvia local-llm-server prima di usare questo provider."
+            )
+        if prompt:
+            full_prompt = (
+                f"{prompt}\n\n"
+                f"Lingua: {language}\n"
+                f"Trascrizione:\n{text}\n\n"
+                "Rispondi SOLTANTO con un oggetto JSON avente i campi title (string), summary (string), key_points (array di stringhe) e action_items (array di stringhe)."
+            )
+            content = client.chat(
+                [{"role": "user", "content": full_prompt}],
+                response_format={"type": "json_object"},
+                temperature=0.0,
+            )
+            try:
+                from local_llm_server.client import _parse_json_object
+                return _parse_json_object(content)
+            except Exception:
+                import re
+                match = re.search(r"\{.*\}", content, re.DOTALL)
+                if match:
+                    return json.loads(match.group(0))
+                raise ValueError(f"La risposta non contiene un oggetto JSON valido: {content[:300]}")
+        return client.analyze_text(text, language=language)
+
+
+class VoxtralLocalProvider(BaseLLMProvider):
+    """
+    Local analysis via Voxtral Mini 3B running in local-llm-server (llama-server subprocess).
+
+    Supports:
+      - analyze(text)         — text fallback (uses Voxtral in text-only mode)
+      - analyze_audio(path)   — direct audio analysis (multimodal, requires soundfile+numpy)
+    """
+
+    def __init__(self, base_url: str = "http://127.0.0.1:1235") -> None:
+        self.base_url = base_url.rstrip("/")
+
+    def _get_client(self):
+        """Return a ready LocalLLMClient or raise a descriptive error."""
+        try:
+            from local_llm_server.client import LocalLLMClient  # lazy import
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "local-llm-server non è installato. "
+                "Installa il wheel con: uv pip install local_llm_server-0.2.0-py3-none-any.whl"
+            ) from exc
+
+        client = LocalLLMClient(base_url=self.base_url)
+        if not client.is_ready():
+            raise RuntimeError(
+                f"Il server LLM locale non è raggiungibile su {self.base_url}. "
+                "Avvia local-llm-server con il modello Voxtral prima di usare questo provider."
+            )
+        return client
+
+    def analyze(self, text: str, language: str = "it", prompt: Optional[str] = None) -> dict:
+        """Text-only analysis fallback (uses Voxtral in chat mode)."""
+        client = self._get_client()
+        if prompt:
+            full_prompt = (
+                f"{prompt}\n\n"
+                f"Lingua: {language}\n"
+                f"Trascrizione:\n{text}\n\n"
+                "Rispondi SOLTANTO con un oggetto JSON avente i campi title (string), summary (string), key_points (array di stringhe) e action_items (array di stringhe)."
+            )
+            content = client.chat(
+                [{"role": "user", "content": full_prompt}],
+                response_format={"type": "json_object"},
+                temperature=0.0,
+            )
+            try:
+                from local_llm_server.client import _parse_json_object
+                return _parse_json_object(content)
+            except Exception:
+                import re
+                match = re.search(r"\{.*\}", content, re.DOTALL)
+                if match:
+                    return json.loads(match.group(0))
+                raise ValueError(f"La risposta non contiene un oggetto JSON valido: {content[:300]}")
+        return client.analyze_text(text, language=language)
+
+    def analyze_audio(
+        self,
+        audio_path: str | Path,
+        task: str = "analysis",
+        question: Optional[str] = None,
+        language: str = "it",
+    ) -> dict:
+        """
+        Direct audio analysis via Voxtral multimodal.
+
+        Parameters
+        ----------
+        audio_path:  Path to the audio file (any format; converted internally to 16kHz WAV).
+        task:        One of: transcribe, summary, analysis, insights, qa.
+        question:    Required when task='qa'.
+        language:    Response language hint (default: 'it').
+        """
+        client = self._get_client()
+        result = client.analyze_audio(
+            audio_path=audio_path,
+            task=task,
+            question=question,
+            language=language,
+        )
+        # Ensure the result always has the standard analysis schema keys
+        if isinstance(result, str):
+            return {
+                "title": "Analisi audio",
+                "summary": result,
+                "key_points": [],
+                "action_items": [],
+            }
+        return result
+
+
+# ── Service factory ───────────────────────────────────────────────────────────
 
 class LLMService:
+    """Factory that instantiates the correct provider from a name string."""
+
     @staticmethod
-    def get_provider(provider_name: str, api_key: Optional[str] = None) -> BaseLLMProvider:
+    def get_provider(
+        provider_name: str,
+        api_key: Optional[str] = None,
+        local_llm_url: Optional[str] = None,
+    ) -> BaseLLMProvider:
+        """
+        Return an LLM provider instance.
+
+        Parameters
+        ----------
+        provider_name:  One of: mock, gemini, nemotron_local, voxtral_local.
+        api_key:        Gemini API key (only used with provider_name='gemini').
+        local_llm_url:  Base URL of the running local-llm-server instance
+                        (used by nemotron_local and voxtral_local; defaults to
+                        http://127.0.0.1:1235 if not provided).
+        """
+        url = (local_llm_url or "http://127.0.0.1:1235").rstrip("/")
+
         if provider_name == "gemini":
             return GeminiProvider(api_key or "")
+        if provider_name == "nemotron_local":
+            return NemotronLocalProvider(base_url=url)
+        if provider_name == "voxtral_local":
+            return VoxtralLocalProvider(base_url=url)
         return MockProvider()
+
+
+
+

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ApiClient, Settings } from '../api/apiClient';
-import { MODELS, LANGUAGES, TASKS } from '../api/config';
+import { MODELS, LANGUAGES, TASKS, LOCAL_LLM_MODELS } from '../api/config';
 import { useTranslation } from '../i18n/i18n';
 import { useToast } from '../context/ToastContext';
 import { Card } from '../components/ui/Card';
@@ -10,7 +10,7 @@ import { Checkbox } from '../components/ui/Checkbox';
 import { Button } from '../components/ui/Button';
 
 export default function SettingsPage() {
-  const { t } = useTranslation();
+  const { t, lang } = useTranslation();
   const { showToast } = useToast();
 
   const [loading, setLoading] = useState(true);
@@ -27,6 +27,9 @@ export default function SettingsPage() {
   const [conditionOnPrevious, setConditionOnPrevious] = useState(true);
   const [llmProvider, setLlmProvider] = useState('mock');
   const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [localLlmUrl, setLocalLlmUrl] = useState('');
+  const [localLlmModel, setLocalLlmModel] = useState('nemotron-nano-4b');
+  const [localLlmModelPath, setLocalLlmModelPath] = useState('');
 
   // System Info
   const [sysInfo, setSysInfo] = useState({
@@ -54,6 +57,9 @@ export default function SettingsPage() {
       setConditionOnPrevious(settings.default_condition_on_previous !== false);
       setLlmProvider(settings.llm_provider || 'mock');
       setGeminiApiKey(settings.gemini_api_key || '');
+      setLocalLlmUrl(settings.local_llm_url || '');
+      setLocalLlmModel(settings.local_llm_model || 'nemotron-nano-4b');
+      setLocalLlmModelPath(settings.local_llm_model_path || '');
 
       setSysInfo({
         server: '127.0.0.1:1236',
@@ -72,14 +78,21 @@ export default function SettingsPage() {
     loadSettings();
   }, [t]);
 
-  const handleBrowse = async (target: 'recordings' | 'transcriptions') => {
+  const handleBrowse = async (target: 'recordings' | 'transcriptions' | 'model') => {
     try {
-      const result = await ApiClient.selectDirectory();
+      let result;
+      if (target === 'model') {
+        result = await ApiClient.selectFile();
+      } else {
+        result = await ApiClient.selectDirectory();
+      }
       if (result && result.path) {
         if (target === 'recordings') {
           setRecordingsDir(result.path);
-        } else {
+        } else if (target === 'transcriptions') {
           setTranscriptionsDir(result.path);
+        } else if (target === 'model') {
+          setLocalLlmModelPath(result.path);
         }
         showToast(t('transcription.browseSelectDir'), 'info');
       }
@@ -104,6 +117,9 @@ export default function SettingsPage() {
         default_condition_on_previous: conditionOnPrevious,
         llm_provider: llmProvider,
         gemini_api_key: geminiApiKey.trim(),
+        local_llm_url: localLlmUrl.trim(),
+        local_llm_model: localLlmModel,
+        local_llm_model_path: localLlmModelPath.trim(),
       };
 
       await ApiClient.updateSettings(payload);
@@ -264,6 +280,8 @@ export default function SettingsPage() {
             >
               <option value="mock">{t('settings.providerMock')}</option>
               <option value="gemini">{t('settings.providerGemini')}</option>
+              <option value="nemotron_local">{t('settings.providerNemotron')}</option>
+              <option value="voxtral_local">{t('settings.providerVoxtral')}</option>
             </Select>
 
             {llmProvider === 'gemini' && (
@@ -276,6 +294,48 @@ export default function SettingsPage() {
                   placeholder="AIzaSy..."
                 />
                 <span className="text-[10px] text-text-muted">{t('settings.apiKeyDesc')}</span>
+              </div>
+            )}
+
+            {(llmProvider === 'nemotron_local' || llmProvider === 'voxtral_local') && (
+              <div className="flex flex-col gap-4">
+                <Input
+                  label={t('settings.localLlmUrl')}
+                  value={localLlmUrl}
+                  onChange={(e) => setLocalLlmUrl(e.target.value)}
+                  placeholder="http://127.0.0.1:1235"
+                />
+                <Select
+                  label={lang === 'it' ? 'Modello LLM locale' : 'Local LLM model'}
+                  value={localLlmModel}
+                  onChange={(e) => setLocalLlmModel(e.target.value)}
+                >
+                  {LOCAL_LLM_MODELS.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </Select>
+
+                {localLlmModel === 'custom' && (
+                  <div className="flex flex-col gap-1.5 w-full">
+                    <label className="text-sm font-medium text-text-secondary">
+                      {lang === 'it' ? 'Percorso file .gguf modello' : 'Model .gguf file path'}
+                    </label>
+                    <div className="flex gap-2 w-full">
+                      <Input
+                        value={localLlmModelPath}
+                        onChange={(e) => setLocalLlmModelPath(e.target.value)}
+                        placeholder="/Users/.../models/model.gguf"
+                        required
+                        className="flex-1"
+                      />
+                      <Button type="button" variant="secondary" onClick={() => handleBrowse('model')}>
+                        {t('settings.btnBrowse')}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

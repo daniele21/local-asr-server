@@ -24,6 +24,8 @@ interface ConfigureStepProps {
   setWordTimestamps: (wt: boolean) => void;
   conditionOnPrevious: boolean;
   setConditionOnPrevious: (cop: boolean) => void;
+  vadGuided: boolean;
+  setVadGuided: (vg: boolean) => void;
   audioRef: React.RefObject<HTMLAudioElement | null>;
   startTranscription: () => void;
 }
@@ -45,6 +47,8 @@ export default function ConfigureStep({
   setWordTimestamps,
   conditionOnPrevious,
   setConditionOnPrevious,
+  vadGuided,
+  setVadGuided,
   audioRef,
   startTranscription,
 }: ConfigureStepProps) {
@@ -137,6 +141,12 @@ export default function ConfigureStep({
               label={t('transcription.conditionLabel')}
               checked={conditionOnPrevious}
               onChange={(e) => setConditionOnPrevious(e.target.checked)}
+            />
+            <Checkbox
+              variant="toggle"
+              label={t('transcription.vadGuidedLabel')}
+              checked={vadGuided}
+              onChange={(e) => setVadGuided(e.target.checked)}
             />
           </div>
         </Card>

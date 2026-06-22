@@ -26,6 +26,10 @@ DEFAULT_SETTINGS: dict[str, any] = {
     "default_temperature": "",
     "default_word_timestamps": False,
     "default_condition_on_previous": True,
+    "local_llm_url": "http://127.0.0.1:1333",
+    "local_llm_model": "nemotron-nano-4b",
+    "local_llm_model_path": "",
+    "local_llm_model_paths": {},
 }
 
 

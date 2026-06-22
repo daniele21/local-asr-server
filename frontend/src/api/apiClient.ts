@@ -242,6 +242,11 @@ export interface Settings {
   recordings_dir: string;
   gemini_api_key: string;
   llm_provider: string;
+  local_llm_url?: string;
+  local_llm_model?: string;
+  local_llm_model_path?: string;
+  /** Mappa model-key → percorso assoluto al file .gguf locale */
+  local_llm_model_paths?: Record<string, string>;
   default_model: string;
   default_language: string;
   default_task: string;
@@ -432,6 +437,7 @@ export const ApiClient = {
     initial_prompt?: string;
     temperature?: number | null;
     condition_on_previous_text?: boolean;
+    vad_guided?: boolean;
   }): Promise<Transcription> {
     return request(`/v1/recordings/${recordingId}/transcriptions`, {
       method: 'POST',
@@ -449,6 +455,7 @@ export const ApiClient = {
     initial_prompt?: string;
     temperature?: number | null;
     condition_on_previous_text?: boolean;
+    vad_guided?: boolean;
   }): Promise<TranscriptionJob> {
     return (await request(`/v1/recordings/${recordingId}/transcription-jobs`, {
       method: 'POST',
@@ -493,7 +500,7 @@ export const ApiClient = {
     return (await request('/v1/stats')).json();
   },
 
-  async analyze(payload: { transcription_id?: string; text?: string; gemini_api_key?: string; llm_provider?: string }): Promise<any> {
+  async analyze(payload: { transcription_id?: string; recording_id?: string; text?: string; gemini_api_key?: string; llm_provider?: string; audio_task?: string; question?: string }): Promise<any> {
     return (await request('/v1/analysis', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -503,6 +510,10 @@ export const ApiClient = {
 
   async selectDirectory(): Promise<{ path: string | null; error?: string }> {
     return (await request('/v1/system/select-directory', { method: 'POST' })).json();
+  },
+
+  async selectFile(): Promise<{ path: string | null; error?: string }> {
+    return (await request('/v1/system/select-file', { method: 'POST' })).json();
   },
 
   async listTranscriptions(page = 1, limit = 10): Promise<{ items: Transcription[]; total: number; page: number; limit: number }> {

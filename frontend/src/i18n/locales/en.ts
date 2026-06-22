@@ -298,6 +298,7 @@ const en = {
     temperatureLabel: 'Temperature (creativity)',
     wordTimestampsLabel: 'Generate word-level timestamps',
     conditionLabel: 'Condition on previous text',
+    vadGuidedLabel: 'VAD-guided transcription (reduces silence hallucinations)',
     advancedOptions: 'Advanced options',
     audioTrackTitle: 'Audio track',
     btnTranscribe: 'Transcribe',
@@ -397,6 +398,8 @@ const en = {
     llmConfig: 'LLM Configuration',
     providerMock: 'Mock / Simulated (No cost)',
     providerGemini: 'Google Gemini (API Key required)',
+    providerNemotron: 'Local Nemotron (Text)',
+    providerVoxtral: 'Local Voxtral (Direct Audio)',
     btnStartAnalysis: 'Start Analysis',
     preparing: 'Preparing...',
     waitingAnalysis: 'Waiting for analysis',
@@ -464,7 +467,10 @@ const en = {
     sysInactive: 'Inactive/Accessibility permission missing ⚠️',
     successSave: 'Settings saved successfully!',
     providerMock: 'Mock / Simulated (No API Key)',
-    providerGemini: 'Google Gemini (API Key required)'
+    providerGemini: 'Google Gemini (API Key required)',
+    providerNemotron: 'Local Nemotron (Text)',
+    providerVoxtral: 'Local Voxtral (Direct Audio)',
+    localLlmUrl: 'Local LLM Server URL'
   },
   common: {
     loading: 'Loading...',

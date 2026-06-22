@@ -301,12 +301,16 @@ def update_settings(body: SettingsRequest):
         
     current["gemini_api_key"] = body.gemini_api_key or ""
     current["llm_provider"] = body.llm_provider or "mock"
+    current["local_llm_url"] = body.local_llm_url or ""
     current["default_model"] = body.default_model or ""
     current["default_language"] = body.default_language or "it"
     current["default_task"] = body.default_task or "transcribe"
     current["default_temperature"] = body.default_temperature or ""
     current["default_word_timestamps"] = body.default_word_timestamps if body.default_word_timestamps is not None else False
     current["default_condition_on_previous"] = body.default_condition_on_previous if body.default_condition_on_previous is not None else True
+    current["local_llm_model"] = body.local_llm_model or "nemotron-nano-4b"
+    current["local_llm_model_path"] = body.local_llm_model_path or ""
+    current["local_llm_model_paths"] = body.local_llm_model_paths if body.local_llm_model_paths is not None else current.get("local_llm_model_paths", {})
     save_settings(current)
     return current
 
@@ -355,8 +359,56 @@ def select_directory():
         raise HTTPException(status_code=500, detail=f"Errore nell'apertura della dialog: {e}")
 
 
+@router.post("/v1/system/select-file")
+def select_file():
+    import subprocess
+    try:
+        # Prompt user to choose a .gguf file
+        script = 'tell application "System Events" to set frontmost of process "Finder" to true\n' \
+                 'POSIX path of (choose file of type {"gguf"} with prompt "Seleziona il modello GGUF:")'
+        cmd = ["osascript", "-e", script]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            path = result.stdout.strip()
+            return {"path": path}
+        else:
+            return {"path": None, "error": "Selezione annullata o fallita."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore nell'apertura della dialog: {e}")
+
+
 @router.post("/v1/analysis")
 def analyze_transcription(request: Request, body: AnalysisRequest):
+    settings = load_settings()
+    provider_name = body.llm_provider or settings.get("llm_provider", "mock")
+    api_key = body.gemini_api_key or settings.get("gemini_api_key", "")
+    local_llm_url = settings.get("local_llm_url", "http://127.0.0.1:1235")
+
+    provider = LLMService.get_provider(provider_name, api_key, local_llm_url)
+
+    # Voxtral direct audio analysis
+    if provider_name == "voxtral_local" and body.recording_id:
+        try:
+            audio_path = request.app.state.recording_store.audio_path(body.recording_id)
+            # Use getattr to safely call the method only on providers that support it
+            if hasattr(provider, "analyze_audio"):
+                result = provider.analyze_audio(
+                    audio_path=audio_path,
+                    task=body.audio_task or "analysis",
+                    question=body.question
+                )
+                if body.transcription_id:
+                    try:
+                        request.app.state.transcription_store.save_analysis(body.transcription_id, result)
+                    except Exception as e:
+                        logger.error("Errore nel salvataggio dell'analisi audio: %s", e)
+                return result
+            else:
+                raise ValueError("Il provider selezionato non supporta l'analisi audio.")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # Text-based analysis (all other providers, or Voxtral fallback)
     text_to_analyze = ""
     if body.transcription_id:
         try:
@@ -367,18 +419,13 @@ def analyze_transcription(request: Request, body: AnalysisRequest):
     elif body.text:
         text_to_analyze = body.text
     else:
-        raise HTTPException(status_code=400, detail="Fornire transcription_id o text.")
+        raise HTTPException(status_code=400, detail="Fornire transcription_id o text per l'analisi testuale.")
 
     if not text_to_analyze.strip():
         raise HTTPException(status_code=400, detail="Il testo da analizzare è vuoto.")
 
-    settings = load_settings()
-    provider_name = body.llm_provider or settings.get("llm_provider", "mock")
-    api_key = body.gemini_api_key or settings.get("gemini_api_key", "")
-
     try:
-        provider = LLMService.get_provider(provider_name, api_key)
-        result = provider.analyze(text_to_analyze)
+        result = provider.analyze(text_to_analyze, prompt=body.prompt)
         if body.transcription_id:
             request.app.state.transcription_store.save_analysis(body.transcription_id, result)
         return result

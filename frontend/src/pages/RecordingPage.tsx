@@ -396,18 +396,35 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
                   {transcription ? transcription.text : 'Nessuna trascrizione collegata.'}
                 </p>
               </div>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  if (transcription) {
-                    navigateTo('transcription', transcription.id);
-                  } else {
-                    navigateTo('transcription', `file-${recording.id}`);
-                  }
-                }}
-              >
-                {transcription ? 'Apri trascrizione' : 'Trascrivi audio'}
-              </Button>
+              <div className="flex flex-col gap-2">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    if (transcription) {
+                      navigateTo('transcription', transcription.id);
+                    } else {
+                      navigateTo('transcription', `file-${recording.id}`);
+                    }
+                  }}
+                >
+                  {transcription ? 'Apri trascrizione' : 'Trascrivi audio'}
+                </Button>
+                {transcription && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      const confirmText = lang === 'it' 
+                        ? "Sei sicuro di voler trascrivere nuovamente questo audio? La nuova trascrizione sostituirà quella precedente nei risultati principali."
+                        : "Are you sure you want to transcribe this audio again? The new transcription will replace the previous one in the main results.";
+                      if (window.confirm(confirmText)) {
+                        navigateTo('transcription', `retranscribe-${recording.id}`);
+                      }
+                    }}
+                  >
+                    🔄 {lang === 'it' ? 'Trascrivi di nuovo' : 'Transcribe again'}
+                  </Button>
+                )}
+              </div>
             </Card>
 
             {/* Analysis card */}

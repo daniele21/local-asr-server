@@ -6,6 +6,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Select } from '../components/ui/Select';
 import { Input } from '../components/ui/Input';
+import { LOCAL_LLM_MODELS } from '../api/config';
 
 interface AnalysisPageProps {
   detailId: string | null;
@@ -13,10 +14,12 @@ interface AnalysisPageProps {
 }
 
 interface AnalysisResult {
-  title: string;
-  summary: string;
-  key_points: string[];
-  action_items: string[];
+  title?: string;
+  summary?: string;
+  key_points?: string[] | null;
+  action_items?: string[] | null;
+  // Allow arbitrary additional fields from different LLM providers
+  [key: string]: unknown;
 }
 
 export default function AnalysisPage({ detailId, navigateTo: _navigateTo }: AnalysisPageProps) {
@@ -35,6 +38,37 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo }: Anal
   // Settings & Provider State
   const [provider, setProvider] = useState('mock');
   const [apiKey, setApiKey] = useState('');
+  const [audioTask, setAudioTask] = useState('analysis');
+  const [question, setQuestion] = useState('');
+  const [promptType, setPromptType] = useState('summary');
+  const [customPrompt, setCustomPrompt] = useState('');
+  const [localLlmModel, setLocalLlmModel] = useState('nemotron-nano-4b');
+  const [localLlmModelPath, setLocalLlmModelPath] = useState('');
+
+  const DEFAULT_PROMPTS: Record<string, { it: string; en: string }> = {
+    summary: {
+      it: 'Analizza la seguente trascrizione e genera un titolo breve, un riassunto di 3-4 frasi, i punti chiave principali (almeno 3) e le azioni pratiche da intraprendere.',
+      en: 'Analyze the following transcription and generate a short title, a summary of 3-4 sentences, the main key points (at least 3), and actionable items to be taken.'
+    },
+    minutes: {
+      it: 'Genera un verbale di riunione formale basato sulla trascrizione, strutturando i punti chiave e le decisioni in modo formale.',
+      en: 'Generate formal meeting minutes based on the transcription, structuring key points and decisions in a formal manner.'
+    },
+    actions: {
+      it: 'Estrai tutti gli "action items" (le attività pratiche da svolgere, i responsabili e le scadenze se menzionate) in modo dettagliato.',
+      en: 'Extract all action items (practical tasks, assignees, and deadlines if mentioned) in a detailed manner.'
+    },
+    custom: {
+      it: '',
+      en: ''
+    }
+  };
+
+  useEffect(() => {
+    if (promptType !== 'custom') {
+      setCustomPrompt(DEFAULT_PROMPTS[promptType]?.[lang === 'it' ? 'it' : 'en'] || '');
+    }
+  }, [promptType, lang]);
 
   // Results & Progress State
   const [loading, setLoading] = useState(false);
@@ -54,6 +88,8 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo }: Anal
       const settings = await ApiClient.getSettings();
       setProvider(settings.llm_provider || 'mock');
       setApiKey(settings.gemini_api_key || '');
+      setLocalLlmModel(settings.local_llm_model || 'nemotron-nano-4b');
+      setLocalLlmModelPath(settings.local_llm_model_path || '');
     } catch {}
   };
 
@@ -76,6 +112,18 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo }: Anal
       }).catch(() => {});
     }
   }, [detailId, transcriptions]);
+
+  const handleBrowseModel = async () => {
+    try {
+      const result = await ApiClient.selectFile();
+      if (result && result.path) {
+        setLocalLlmModelPath(result.path);
+        showToast(t('transcription.browseSelectDir'), 'info');
+      }
+    } catch (err: any) {
+      showToast(err.message || t('transcription.browseError'), 'error');
+    }
+  };
 
   const handleImportFile = (file: File) => {
     setImportedFile(file);
@@ -108,11 +156,24 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo }: Anal
         gemini_api_key: apiKey.trim(),
       };
 
+      if (provider === 'voxtral_local') {
+        payload.audio_task = audioTask;
+        if (audioTask === 'qa') {
+          payload.question = question;
+        }
+      } else {
+        payload.prompt = customPrompt;
+      }
+
       if (activeTab === 'history') {
         if (!selectedTranscriptionId) {
           throw new Error(t('analysis.selectSourceError'));
         }
         payload.transcription_id = selectedTranscriptionId;
+        const selectedTr = transcriptions.find((t) => t.id === selectedTranscriptionId);
+        if (selectedTr?.recording_id) {
+          payload.recording_id = selectedTr.recording_id;
+        }
         setStatusText(t('analysis.preparing'));
       } else {
         if (!importedFile) {
@@ -165,6 +226,8 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo }: Anal
       await ApiClient.updateSettings({
         gemini_api_key: apiKey.trim(),
         llm_provider: provider,
+        local_llm_model: localLlmModel,
+        local_llm_model_path: localLlmModelPath.trim(),
       });
 
     } catch (err: any) {
@@ -176,9 +239,9 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo }: Anal
 
   const copyResults = () => {
     if (!analysisResult) return;
-    const keyPoints = analysisResult.key_points.map((kp) => `- ${kp}`).join('\n');
-    const actionItems = analysisResult.action_items.map((ai) => `- ${ai}`).join('\n');
-    const formatted = `# ${analysisResult.title}\n\n## Riassunto\n${analysisResult.summary}\n\n## Punti Chiave\n${keyPoints}\n\n## Prossimi Passi\n${actionItems}`;
+    const keyPoints = (analysisResult.key_points || []).map((kp) => `- ${kp}`).join('\n');
+    const actionItems = (analysisResult.action_items || []).map((ai) => `- ${ai}`).join('\n');
+    const formatted = `# ${analysisResult.title || ''}\n\n## Riassunto\n${analysisResult.summary || ''}\n\n## Punti Chiave\n${keyPoints}\n\n## Prossimi Passi\n${actionItems}`;
 
     navigator.clipboard.writeText(formatted).then(() => {
       showToast(t('analysis.copySuccess'), 'success');
@@ -190,10 +253,12 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo }: Anal
   };
 
   const isStartButtonDisabled = () => {
+    if (loading) return true;
+    if (provider === 'voxtral_local' && audioTask === 'qa' && !question.trim()) return true;
     if (activeTab === 'history') {
-      return !selectedTranscriptionId || loading;
+      return !selectedTranscriptionId;
     }
-    return !importedFile || loading;
+    return !importedFile;
   };
 
   return (
@@ -318,7 +383,45 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo }: Anal
               <Select label="Provider LLM" value={provider} onChange={(e) => setProvider(e.target.value)}>
                 <option value="mock">{t('analysis.providerMock')}</option>
                 <option value="gemini">{t('analysis.providerGemini')}</option>
+                <option value="nemotron_local">{t('analysis.providerNemotron')}</option>
+                <option value="voxtral_local">{t('analysis.providerVoxtral')}</option>
               </Select>
+
+              {(provider === 'nemotron_local' || provider === 'voxtral_local') && (
+                <div className="flex flex-col gap-4">
+                  <Select
+                    label={lang === 'it' ? 'Modello LLM locale' : 'Local LLM model'}
+                    value={localLlmModel}
+                    onChange={(e) => setLocalLlmModel(e.target.value)}
+                  >
+                    {LOCAL_LLM_MODELS.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </Select>
+
+                  {localLlmModel === 'custom' && (
+                    <div className="flex flex-col gap-1.5 w-full">
+                      <label className="text-xs font-semibold text-text-secondary">
+                        {lang === 'it' ? 'Percorso file .gguf modello' : 'Model .gguf file path'}
+                      </label>
+                      <div className="flex gap-2 w-full">
+                        <Input
+                          value={localLlmModelPath}
+                          onChange={(e) => setLocalLlmModelPath(e.target.value)}
+                          placeholder="/Users/.../models/model.gguf"
+                          required
+                          className="flex-1"
+                        />
+                        <Button type="button" variant="secondary" onClick={handleBrowseModel}>
+                          {t('settings.btnBrowse')}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {provider === 'gemini' && (
                 <Input
@@ -328,6 +431,77 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo }: Anal
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder="AIzaSy..."
                 />
+              )}
+
+              {provider === 'voxtral_local' && (
+                <div className="flex flex-col gap-4">
+                  <Select
+                    label={lang === 'it' ? 'Task Audio' : 'Audio Task'}
+                    value={audioTask}
+                    onChange={(e) => setAudioTask(e.target.value)}
+                  >
+                    <option value="analysis">{lang === 'it' ? 'Analisi completa' : 'Full analysis'}</option>
+                    <option value="summary">{lang === 'it' ? 'Riassunto' : 'Summary'}</option>
+                    <option value="transcribe">{lang === 'it' ? 'Trascrizione diretta' : 'Direct transcription'}</option>
+                    <option value="insights">{lang === 'it' ? 'Insight e azioni' : 'Insights and actions'}</option>
+                    <option value="qa">{lang === 'it' ? 'Domanda (Q&A)' : 'Question (Q&A)'}</option>
+                  </Select>
+
+                  {audioTask === 'qa' && (
+                    <Input
+                      label={lang === 'it' ? 'La tua domanda' : 'Your question'}
+                      value={question}
+                      onChange={(e) => setQuestion(e.target.value)}
+                      placeholder={lang === 'it' ? 'Es. Quali sono state le decisioni sul budget?' : 'e.g. What were the decisions on the budget?'}
+                      required
+                    />
+                  )}
+                  
+                  {activeTab === 'history' && selectedTranscriptionId && !transcriptions.find(t => t.id === selectedTranscriptionId)?.recording_id && (
+                    <span className="text-[10px] text-text-muted">
+                      {lang === 'it' 
+                        ? '⚠️ Questa trascrizione non ha una registrazione audio associata. Verrà usata l\'analisi del testo.'
+                        : '⚠️ This transcription has no associated audio recording. Text analysis fallback will be used.'}
+                    </span>
+                  )}
+                  {activeTab === 'import' && (
+                    <span className="text-[10px] text-text-muted">
+                      {lang === 'it'
+                        ? '⚠️ I file importati non supportano l\'analisi audio diretta. Verrà usata l\'analisi del testo.'
+                        : '⚠️ Imported files do not support direct audio analysis. Text analysis fallback will be used.'}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {provider !== 'voxtral_local' && (
+                <div className="flex flex-col gap-3">
+                  <Select
+                    label={t('analysis.promptLabel')}
+                    value={promptType}
+                    onChange={(e) => setPromptType(e.target.value)}
+                  >
+                    <option value="summary">{t('analysis.promptSummary')}</option>
+                    <option value="minutes">{t('analysis.promptMinutes')}</option>
+                    <option value="actions">{t('analysis.promptActions')}</option>
+                    <option value="custom">{t('analysis.promptCustom')}</option>
+                  </Select>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold text-text-secondary">
+                      {lang === 'it' ? 'Istruzioni prompt' : 'Prompt instructions'}
+                    </label>
+                    <textarea
+                      value={customPrompt}
+                      onChange={(e) => {
+                        setPromptType('custom');
+                        setCustomPrompt(e.target.value);
+                      }}
+                      placeholder={t('analysis.customPromptPlaceholder')}
+                      className="w-full bg-bg-surface border border-border-subtle rounded-xl p-3 text-xs text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent resize-y min-h-[100px] leading-relaxed"
+                    />
+                  </div>
+                </div>
               )}
 
               <Button
@@ -372,27 +546,31 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo }: Anal
                   </p>
                 </div>
 
-                <div className="flex flex-col gap-2">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-accent border-b border-border-subtle pb-1">
-                    {t('analysis.sectionKeyPoints')}
-                  </h4>
-                  <ul className="list-disc pl-5 text-sm text-text-secondary leading-relaxed flex flex-col gap-1.5">
-                    {analysisResult.key_points.map((kp, idx) => (
-                      <li key={idx}>{kp}</li>
-                    ))}
-                  </ul>
-                </div>
+                {Array.isArray(analysisResult.key_points) && analysisResult.key_points.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-accent border-b border-border-subtle pb-1">
+                      {t('analysis.sectionKeyPoints')}
+                    </h4>
+                    <ul className="list-disc pl-5 text-sm text-text-secondary leading-relaxed flex flex-col gap-1.5">
+                      {analysisResult.key_points.map((kp, idx) => (
+                        <li key={idx}>{kp}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
-                <div className="flex flex-col gap-2">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-accent border-b border-border-subtle pb-1">
-                    {t('analysis.sectionActionItems')}
-                  </h4>
-                  <ul className="list-disc pl-5 text-sm text-text-secondary leading-relaxed flex flex-col gap-1.5">
-                    {analysisResult.action_items.map((ai, idx) => (
-                      <li key={idx}>{ai}</li>
-                    ))}
-                  </ul>
-                </div>
+                {Array.isArray(analysisResult.action_items) && analysisResult.action_items.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-accent border-b border-border-subtle pb-1">
+                      {t('analysis.sectionActionItems')}
+                    </h4>
+                    <ul className="list-disc pl-5 text-sm text-text-secondary leading-relaxed flex flex-col gap-1.5">
+                      {analysisResult.action_items.map((ai, idx) => (
+                        <li key={idx}>{ai}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </Card>
             </div>
           ) : (

@@ -8,11 +8,53 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
+import numpy as np
+
 from local_asr_server.paths import get_ffmpeg_path
 
 
 TARGET_SAMPLE_RATE = 16_000
 DEFAULT_WINDOW_SECONDS = 0.1
+
+
+def load_audio_samples(path: Path, target_sr: int = TARGET_SAMPLE_RATE) -> np.ndarray:
+    """Load all audio samples from a file and return them as a mono float32 numpy array at 16kHz."""
+    if _looks_like_wave(path):
+        try:
+            with wave.open(str(path), "rb") as wav:
+                sample_rate = wav.getframerate()
+                channels = wav.getnchannels()
+                sample_width = wav.getsampwidth()
+                if sample_rate == target_sr and channels == 1 and sample_width == 2:
+                    frames = wav.readframes(wav.getnframes())
+                    return np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+        except Exception:
+            pass
+
+    ffmpeg = get_ffmpeg_path()
+    process = subprocess.Popen(
+        [
+            ffmpeg,
+            "-v",
+            "error",
+            "-i",
+            str(path),
+            "-ac",
+            "1",
+            "-ar",
+            str(target_sr),
+            "-f",
+            "f32le",
+            "pipe:1",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    stdout, _ = process.communicate()
+    if process.returncode != 0:
+        raise OSError(f"ffmpeg failed with exit code {process.returncode}")
+
+    return np.frombuffer(stdout, dtype=np.float32)
 
 
 @dataclass(frozen=True)

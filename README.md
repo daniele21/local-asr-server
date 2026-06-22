@@ -54,6 +54,16 @@ The web app bootstraps a local same-origin session automatically. For direct
 API calls, fetch `/v1/session` first and reuse the returned cookie or bearer
 token. Set `LOCAL_ASR_REQUIRE_AUTH=0` only for trusted development tests.
 
+When running the development server with reload, ClosedRoom uses a separate
+default port so it does not attach to the macOS menu bar app backend:
+
+```bash
+local-asr serve --reload
+# opens http://127.0.0.1:1237 by default
+```
+
+Pass `--port` explicitly when you need a specific port.
+
 ## Post-call recording
 
 The browser sends audio chunks to the configured recordings directory while

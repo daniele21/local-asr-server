@@ -157,6 +157,22 @@ export default function ResultsStep({
               ✂️ {lang === 'it' ? 'Dividi' : 'Split'}
             </Button>
           )}
+          {transcriptionResult.recording_id && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                const confirmText = lang === 'it' 
+                  ? "Sei sicuro di voler trascrivere nuovamente questo audio? La nuova trascrizione sostituirà quella precedente nei risultati principali."
+                  : "Are you sure you want to transcribe this audio again? The new transcription will replace the previous one in the main results.";
+                if (window.confirm(confirmText)) {
+                  navigateTo('transcription', `retranscribe-${transcriptionResult.recording_id}`);
+                }
+              }}
+              disabled={isSplitting}
+            >
+              🔄 {lang === 'it' ? 'Trascrivi di nuovo' : 'Transcribe again'}
+            </Button>
+          )}
           <Button variant="secondary" onClick={goToUploadStep} disabled={isSplitting}>
             🔄 {t('transcription.newTranscription')}
           </Button>

@@ -5,9 +5,13 @@ from pydantic import BaseModel
 
 class AnalysisRequest(BaseModel):
     transcription_id: Optional[str] = None
+    recording_id: Optional[str] = None
     text: Optional[str] = None
     gemini_api_key: Optional[str] = None
     llm_provider: Optional[str] = None
+    audio_task: Optional[str] = "analysis"
+    question: Optional[str] = None
+    prompt: Optional[str] = None
 
 class TranscribePathRequest(BaseModel):
     file: str
@@ -20,6 +24,7 @@ class TranscribePathRequest(BaseModel):
     temperature: Optional[float] = None
     condition_on_previous_text: bool = True
     verbose: Optional[bool] = None
+    vad_guided: bool = True
 
 class CreateRecordingRequest(BaseModel):
     title: Optional[str] = None
@@ -39,12 +44,16 @@ class SettingsRequest(BaseModel):
     recordings_dir: Optional[str] = ""
     gemini_api_key: Optional[str] = ""
     llm_provider: Optional[str] = "mock"
+    local_llm_url: Optional[str] = ""
     default_model: Optional[str] = ""
     default_language: Optional[str] = "it"
     default_task: Optional[str] = "transcribe"
     default_temperature: Optional[str] = ""
     default_word_timestamps: Optional[bool] = False
     default_condition_on_previous: Optional[bool] = True
+    local_llm_model: Optional[str] = "nemotron-nano-4b"
+    local_llm_model_path: Optional[str] = ""
+    local_llm_model_paths: Optional[dict[str, str]] = None
 
 class MergeTranscriptionsRequest(BaseModel):
     transcription_ids: list[str]
@@ -60,6 +69,7 @@ class TranscribeRecordingRequest(BaseModel):
     temperature: Optional[float] = None
     condition_on_previous_text: bool = True
     verbose: Optional[bool] = None
+    vad_guided: bool = True
 
 class OverlayRequest(BaseModel):
     show: bool

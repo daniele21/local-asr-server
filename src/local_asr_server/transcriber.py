@@ -157,9 +157,10 @@ def generate_cache_key(
     word_timestamps: str | bool,
     temperature: Optional[float],
     condition_on_previous_text: str | bool,
+    vad_guided: str | bool = True,
 ) -> str:
     """Generate a unique SHA-256 cache key based on the audio hash and run parameters."""
-    param_string = f"{audio_hash}:{model}:{language}:{task}:{word_timestamps}:{temperature}:{condition_on_previous_text}"
+    param_string = f"{audio_hash}:{model}:{language}:{task}:{word_timestamps}:{temperature}:{condition_on_previous_text}:{vad_guided}"
     return hashlib.sha256(param_string.encode("utf-8")).hexdigest()
 
 
@@ -233,6 +234,141 @@ def _transcribe(
     )
 
 
+def _transcribe_vad_guided(
+    *,
+    audio_path: str,
+    model: str,
+    language: Optional[str],
+    task: str,
+    word_timestamps: bool,
+    initial_prompt: Optional[str],
+    temperature: Optional[float],
+    condition_on_previous_text: bool,
+    verbose: Optional[bool],
+) -> dict:
+    """Run transcription guided by Silero VAD / RMS fallback to skip silent parts."""
+    import numpy as np
+    import tempfile
+    import wave
+    from local_asr_server.audio_intelligence.audio_io import load_audio_samples, iter_energy_windows
+    from local_asr_server.audio_intelligence.vad import detect_speech_windows_vad
+    from local_asr_server.audio_intelligence.features import _speech_threshold, _speech_windows
+
+    logger.info(f"[VAD Guided ASR] Loading audio from: {audio_path}")
+    try:
+        samples = load_audio_samples(Path(audio_path))
+    except Exception as e:
+        logger.warning(f"[VAD Guided ASR] Failed to load samples, falling back to full-track: {e}")
+        return _transcribe(
+            audio_path=audio_path,
+            model=model,
+            language=language,
+            task=task,
+            word_timestamps=word_timestamps,
+            initial_prompt=initial_prompt,
+            temperature=temperature,
+            condition_on_previous_text=condition_on_previous_text,
+            verbose=verbose,
+        )
+
+    duration = len(samples) / 16000.0
+    logger.info(f"[VAD Guided ASR] Running VAD detection. Duration: {duration:.2f}s")
+    try:
+        raw_windows = detect_speech_windows_vad(samples, sr=16000)
+    except Exception as e:
+        logger.warning(f"[VAD Guided ASR] Silero VAD failed, falling back to RMS energy windows: {e}")
+        try:
+            windows = list(iter_energy_windows(Path(audio_path)))
+            threshold = _speech_threshold(windows)
+            raw_w = _speech_windows(windows, threshold=threshold, channel="audio")
+            raw_windows = [{"start": w["source_start"], "end": w["source_end"]} for w in raw_w]
+        except Exception as e2:
+            logger.warning(f"[VAD Guided ASR] Fallback RMS failed, transcribing full-track: {e2}")
+            return _transcribe(
+                audio_path=audio_path,
+                model=model,
+                language=language,
+                task=task,
+                word_timestamps=word_timestamps,
+                initial_prompt=initial_prompt,
+                temperature=temperature,
+                condition_on_previous_text=condition_on_previous_text,
+                verbose=verbose,
+            )
+
+    if not raw_windows:
+        logger.info("[VAD Guided ASR] No speech windows detected. Returning empty transcript.")
+        return {"text": "", "segments": []}
+
+    logger.info(f"[VAD Guided ASR] Detected {len(raw_windows)} speech segments to transcribe.")
+    combined_segments = []
+    combined_text_parts = []
+    segment_id = 0
+    PADDING = 0.5
+
+    for idx, window in enumerate(raw_windows):
+        start = max(0.0, window["start"] - PADDING)
+        end = min(duration, window["end"] + PADDING)
+        if end - start < 0.1:
+            continue
+
+        start_sample = int(start * 16000)
+        end_sample = int(end * 16000)
+        slice_samples = samples[start_sample:end_sample]
+
+        # Use context manager orNamedTemporaryFile cleanly
+        fd, tmp_path = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        
+        try:
+            int_samples = (slice_samples * 32768.0).clip(-32768, 32767).astype(np.int16)
+            with wave.open(tmp_path, "wb") as wav:
+                wav.setnchannels(1)
+                wav.setsampwidth(2)
+                wav.setframerate(16000)
+                wav.writeframes(int_samples.tobytes())
+
+            logger.info(f"[VAD Guided ASR] Segment {idx+1}/{len(raw_windows)}: transcribing {start:.2f}s --> {end:.2f}s")
+            res = _transcribe(
+                audio_path=tmp_path,
+                model=model,
+                language=language,
+                task=task,
+                word_timestamps=word_timestamps,
+                initial_prompt=initial_prompt,
+                temperature=temperature,
+                condition_on_previous_text=condition_on_previous_text,
+                verbose=verbose,
+            )
+
+            # Shift segment timestamps
+            for seg in res.get("segments", []):
+                seg["id"] = segment_id
+                segment_id += 1
+                seg["start"] = round(seg["start"] + start, 3)
+                seg["end"] = round(seg["end"] + start, 3)
+                if "words" in seg:
+                    for w in seg["words"]:
+                        w["start"] = round(w["start"] + start, 3)
+                        w["end"] = round(w["end"] + start, 3)
+                combined_segments.append(seg)
+                
+            text = res.get("text", "").strip()
+            if text:
+                combined_text_parts.append(text)
+        finally:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
+
+    return {
+        "text": " ".join(combined_text_parts),
+        "segments": combined_segments,
+    }
+
+
 # ── Transcription Orchestration ───────────────────────────────────────────────
 
 def transcribe_file_sync(
@@ -245,8 +381,21 @@ def transcribe_file_sync(
     temperature: Optional[float],
     condition_on_previous_text: bool,
     verbose: Optional[bool] = None,
+    vad_guided: bool = True,
 ) -> dict:
     """Run transcription synchronously for the given file."""
+    if vad_guided:
+        return _transcribe_vad_guided(
+            audio_path=audio_path,
+            model=model,
+            language=language,
+            task=task,
+            word_timestamps=word_timestamps,
+            initial_prompt=initial_prompt,
+            temperature=temperature,
+            condition_on_previous_text=condition_on_previous_text,
+            verbose=verbose,
+        )
     return _transcribe(
         audio_path=audio_path,
         model=model,
@@ -274,6 +423,7 @@ async def transcribe_stream_generator(
     recording_id: Optional[str],
     transcription_store: Any,
     started_at: float,
+    vad_guided: str | bool = True,
 ) -> Generator[str, None, None]:
     """
     Stream transcription updates using NDJSON. Starts a background worker thread
@@ -323,17 +473,30 @@ async def transcribe_stream_generator(
                         print(f"DOWNLOAD_COMPLETE:{model}")
                         sys.stdout.flush()
 
-                res = _transcribe(
-                    audio_path=audio_path,
-                    model=model,
-                    language=language,
-                    task=task,
-                    word_timestamps=str_to_bool(word_timestamps),
-                    initial_prompt=initial_prompt,
-                    temperature=temperature,
-                    condition_on_previous_text=str_to_bool(condition_on_previous_text, True),
-                    verbose=True,
-                )
+                if str_to_bool(vad_guided, True):
+                    res = _transcribe_vad_guided(
+                        audio_path=audio_path,
+                        model=model,
+                        language=language,
+                        task=task,
+                        word_timestamps=str_to_bool(word_timestamps),
+                        initial_prompt=initial_prompt,
+                        temperature=temperature,
+                        condition_on_previous_text=str_to_bool(condition_on_previous_text, True),
+                        verbose=True,
+                    )
+                else:
+                    res = _transcribe(
+                        audio_path=audio_path,
+                        model=model,
+                        language=language,
+                        task=task,
+                        word_timestamps=str_to_bool(word_timestamps),
+                        initial_prompt=initial_prompt,
+                        temperature=temperature,
+                        condition_on_previous_text=str_to_bool(condition_on_previous_text, True),
+                        verbose=True,
+                    )
                 transcribe_result.update(res)
             logger.info(f"[Transcriber] [Worker Thread] Transcription completed successfully")
         except Exception as e:

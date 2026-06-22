@@ -324,7 +324,7 @@ class RecordingApiTests(unittest.TestCase):
 
         intelligence = self.client.get(f"/v1/recordings/{recording_id}/intelligence")
         self.assertEqual(intelligence.status_code, 200)
-        self.assertEqual(intelligence.json()["backend"], "energy-rms-v1")
+        self.assertIn(intelligence.json()["backend"], {"silero-vad-v4", "energy-rms-v1"})
         self.assertTrue(intelligence.json()["mock"])
 
         saved = self.app.state.transcription_store.get(data["saved_id"])

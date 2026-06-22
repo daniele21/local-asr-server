@@ -85,6 +85,7 @@ def run_recording_transcription(
             temperature=body.temperature,
             condition_on_previous_text=body.condition_on_previous_text,
             verbose=body.verbose,
+            vad_guided=body.vad_guided,
         )
         public_track = next(
             (item for item in recording.get("audio_tracks", []) if item.get("id") == track["id"]),
@@ -179,6 +180,7 @@ async def transcribe_upload(
     verbose: Optional[str] = Form(None),
     stream: str = Form("false"),
     recording_id: Optional[str] = Form(None),
+    vad_guided: str = Form("true"),
 ):
     started_at = time.perf_counter()
     is_streaming = str_to_bool(stream)
@@ -206,6 +208,7 @@ async def transcribe_upload(
                 word_timestamps=word_timestamps,
                 temperature=temperature,
                 condition_on_previous_text=condition_on_previous_text,
+                vad_guided=vad_guided,
             )
 
             cached_res = get_cached_result(cache_key)
@@ -265,6 +268,7 @@ async def transcribe_upload(
                             recording_id=recording_id,
                             transcription_store=request.app.state.transcription_store,
                             started_at=started_at,
+                            vad_guided=vad_guided,
                         ):
                             yield event
                     finally:
@@ -285,6 +289,7 @@ async def transcribe_upload(
                     temperature=temperature,
                     condition_on_previous_text=str_to_bool(condition_on_previous_text, True),
                     verbose=None if verbose is None else str_to_bool(verbose),
+                    vad_guided=str_to_bool(vad_guided, True),
                 )
 
                 elapsed = time.perf_counter() - started_at
@@ -362,6 +367,7 @@ def transcribe_path(request: Request, body: TranscribePathRequest):
             temperature=body.temperature,
             condition_on_previous_text=body.condition_on_previous_text,
             verbose=body.verbose,
+            vad_guided=body.vad_guided,
         )
 
         elapsed = time.perf_counter() - started_at

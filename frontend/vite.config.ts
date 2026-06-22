@@ -27,11 +27,11 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/v1': {
-        target: 'http://127.0.0.1:1236',
+        target: `http://127.0.0.1:${process.env.BACKEND_PORT || '1237'}`,
         changeOrigin: true,
       },
       '/health': {
-        target: 'http://127.0.0.1:1236',
+        target: `http://127.0.0.1:${process.env.BACKEND_PORT || '1237'}`,
         changeOrigin: true,
       },
     },
