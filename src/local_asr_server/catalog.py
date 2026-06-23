@@ -26,6 +26,18 @@ def _json_load(value: str | None, default: Any) -> Any:
         return default
 
 
+def _nullable_bool(value: Any) -> int | None:
+    if value is None:
+        return None
+    return 1 if value else 0
+
+
+def _nullable_int_bool(value: Any) -> bool | None:
+    if value is None:
+        return None
+    return bool(value)
+
+
 class CatalogStore:
     """Central SQLite catalog for queryable ClosedRoom metadata."""
 
@@ -108,6 +120,31 @@ class CatalogStore:
                 file_name TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS analysis_runs (
+                id TEXT PRIMARY KEY,
+                job_id TEXT,
+                scope_type TEXT NOT NULL,
+                scope_id TEXT NOT NULL,
+                transcription_id TEXT,
+                recording_id TEXT,
+                provider TEXT NOT NULL,
+                model TEXT,
+                temperature REAL,
+                reasoning TEXT NOT NULL DEFAULT 'auto',
+                effective_reasoning INTEGER,
+                show_thinking INTEGER NOT NULL DEFAULT 0,
+                max_output_tokens INTEGER,
+                json_mode INTEGER NOT NULL DEFAULT 1,
+                llm_options_json TEXT,
+                prompt_version TEXT NOT NULL,
+                input_hash TEXT NOT NULL,
+                status TEXT NOT NULL,
+                result_json TEXT,
+                error TEXT,
+                created_at REAL NOT NULL,
+                completed_at REAL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_recordings_created_at ON recordings(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_recordings_project ON recordings(project_name);
             CREATE INDEX IF NOT EXISTS idx_recordings_status ON recordings(status);
@@ -115,6 +152,9 @@ class CatalogStore:
             CREATE INDEX IF NOT EXISTS idx_transcriptions_audio_filename ON transcriptions(audio_filename);
             CREATE INDEX IF NOT EXISTS idx_transcriptions_visible ON transcriptions(hidden, merged_into, timestamp DESC);
             CREATE INDEX IF NOT EXISTS idx_transcriptions_timestamp ON transcriptions(timestamp DESC);
+            CREATE INDEX IF NOT EXISTS idx_analysis_runs_scope ON analysis_runs(scope_type, scope_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_analysis_runs_transcription ON analysis_runs(transcription_id);
+            CREATE INDEX IF NOT EXISTS idx_analysis_runs_input_hash ON analysis_runs(input_hash);
             """
         )
         self._ensure_column(conn, "recordings", "capture_mode", "TEXT")
@@ -269,6 +309,134 @@ class CatalogStore:
                 "UPDATE transcriptions SET analysis = ? WHERE id = ?",
                 (_json_dump(analysis), transcription_id),
             )
+
+    def create_analysis_run(self, run: dict[str, Any]) -> dict[str, Any]:
+        with self.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO analysis_runs (
+                    id, job_id, scope_type, scope_id, transcription_id, recording_id,
+                    provider, model, temperature, reasoning, effective_reasoning,
+                    show_thinking, max_output_tokens, json_mode, llm_options_json,
+                    prompt_version, input_hash, status, result_json, error,
+                    created_at, completed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run["id"],
+                    run.get("job_id"),
+                    run["scope_type"],
+                    run["scope_id"],
+                    run.get("transcription_id"),
+                    run.get("recording_id"),
+                    run["provider"],
+                    run.get("model"),
+                    run.get("temperature"),
+                    run.get("reasoning") or "auto",
+                    _nullable_bool(run.get("effective_reasoning")),
+                    1 if run.get("show_thinking") else 0,
+                    run.get("max_output_tokens"),
+                    1 if run.get("json_mode", True) else 0,
+                    _json_dump(run.get("llm_options")),
+                    run.get("prompt_version") or "summary_v1",
+                    run["input_hash"],
+                    run.get("status") or "queued",
+                    _json_dump(run.get("result")) if run.get("result") is not None else None,
+                    run.get("error"),
+                    run["created_at"],
+                    run.get("completed_at"),
+                ),
+            )
+        stored = self.get_analysis_run(run["id"])
+        return stored or {}
+
+    def update_analysis_run(
+        self,
+        run_id: str,
+        *,
+        status: str,
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
+        completed_at: float | None = None,
+    ) -> dict[str, Any] | None:
+        with self.connection() as conn:
+            existing = conn.execute("SELECT * FROM analysis_runs WHERE id = ?", (run_id,)).fetchone()
+            if existing is None:
+                return None
+            conn.execute(
+                """
+                UPDATE analysis_runs
+                SET status = ?, result_json = ?, error = ?, completed_at = ?
+                WHERE id = ?
+                """,
+                (
+                    status,
+                    _json_dump(result) if result is not None else existing["result_json"],
+                    error if error is not None else existing["error"],
+                    completed_at if completed_at is not None else existing["completed_at"],
+                    run_id,
+                ),
+            )
+        return self.get_analysis_run(run_id)
+
+    def get_analysis_run(self, run_id: str) -> dict[str, Any] | None:
+        with self.connection() as conn:
+            row = conn.execute("SELECT * FROM analysis_runs WHERE id = ?", (run_id,)).fetchone()
+        return self._row_to_analysis_run(row) if row else None
+
+    def list_analysis_runs(
+        self,
+        *,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+        transcription_id: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if scope_type:
+            clauses.append("scope_type = ?")
+            params.append(scope_type)
+        if scope_id:
+            clauses.append("scope_id = ?")
+            params.append(scope_id)
+        if transcription_id:
+            clauses.append("transcription_id = ?")
+            params.append(transcription_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(max(1, min(limit, 500)))
+        with self.connection() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM analysis_runs {where} ORDER BY created_at DESC LIMIT ?",
+                params,
+            ).fetchall()
+        return [self._row_to_analysis_run(row) for row in rows]
+
+    def _row_to_analysis_run(self, row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "job_id": row["job_id"],
+            "scope_type": row["scope_type"],
+            "scope_id": row["scope_id"],
+            "transcription_id": row["transcription_id"],
+            "recording_id": row["recording_id"],
+            "provider": row["provider"],
+            "model": row["model"],
+            "temperature": row["temperature"],
+            "reasoning": row["reasoning"],
+            "effective_reasoning": _nullable_int_bool(row["effective_reasoning"]),
+            "show_thinking": bool(row["show_thinking"]),
+            "max_output_tokens": row["max_output_tokens"],
+            "json_mode": bool(row["json_mode"]),
+            "llm_options": _json_load(row["llm_options_json"], {}),
+            "prompt_version": row["prompt_version"],
+            "input_hash": row["input_hash"],
+            "status": row["status"],
+            "result": _json_load(row["result_json"], None),
+            "error": row["error"],
+            "created_at": row["created_at"],
+            "completed_at": row["completed_at"],
+        }
 
     def delete_transcription(self, transcription_id: str) -> None:
         with self.connection() as conn:

@@ -17,6 +17,8 @@ import urllib.error
 from pathlib import Path
 from typing import Optional
 
+from local_asr_server.runtime.models import DEFAULT_LOCAL_LLM_URL
+
 logger = logging.getLogger("uvicorn.error")
 
 
@@ -25,7 +27,7 @@ logger = logging.getLogger("uvicorn.error")
 class BaseLLMProvider:
     """Base interface for all LLM analysis providers."""
 
-    def analyze(self, text: str, prompt: Optional[str] = None) -> dict:
+    def analyze(self, text: str, prompt: Optional[str] = None, temperature: Optional[float] = None) -> dict:
         """Analyze a transcript text and return a structured result dict."""
         raise NotImplementedError("Subclasses must implement analyze()")
 
@@ -35,7 +37,7 @@ class BaseLLMProvider:
 class MockProvider(BaseLLMProvider):
     """Simulated provider for development and testing (no external calls)."""
 
-    def analyze(self, text: str, prompt: Optional[str] = None) -> dict:
+    def analyze(self, text: str, prompt: Optional[str] = None, temperature: Optional[float] = None) -> dict:
         time.sleep(1.5)  # Simulate API latency
 
         words = text.split()
@@ -69,7 +71,7 @@ class GeminiProvider(BaseLLMProvider):
     def __init__(self, api_key: str) -> None:
         self.api_key = api_key
 
-    def analyze(self, text: str, prompt: Optional[str] = None) -> dict:
+    def analyze(self, text: str, prompt: Optional[str] = None, temperature: Optional[float] = None) -> dict:
         if not self.api_key:
             raise ValueError("Chiave API Gemini mancante o non configurata.")
 
@@ -144,10 +146,16 @@ class NemotronLocalProvider(BaseLLMProvider):
     Does NOT auto-start the server — the user must run local-llm-server separately.
     """
 
-    def __init__(self, base_url: str = "http://127.0.0.1:1235") -> None:
+    def __init__(self, base_url: str = DEFAULT_LOCAL_LLM_URL) -> None:
         self.base_url = base_url.rstrip("/")
 
-    def analyze(self, text: str, language: str = "it", prompt: Optional[str] = None) -> dict:
+    def analyze(
+        self,
+        text: str,
+        language: str = "it",
+        prompt: Optional[str] = None,
+        temperature: Optional[float] = None,
+    ) -> dict:
         try:
             from local_llm_server.client import LocalLLMClient  # lazy import
         except ModuleNotFoundError as exc:
@@ -172,7 +180,7 @@ class NemotronLocalProvider(BaseLLMProvider):
             content = client.chat(
                 [{"role": "user", "content": full_prompt}],
                 response_format={"type": "json_object"},
-                temperature=0.0,
+                temperature=temperature if temperature is not None else 0.0,
             )
             try:
                 from local_llm_server.client import _parse_json_object
@@ -195,7 +203,7 @@ class VoxtralLocalProvider(BaseLLMProvider):
       - analyze_audio(path)   — direct audio analysis (multimodal, requires soundfile+numpy)
     """
 
-    def __init__(self, base_url: str = "http://127.0.0.1:1235") -> None:
+    def __init__(self, base_url: str = DEFAULT_LOCAL_LLM_URL) -> None:
         self.base_url = base_url.rstrip("/")
 
     def _get_client(self):
@@ -216,7 +224,13 @@ class VoxtralLocalProvider(BaseLLMProvider):
             )
         return client
 
-    def analyze(self, text: str, language: str = "it", prompt: Optional[str] = None) -> dict:
+    def analyze(
+        self,
+        text: str,
+        language: str = "it",
+        prompt: Optional[str] = None,
+        temperature: Optional[float] = None,
+    ) -> dict:
         """Text-only analysis fallback (uses Voxtral in chat mode)."""
         client = self._get_client()
         if prompt:
@@ -229,7 +243,7 @@ class VoxtralLocalProvider(BaseLLMProvider):
             content = client.chat(
                 [{"role": "user", "content": full_prompt}],
                 response_format={"type": "json_object"},
-                temperature=0.0,
+                temperature=temperature if temperature is not None else 0.0,
             )
             try:
                 from local_llm_server.client import _parse_json_object
@@ -297,9 +311,9 @@ class LLMService:
         api_key:        Gemini API key (only used with provider_name='gemini').
         local_llm_url:  Base URL of the running local-llm-server instance
                         (used by nemotron_local and voxtral_local; defaults to
-                        http://127.0.0.1:1235 if not provided).
+                        DEFAULT_LOCAL_LLM_URL if not provided).
         """
-        url = (local_llm_url or "http://127.0.0.1:1235").rstrip("/")
+        url = (local_llm_url or DEFAULT_LOCAL_LLM_URL).rstrip("/")
 
         if provider_name == "gemini":
             return GeminiProvider(api_key or "")
@@ -308,7 +322,4 @@ class LLMService:
         if provider_name == "voxtral_local":
             return VoxtralLocalProvider(base_url=url)
         return MockProvider()
-
-
-
 

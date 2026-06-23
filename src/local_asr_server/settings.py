@@ -11,6 +11,11 @@ import json
 from pathlib import Path
 
 from local_asr_server.paths import get_settings_file, APP_NAME
+from local_asr_server.runtime.models import (
+    DEFAULT_LOCAL_LLM_URL,
+    DEFAULT_LLM_QUALITY_PRESET,
+    DEFAULT_LLM_REASONING,
+)
 
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
@@ -26,8 +31,14 @@ DEFAULT_SETTINGS: dict[str, any] = {
     "default_temperature": "",
     "default_word_timestamps": False,
     "default_condition_on_previous": True,
-    "local_llm_url": "http://127.0.0.1:1333",
+    "local_llm_mode": "auto",
+    "local_llm_url": DEFAULT_LOCAL_LLM_URL,
     "local_llm_model": "nemotron-nano-4b",
+    "local_llm_quality_preset": DEFAULT_LLM_QUALITY_PRESET,
+    "local_llm_temperature": None,
+    "local_llm_reasoning": DEFAULT_LLM_REASONING,
+    "local_llm_max_output_tokens": None,
+    "local_llm_json_mode": True,
     "local_llm_model_path": "",
     "local_llm_model_paths": {},
 }

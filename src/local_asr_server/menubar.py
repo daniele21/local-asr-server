@@ -73,6 +73,7 @@ if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
                 )
 
 from local_asr_server.window import ClosedRoomWindowManager
+from local_asr_server.runtime.models import DEFAULT_API_PORT, LOCAL_SERVICE_HOST
 
 logger = logging.getLogger(__name__)
 
@@ -86,8 +87,8 @@ except ImportError:
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-APP_PORT = 1236
-APP_URL = f"http://127.0.0.1:{APP_PORT}"
+APP_PORT = DEFAULT_API_PORT
+APP_URL = f"http://{LOCAL_SERVICE_HOST}:{APP_PORT}"
 
 # Status icons shown in the menu bar (using SF Symbols via text fallbacks)
 ICON_IDLE = "🎙️"
@@ -108,6 +109,7 @@ class _ServerThread(threading.Thread):
         super().__init__(name="closedroom-server", daemon=True)
         self.app_instance = app_instance
         self._server: Optional[object] = None
+        self._app: Optional[object] = None
         self.ready = threading.Event()
 
     def run(self) -> None:
@@ -129,6 +131,7 @@ class _ServerThread(threading.Thread):
         app = create_app(
             recordings_dir=recordings_dir,
         )
+        self._app = app
         app.state.window_manager = self.app_instance.window_manager
 
         config = uvicorn.Config(
@@ -152,6 +155,12 @@ class _ServerThread(threading.Thread):
 
     def stop(self) -> None:
         """Request graceful server shutdown."""
+        runtime_services = getattr(getattr(self._app, "state", None), "runtime_services", None)
+        if runtime_services is not None:
+            try:
+                runtime_services.shutdown()
+            except Exception as exc:
+                logger.warning("Failed to shut down managed runtime services: %s", exc)
         if self._server:
             self._server.should_exit = True
 

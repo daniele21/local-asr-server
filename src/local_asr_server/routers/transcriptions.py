@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
 from local_asr_server.recordings import RecordingConflict, RecordingNotFound, RecordingStore
@@ -46,6 +46,16 @@ def _get_transcribe_file_sync():
     return transcribe_file_sync
 
 
+def _transcribe_file(app: Any, **kwargs: Any) -> dict[str, Any]:
+    patched_transcriber = _get_transcribe_file_sync()
+    if patched_transcriber is not transcribe_file_sync:
+        return patched_transcriber(**kwargs)
+    service = getattr(app.state, "transcription_service", None)
+    if service is not None:
+        return service.transcribe_file(**kwargs)
+    return transcribe_file_sync(**kwargs)
+
+
 def run_recording_transcription(
     app: Any,
     recording_id: str,
@@ -75,7 +85,8 @@ def run_recording_transcription(
             raise RuntimeError("Transcription job cancelled")
         step = "transcribing_system" if track.get("id") == "system" else "transcribing_mic"
         job_event(step, step, 20 + int(index / total_tracks * 60))
-        result = _get_transcribe_file_sync()(
+        result = _transcribe_file(
+            app,
             audio_path=str(audio_path),
             model=target_model,
             language=body.language,
@@ -279,7 +290,8 @@ async def transcribe_upload(
             logger.info(f"[/v1/audio/transcriptions] Running non-streaming transcription for {tmp_path} using {target_model}...")
             request.app.state.is_transcribing = True
             try:
-                result = _get_transcribe_file_sync()(
+                result = _transcribe_file(
+                    request.app,
                     audio_path=tmp_path,
                     model=target_model,
                     language=language,
@@ -357,7 +369,8 @@ def transcribe_path(request: Request, body: TranscribePathRequest):
 
     request.app.state.is_transcribing = True
     try:
-        result = _get_transcribe_file_sync()(
+        result = _transcribe_file(
+            request.app,
             audio_path=str(audio_path),
             model=target_model,
             language=body.language,
@@ -442,6 +455,24 @@ def create_transcription_job(recording_id: str, request: Request, body: Transcri
     return request.app.state.transcription_jobs.create(recording_id, runner)
 
 
+@router.get("/v1/jobs")
+def list_jobs(
+    request: Request,
+    type: str | None = Query(default=None),
+    scope_type: str | None = Query(default=None),
+    scope_id: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+):
+    return {
+        "items": request.app.state.transcription_jobs.list(
+            job_type=type,
+            scope_type=scope_type,
+            scope_id=scope_id,
+            limit=limit,
+        )
+    }
+
+
 @router.get("/v1/jobs/{job_id}")
 def get_job(job_id: str, request: Request):
     job = request.app.state.transcription_jobs.get(job_id)
@@ -456,9 +487,14 @@ def job_events(job_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Job not found")
 
     def event_stream():
+        last_sequence = 0
         while True:
-            events = request.app.state.transcription_jobs.drain_events(job_id) or []
+            if hasattr(request.app.state.transcription_jobs, "events_after"):
+                events = request.app.state.transcription_jobs.events_after(job_id, last_sequence) or []
+            else:
+                events = request.app.state.transcription_jobs.drain_events(job_id) or []
             for event in events:
+                last_sequence = max(last_sequence, int(event.get("sequence") or last_sequence))
                 yield f"data: {json.dumps(event)}\n\n"
                 if event.get("status") in {"completed", "failed", "cancelled"}:
                     return

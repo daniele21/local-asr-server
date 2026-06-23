@@ -160,6 +160,18 @@ hidden_imports = [
     "local_asr_server.native_capture_helper.compile",
     "local_asr_server.audio_diagnostics",
     "local_asr_server.transcription_jobs",
+    "local_asr_server.runtime",
+    "local_asr_server.runtime.asr_worker",
+    "local_asr_server.runtime.llm_sidecar",
+    "local_asr_server.runtime.models",
+    "local_asr_server.runtime.service_manager",
+    "local_asr_server.services",
+    "local_asr_server.services.analysis_service",
+    "local_asr_server.services.transcription_service",
+    "local_asr_server.jobs",
+    "local_asr_server.jobs.job_store",
+    "local_asr_server.jobs.models",
+    "local_asr_server.analysis_jobs",
 ]
 
 # ── Exclude heavy dev/test packages ───────────────────────────────────────────

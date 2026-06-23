@@ -46,6 +46,7 @@ class SettingsRequest(BaseModel):
     recordings_dir: Optional[str] = None
     gemini_api_key: Optional[str] = None
     llm_provider: Optional[str] = None
+    local_llm_mode: Optional[str] = None
     local_llm_url: Optional[str] = None
     default_model: Optional[str] = None
     default_language: Optional[str] = None
@@ -54,6 +55,11 @@ class SettingsRequest(BaseModel):
     default_word_timestamps: Optional[bool] = None
     default_condition_on_previous: Optional[bool] = None
     local_llm_model: Optional[str] = None
+    local_llm_quality_preset: Optional[str] = None
+    local_llm_temperature: Optional[float] = None
+    local_llm_reasoning: Optional[str] = None
+    local_llm_max_output_tokens: Optional[int] = None
+    local_llm_json_mode: Optional[bool] = None
     local_llm_model_path: Optional[str] = None
     local_llm_model_paths: Optional[dict[str, str]] = None
 

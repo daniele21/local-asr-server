@@ -108,6 +108,25 @@ def get_settings_file() -> Path:
     return get_app_support_dir() / "settings.json"
 
 
+def get_runtime_state_file() -> Path:
+    """Return the local runtime state file path."""
+    return get_app_support_dir() / "runtime-state.json"
+
+
+def get_logs_dir(create: bool = True) -> Path:
+    """Return ``~/Library/Logs/ClosedRoom/``, creating it by default."""
+    logs = Path.home() / "Library" / "Logs" / APP_NAME
+    if create:
+        logs.mkdir(parents=True, exist_ok=True)
+    return logs
+
+
+def get_service_log_file(service_name: str, create_parent: bool = True) -> Path:
+    """Return the log file path for a managed local service."""
+    safe_name = service_name.replace("/", "-").replace("..", "-")
+    return get_logs_dir(create=create_parent) / f"{safe_name}.log"
+
+
 # ── Resource path helpers ─────────────────────────────────────────────────────
 
 def get_resource_path(relative: str) -> Path:

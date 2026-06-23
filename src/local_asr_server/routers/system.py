@@ -6,13 +6,13 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from local_asr_server.audio_router import AudioRouter
 from local_asr_server.settings import load_settings, save_settings
-from local_asr_server.llm import LLMService
 from local_asr_server.recordings import RecordingConflict, RecordingNotFound
+from local_asr_server.services.analysis_service import AnalysisService
 from local_asr_server.schemas import (
     OverlayRequest,
     OverlayResizeRequest,
@@ -26,6 +26,13 @@ from local_asr_server.routers.helpers import _build_projects
 logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter()
+
+
+def _field_was_set(body: object, field_name: str) -> bool:
+    fields_set = getattr(body, "model_fields_set", None)
+    if fields_set is None:
+        fields_set = getattr(body, "__fields_set__", set())
+    return field_name in fields_set
 
 
 @router.get("/health")
@@ -57,11 +64,21 @@ def health(request: Request) -> dict:
             "POST /v1/recordings/{id}/capture/stop",
             "POST /v1/recordings/{id}/capture/cancel",
             "POST /v1/recordings/{id}/transcription-jobs",
+            "POST /v1/analysis-jobs",
             "GET /v1/jobs/{job_id}",
+            "GET /v1/analysis-runs/{analysis_run_id}",
+            "GET /v1/analysis-runs",
             "GET /v1/recordings/{id}",
             "GET /v1/recordings/{id}/audio",
             "GET /v1/recordings/{id}/project",
             "GET /v1/projects",
+            "GET /v1/runtime/status",
+            "GET /v1/runtime/services",
+            "GET /v1/runtime/services/llm",
+            "POST /v1/runtime/services/llm/start",
+            "POST /v1/runtime/services/llm/stop",
+            "POST /v1/runtime/services/llm/restart",
+            "GET /v1/runtime/services/llm/logs",
             "GET /v1/system/audio/status",
             "POST /v1/system/audio/activate",
             "POST /v1/system/audio/restore",
@@ -272,6 +289,41 @@ def get_stats(request: Request):
     return stats
 
 
+@router.get("/v1/runtime/status")
+def runtime_status(request: Request):
+    return request.app.state.runtime_services.status()
+
+
+@router.get("/v1/runtime/services")
+def runtime_services(request: Request):
+    return request.app.state.runtime_services.status()
+
+
+@router.get("/v1/runtime/services/llm")
+def llm_runtime_status(request: Request):
+    return request.app.state.runtime_services.llm_status()
+
+
+@router.post("/v1/runtime/services/llm/start", status_code=202)
+def start_llm_runtime_service(request: Request):
+    return request.app.state.runtime_services.start_llm()
+
+
+@router.post("/v1/runtime/services/llm/stop")
+def stop_llm_runtime_service(request: Request):
+    return request.app.state.runtime_services.stop_llm()
+
+
+@router.post("/v1/runtime/services/llm/restart", status_code=202)
+def restart_llm_runtime_service(request: Request):
+    return request.app.state.runtime_services.restart_llm()
+
+
+@router.get("/v1/runtime/services/llm/logs")
+def llm_runtime_logs(request: Request, tail: int = Query(default=200, ge=1, le=2000)):
+    return request.app.state.runtime_services.llm_logs(tail)
+
+
 @router.post("/v1/settings")
 def update_settings(body: SettingsRequest):
     current = load_settings()
@@ -305,6 +357,8 @@ def update_settings(body: SettingsRequest):
         current["gemini_api_key"] = body.gemini_api_key
     if body.llm_provider is not None:
         current["llm_provider"] = body.llm_provider
+    if body.local_llm_mode is not None:
+        current["local_llm_mode"] = body.local_llm_mode
     if body.local_llm_url is not None:
         current["local_llm_url"] = body.local_llm_url
     if body.default_model is not None:
@@ -321,6 +375,16 @@ def update_settings(body: SettingsRequest):
         current["default_condition_on_previous"] = body.default_condition_on_previous
     if body.local_llm_model is not None:
         current["local_llm_model"] = body.local_llm_model
+    if body.local_llm_quality_preset is not None:
+        current["local_llm_quality_preset"] = body.local_llm_quality_preset
+    if _field_was_set(body, "local_llm_temperature"):
+        current["local_llm_temperature"] = body.local_llm_temperature
+    if body.local_llm_reasoning is not None:
+        current["local_llm_reasoning"] = body.local_llm_reasoning
+    if _field_was_set(body, "local_llm_max_output_tokens"):
+        current["local_llm_max_output_tokens"] = body.local_llm_max_output_tokens
+    if body.local_llm_json_mode is not None:
+        current["local_llm_json_mode"] = body.local_llm_json_mode
     if body.local_llm_model_path is not None:
         current["local_llm_model_path"] = body.local_llm_model_path
     if body.local_llm_model_paths is not None:
@@ -394,58 +458,38 @@ def select_file():
 
 @router.post("/v1/analysis")
 def analyze_transcription(request: Request, body: AnalysisRequest):
-    settings = load_settings()
-    provider_name = body.llm_provider or settings.get("llm_provider", "mock")
-    api_key = body.gemini_api_key or settings.get("gemini_api_key", "")
-    local_llm_url = settings.get("local_llm_url", "http://127.0.0.1:1235")
+    return AnalysisService(request.app.state).analyze(body)
 
-    provider = LLMService.get_provider(provider_name, api_key, local_llm_url)
 
-    # Voxtral direct audio analysis
-    if provider_name == "voxtral_local" and body.recording_id:
-        try:
-            audio_path = request.app.state.recording_store.audio_path(body.recording_id)
-            # Use getattr to safely call the method only on providers that support it
-            if hasattr(provider, "analyze_audio"):
-                result = provider.analyze_audio(
-                    audio_path=audio_path,
-                    task=body.audio_task or "analysis",
-                    question=body.question
-                )
-                if body.transcription_id:
-                    try:
-                        request.app.state.transcription_store.save_analysis(body.transcription_id, result)
-                    except Exception as e:
-                        logger.error("Errore nel salvataggio dell'analisi audio: %s", e)
-                return result
-            else:
-                raise ValueError("Il provider selezionato non supporta l'analisi audio.")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+@router.post("/v1/analysis-jobs", status_code=202)
+def create_analysis_job(request: Request, body: AnalysisRequest):
+    return request.app.state.analysis_jobs.create(body)
 
-    # Text-based analysis (all other providers, or Voxtral fallback)
-    text_to_analyze = ""
-    if body.transcription_id:
-        try:
-            trans = request.app.state.transcription_store.get(body.transcription_id)
-            text_to_analyze = trans.get("text", "")
-        except Exception:
-            raise HTTPException(status_code=404, detail="Trascrizione non trovata.")
-    elif body.text:
-        text_to_analyze = body.text
-    else:
-        raise HTTPException(status_code=400, detail="Fornire transcription_id o text per l'analisi testuale.")
 
-    if not text_to_analyze.strip():
-        raise HTTPException(status_code=400, detail="Il testo da analizzare è vuoto.")
+@router.get("/v1/analysis-runs/{analysis_run_id}")
+def get_analysis_run(analysis_run_id: str, request: Request):
+    run = request.app.state.catalog_store.get_analysis_run(analysis_run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Analysis run not found")
+    return run
 
-    try:
-        result = provider.analyze(text_to_analyze, prompt=body.prompt)
-        if body.transcription_id:
-            request.app.state.transcription_store.save_analysis(body.transcription_id, result)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/v1/analysis-runs")
+def list_analysis_runs(
+    request: Request,
+    scope_type: str | None = Query(default=None),
+    scope_id: str | None = Query(default=None),
+    transcription_id: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+):
+    return {
+        "items": request.app.state.catalog_store.list_analysis_runs(
+            scope_type=scope_type,
+            scope_id=scope_id,
+            transcription_id=transcription_id,
+            limit=limit,
+        )
+    }
 
 
 @router.get("/v1/projects")

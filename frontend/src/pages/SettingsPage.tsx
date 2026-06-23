@@ -8,6 +8,7 @@ import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { Checkbox } from '../components/ui/Checkbox';
 import { Button } from '../components/ui/Button';
+import { Badge } from '../components/ui/Badge';
 
 export default function SettingsPage() {
   const { t, lang } = useTranslation();
@@ -28,8 +29,18 @@ export default function SettingsPage() {
   const [llmProvider, setLlmProvider] = useState('mock');
   const [geminiApiKey, setGeminiApiKey] = useState('');
   const [localLlmUrl, setLocalLlmUrl] = useState('');
+  const [localLlmMode, setLocalLlmMode] = useState<'auto' | 'external' | 'disabled'>('auto');
   const [localLlmModel, setLocalLlmModel] = useState('nemotron-nano-4b');
   const [localLlmModelPath, setLocalLlmModelPath] = useState('');
+  const [localLlmQualityPreset, setLocalLlmQualityPreset] = useState<'precise' | 'balanced' | 'creative'>('balanced');
+  const [localLlmTemperature, setLocalLlmTemperature] = useState('');
+  const [localLlmReasoning, setLocalLlmReasoning] = useState<'auto' | 'on' | 'off'>('auto');
+  const [localLlmMaxOutputTokens, setLocalLlmMaxOutputTokens] = useState('');
+  const [localLlmJsonMode, setLocalLlmJsonMode] = useState(true);
+  const [showAdvancedLlm, setShowAdvancedLlm] = useState(false);
+  const [llmService, setLlmService] = useState<any>(null);
+  const [llmAction, setLlmAction] = useState('');
+  const [llmLogs, setLlmLogs] = useState('');
 
   // System Info
   const [sysInfo, setSysInfo] = useState({
@@ -58,8 +69,23 @@ export default function SettingsPage() {
       setLlmProvider(settings.llm_provider || 'mock');
       setGeminiApiKey(settings.gemini_api_key || '');
       setLocalLlmUrl(settings.local_llm_url || '');
+      setLocalLlmMode(settings.local_llm_mode || 'auto');
       setLocalLlmModel(settings.local_llm_model || 'nemotron-nano-4b');
       setLocalLlmModelPath(settings.local_llm_model_path || '');
+      setLocalLlmQualityPreset(settings.local_llm_quality_preset || 'balanced');
+      setLocalLlmTemperature(
+        settings.local_llm_temperature !== undefined && settings.local_llm_temperature !== null
+          ? String(settings.local_llm_temperature)
+          : ''
+      );
+      setLocalLlmReasoning(settings.local_llm_reasoning || 'auto');
+      setLocalLlmMaxOutputTokens(
+        settings.local_llm_max_output_tokens !== undefined && settings.local_llm_max_output_tokens !== null
+          ? String(settings.local_llm_max_output_tokens)
+          : ''
+      );
+      setLocalLlmJsonMode(settings.local_llm_json_mode !== false);
+      refreshLlmService();
 
       setSysInfo({
         server: '127.0.0.1:1236',
@@ -77,6 +103,32 @@ export default function SettingsPage() {
   useEffect(() => {
     loadSettings();
   }, [t]);
+
+  const refreshLlmService = async () => {
+    try {
+      setLlmService(await ApiClient.getLlmService());
+    } catch (err: any) {
+      setLlmService({ name: 'llm', status: 'unknown', error: err.message });
+    }
+  };
+
+  const runLlmAction = async (action: 'start' | 'stop' | 'restart' | 'logs') => {
+    setLlmAction(action);
+    try {
+      if (action === 'start') await ApiClient.startLlmService();
+      if (action === 'stop') await ApiClient.stopLlmService();
+      if (action === 'restart') await ApiClient.restartLlmService();
+      if (action === 'logs') {
+        const logs = await ApiClient.getLlmLogs(200);
+        setLlmLogs(logs.text || t('common.notAvailable'));
+      }
+      await refreshLlmService();
+    } catch (err: any) {
+      showToast(err.message || t('common.error'), 'error');
+    } finally {
+      setLlmAction('');
+    }
+  };
 
   const handleBrowse = async (target: 'recordings' | 'transcriptions' | 'model') => {
     try {
@@ -117,8 +169,14 @@ export default function SettingsPage() {
         default_condition_on_previous: conditionOnPrevious,
         llm_provider: llmProvider,
         gemini_api_key: geminiApiKey.trim(),
-        local_llm_url: localLlmUrl.trim(),
+        local_llm_mode: localLlmMode,
+        local_llm_url: showAdvancedLlm ? localLlmUrl.trim() : undefined,
         local_llm_model: localLlmModel,
+        local_llm_quality_preset: localLlmQualityPreset,
+        local_llm_temperature: localLlmTemperature === '' ? null : parseFloat(localLlmTemperature),
+        local_llm_reasoning: localLlmReasoning,
+        local_llm_max_output_tokens: localLlmMaxOutputTokens === '' ? null : parseInt(localLlmMaxOutputTokens, 10),
+        local_llm_json_mode: localLlmJsonMode,
         local_llm_model_path: localLlmModelPath.trim(),
       };
 
@@ -299,12 +357,54 @@ export default function SettingsPage() {
 
             {(llmProvider === 'nemotron_local' || llmProvider === 'voxtral_local') && (
               <div className="flex flex-col gap-4">
-                <Input
-                  label={t('settings.localLlmUrl')}
-                  value={localLlmUrl}
-                  onChange={(e) => setLocalLlmUrl(e.target.value)}
-                  placeholder="http://127.0.0.1:1235"
-                />
+                <div className="flex flex-col gap-3 rounded-lg border border-border-subtle bg-bg-surface p-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-semibold text-text-primary">{t('settings.localLlmServiceTitle')}</h4>
+                        <Badge variant={llmService?.status === 'ready' ? 'success' : llmService?.status === 'failed' || llmService?.status === 'crashed' ? 'danger' : 'warning'}>
+                          {llmService?.status || 'unknown'}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-text-muted mt-1">{t('settings.localLlmServiceDesc')}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="button" size="sm" variant="secondary" onClick={() => runLlmAction('start')} isLoading={llmAction === 'start'}>
+                        {t('settings.localLlmStart')}
+                      </Button>
+                      <Button type="button" size="sm" variant="secondary" onClick={() => runLlmAction('stop')} isLoading={llmAction === 'stop'}>
+                        {t('settings.localLlmStop')}
+                      </Button>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => runLlmAction('restart')} isLoading={llmAction === 'restart'}>
+                        {t('settings.localLlmRestart')}
+                      </Button>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => runLlmAction('logs')} isLoading={llmAction === 'logs'}>
+                        {t('settings.localLlmLogs')}
+                      </Button>
+                    </div>
+                  </div>
+                  {showAdvancedLlm && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-text-muted">
+                      <span>{t('settings.localLlmManaged')}: {llmService?.managed ? 'yes' : 'no'}</span>
+                      <span>{t('settings.localLlmPort')}: {llmService?.port || t('common.notAvailable')}</span>
+                      {llmService?.error && <span className="md:col-span-2 text-danger">{llmService.error}</span>}
+                    </div>
+                  )}
+                  {llmLogs && showAdvancedLlm && (
+                    <pre className="max-h-48 overflow-auto rounded-md bg-bg-base p-3 text-[11px] text-text-secondary whitespace-pre-wrap">{llmLogs}</pre>
+                  )}
+                </div>
+
+                <Select
+                  label={t('settings.localLlmMode')}
+                  value={localLlmMode}
+                  onChange={(e) => setLocalLlmMode(e.target.value as 'auto' | 'external' | 'disabled')}
+                >
+                  <option value="auto">{t('settings.localLlmModeAuto')}</option>
+                  <option value="external">{t('settings.localLlmModeExternal')}</option>
+                  <option value="disabled">{t('settings.localLlmModeDisabled')}</option>
+                </Select>
+
                 <Select
                   label={lang === 'it' ? 'Modello LLM locale' : 'Local LLM model'}
                   value={localLlmModel}
@@ -334,6 +434,69 @@ export default function SettingsPage() {
                         {t('settings.btnBrowse')}
                       </Button>
                     </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Select
+                    label={t('settings.localLlmQuality')}
+                    value={localLlmQualityPreset}
+                    onChange={(e) => setLocalLlmQualityPreset(e.target.value as 'precise' | 'balanced' | 'creative')}
+                  >
+                    <option value="precise">{t('settings.localLlmQualityPrecise')}</option>
+                    <option value="balanced">{t('settings.localLlmQualityBalanced')}</option>
+                    <option value="creative">{t('settings.localLlmQualityCreative')}</option>
+                  </Select>
+                  <Select
+                    label={t('settings.localLlmReasoning')}
+                    value={localLlmReasoning}
+                    onChange={(e) => setLocalLlmReasoning(e.target.value as 'auto' | 'on' | 'off')}
+                  >
+                    <option value="auto">{t('settings.localLlmReasoningAuto')}</option>
+                    <option value="on">{t('settings.localLlmReasoningOn')}</option>
+                    <option value="off">{t('settings.localLlmReasoningOff')}</option>
+                  </Select>
+                </div>
+
+                <Checkbox
+                  variant="toggle"
+                  label={t('settings.localLlmAdvanced')}
+                  checked={showAdvancedLlm}
+                  onChange={(e) => setShowAdvancedLlm(e.target.checked)}
+                />
+
+                {showAdvancedLlm && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Input
+                      label={t('settings.localLlmTemperature')}
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="1"
+                      placeholder="Auto"
+                      value={localLlmTemperature}
+                      onChange={(e) => setLocalLlmTemperature(e.target.value)}
+                    />
+                    <Input
+                      label={t('settings.localLlmMaxTokens')}
+                      type="number"
+                      min="1"
+                      placeholder="Auto"
+                      value={localLlmMaxOutputTokens}
+                      onChange={(e) => setLocalLlmMaxOutputTokens(e.target.value)}
+                    />
+                    <Checkbox
+                      variant="toggle"
+                      label={t('settings.localLlmJsonMode')}
+                      checked={localLlmJsonMode}
+                      onChange={(e) => setLocalLlmJsonMode(e.target.checked)}
+                    />
+                    <Input
+                      label={t('settings.localLlmUrl')}
+                      value={localLlmUrl}
+                      onChange={(e) => setLocalLlmUrl(e.target.value)}
+                      placeholder="http://127.0.0.1:1235"
+                    />
                   </div>
                 )}
               </div>

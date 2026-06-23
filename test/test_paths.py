@@ -5,10 +5,30 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from local_asr_server.paths import get_native_capture_helper_path
+from local_asr_server.paths import (
+    get_native_capture_helper_path,
+    get_runtime_state_file,
+    get_service_log_file,
+)
 
 
 class BundlePathTests(unittest.TestCase):
+    def test_runtime_state_file_lives_in_app_support(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            with patch("local_asr_server.paths.Path.home", return_value=Path(temp)):
+                self.assertEqual(
+                    get_runtime_state_file(),
+                    Path(temp) / "Library" / "Application Support" / "ClosedRoom" / "runtime-state.json",
+                )
+
+    def test_service_log_file_lives_in_logs_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            with patch("local_asr_server.paths.Path.home", return_value=Path(temp)):
+                self.assertEqual(
+                    get_service_log_file("llm-server"),
+                    Path(temp) / "Library" / "Logs" / "ClosedRoom" / "llm-server.log",
+                )
+
     def test_native_capture_helper_prefers_embedded_app_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             contents_dir = Path(temp) / "ClosedRoom.app" / "Contents"

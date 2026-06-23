@@ -127,14 +127,67 @@ export interface CaptureDiagnostics {
 
 export interface TranscriptionJob {
   id: string;
-  recording_id: string;
-  status: 'queued' | 'validating_audio' | 'preprocessing' | 'transcribing_mic' | 'transcribing_system' | 'merging' | 'saving' | 'completed' | 'failed' | 'cancelled';
+  type?: string;
+  scope_type?: string | null;
+  scope_id?: string | null;
+  recording_id?: string | null;
+  status: string;
   current_step: string;
   progress: number;
   error?: string | null;
-  result?: Transcription | null;
+  result?: any;
   created_at: number;
   updated_at: number;
+}
+
+export interface AnalysisJobCreated {
+  job_id: string;
+  analysis_run_id: string;
+  status: string;
+}
+
+export interface AnalysisRun {
+  id: string;
+  job_id?: string | null;
+  scope_type: string;
+  scope_id: string;
+  transcription_id?: string | null;
+  recording_id?: string | null;
+  provider: string;
+  model?: string | null;
+  temperature?: number | null;
+  reasoning: string;
+  effective_reasoning?: boolean | null;
+  show_thinking: boolean;
+  max_output_tokens?: number | null;
+  json_mode: boolean;
+  llm_options: Record<string, unknown>;
+  prompt_version: string;
+  input_hash: string;
+  status: string;
+  result?: any;
+  error?: string | null;
+  created_at: number;
+  completed_at?: number | null;
+}
+
+export interface RuntimeService {
+  name: string;
+  status: string;
+  mode?: 'auto' | 'external' | 'disabled';
+  model?: string;
+  managed?: boolean;
+  host?: string | null;
+  port?: number | null;
+  url?: string | null;
+  pid?: number | null;
+  log_file?: string;
+  model_path_configured?: boolean;
+  error?: string | null;
+}
+
+export interface RuntimeStatus {
+  services: Record<string, RuntimeService>;
 }
 
 export interface ProjectItem {
@@ -242,8 +295,14 @@ export interface Settings {
   recordings_dir: string;
   gemini_api_key: string;
   llm_provider: string;
+  local_llm_mode?: 'auto' | 'external' | 'disabled';
   local_llm_url?: string;
   local_llm_model?: string;
+  local_llm_quality_preset?: 'precise' | 'balanced' | 'creative';
+  local_llm_temperature?: number | null;
+  local_llm_reasoning?: 'auto' | 'on' | 'off';
+  local_llm_max_output_tokens?: number | null;
+  local_llm_json_mode?: boolean;
   local_llm_model_path?: string;
   /** Mappa model-key → percorso assoluto al file .gguf locale */
   local_llm_model_paths?: Record<string, string>;
@@ -500,12 +559,61 @@ export const ApiClient = {
     return (await request('/v1/stats')).json();
   },
 
+  async runtimeStatus(): Promise<RuntimeStatus> {
+    return (await request('/v1/runtime/status')).json();
+  },
+
+  async listRuntimeServices(): Promise<RuntimeStatus> {
+    return this.runtimeStatus();
+  },
+
+  async getLlmService(): Promise<RuntimeService> {
+    return (await request('/v1/runtime/services/llm')).json();
+  },
+
+  async startLlmService(): Promise<RuntimeService> {
+    return (await request('/v1/runtime/services/llm/start', { method: 'POST' })).json();
+  },
+
+  async stopLlmService(): Promise<RuntimeService> {
+    return (await request('/v1/runtime/services/llm/stop', { method: 'POST' })).json();
+  },
+
+  async restartLlmService(): Promise<RuntimeService> {
+    return (await request('/v1/runtime/services/llm/restart', { method: 'POST' })).json();
+  },
+
+  async getLlmLogs(tail = 200): Promise<{ service: string; tail: number; text: string }> {
+    return (await request(`/v1/runtime/services/llm/logs?tail=${tail}`)).json();
+  },
+
   async analyze(payload: { transcription_id?: string; recording_id?: string; text?: string; gemini_api_key?: string; llm_provider?: string; audio_task?: string; question?: string }): Promise<any> {
     return (await request('/v1/analysis', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })).json();
+  },
+
+  async createAnalysisJob(payload: { transcription_id?: string; recording_id?: string; text?: string; gemini_api_key?: string; llm_provider?: string; audio_task?: string; question?: string; prompt?: string }): Promise<AnalysisJobCreated> {
+    return (await request('/v1/analysis-jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })).json();
+  },
+
+  async getAnalysisRun(analysisRunId: string): Promise<AnalysisRun> {
+    return (await request(`/v1/analysis-runs/${analysisRunId}`)).json();
+  },
+
+  async listAnalysisRuns(params: { scope_type?: string; scope_id?: string; transcription_id?: string; limit?: number } = {}): Promise<{ items: AnalysisRun[] }> {
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') search.set(key, String(value));
+    });
+    const query = search.toString();
+    return (await request(`/v1/analysis-runs${query ? `?${query}` : ''}`)).json();
   },
 
   async selectDirectory(): Promise<{ path: string | null; error?: string }> {

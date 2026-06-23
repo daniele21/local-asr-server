@@ -8,8 +8,14 @@ from pathlib import Path
 
 import uvicorn
 
-DEFAULT_SERVER_PORT = 1236
-DEV_SERVER_PORT = 1237
+from local_asr_server.runtime.models import (
+    DEFAULT_API_PORT,
+    DEFAULT_DEV_RELOAD_PORT,
+    LOCAL_SERVICE_HOST,
+)
+
+DEFAULT_SERVER_PORT = DEFAULT_API_PORT
+DEV_SERVER_PORT = DEFAULT_DEV_RELOAD_PORT
 
 
 def _default_model() -> str:
@@ -202,7 +208,8 @@ def main() -> None:
     if args.llm_port:
         from local_asr_server.settings import load_settings, save_settings
         settings = load_settings()
-        settings["local_llm_url"] = f"http://127.0.0.1:{args.llm_port}"
+        settings["local_llm_mode"] = "external"
+        settings["local_llm_url"] = f"http://{LOCAL_SERVICE_HOST}:{args.llm_port}"
         
         # Get model key from args, settings, or default
         llm_model = args.llm_model or settings.get("local_llm_model") or "nemotron-nano-4b"
@@ -213,7 +220,7 @@ def main() -> None:
         save_settings(settings)
 
         # Build command to start local-llm-server
-        cmd = [sys.executable, "-m", "local_llm_server", "serve", "--port", str(args.llm_port)]
+        cmd = [sys.executable, "-m", "local_llm_server", "serve", "--host", LOCAL_SERVICE_HOST, "--port", str(args.llm_port)]
         if llm_model_path:
             cmd.extend(["--model-path", llm_model_path])
         else:
@@ -221,7 +228,7 @@ def main() -> None:
 
         binary = shutil.which("local-llm-server")
         if binary:
-            binary_cmd = [binary, "serve", "--port", str(args.llm_port)]
+            binary_cmd = [binary, "serve", "--host", LOCAL_SERVICE_HOST, "--port", str(args.llm_port)]
             if llm_model_path:
                 binary_cmd.extend(["--model-path", llm_model_path])
             else:

@@ -169,6 +169,39 @@ curl -c /tmp/closedroom.cookies http://127.0.0.1:1236/v1/session
 curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/capture/capabilities
 ```
 
+### Runtime service status
+```bash
+curl -c /tmp/closedroom.cookies http://127.0.0.1:1236/v1/session
+curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/runtime/status
+curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/runtime/services
+curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/runtime/services/llm
+curl -b /tmp/closedroom.cookies -X POST http://127.0.0.1:1236/v1/runtime/services/llm/start
+curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/runtime/services/llm/logs?tail=100
+```
+
+ClosedRoom keeps the React UI and local API on `127.0.0.1:1236`. Local LLM
+settings now distinguish managed mode (`local_llm_mode=auto`) from an advanced
+external override (`local_llm_mode=external` with `local_llm_url`, defaulting to
+`http://127.0.0.1:1235`). In managed mode, local analysis starts
+`local-llm-server` on `127.0.0.1` with an internal available port and writes its
+output to `~/Library/Logs/ClosedRoom/llm-server.log`. Normal UI flows should use
+the ClosedRoom API rather than calling the LLM sidecar directly. The Settings UI
+shows the local LLM as a managed service with start/stop/restart/log actions,
+quality presets, and reasoning policy; raw URL/port diagnostics stay under
+advanced settings.
+
+### Job status
+```bash
+curl -c /tmp/closedroom.cookies http://127.0.0.1:1236/v1/session
+curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/jobs
+curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/jobs/<job-id>
+curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/jobs/<job-id>/events
+```
+
+Long-running local work writes job snapshots and events to the local SQLite
+catalog database so status survives process restarts. Transcription jobs remain
+compatible with the existing polling and event-stream endpoints.
+
 ### Transcribe uploaded audio
 ```bash
 curl -c /tmp/closedroom.cookies http://127.0.0.1:1236/v1/session

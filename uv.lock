@@ -687,7 +687,7 @@ dependencies = [
     { name = "uvicorn" },
 ]
 wheels = [
-    { filename = "local_llm_server-0.2.0-py3-none-any.whl", hash = "sha256:c005fa6eb479059e6657d41ba5dd020ae3735fb14bc41c9b6dad9ba2007f11d2" },
+    { filename = "local_llm_server-0.2.0-py3-none-any.whl", hash = "sha256:a97347984a0c4f75c87d9f26031a64d956af8adb007ef3c61b9cc8907e4fe781" },
 ]
 
 [package.metadata]

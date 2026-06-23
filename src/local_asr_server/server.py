@@ -11,12 +11,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from local_asr_server.analysis_jobs import AnalysisJobManager
 from local_asr_server.audio_router import AudioRouter
 from local_asr_server.catalog import CatalogStore
+from local_asr_server.jobs import JobStore
 from local_asr_server.native_capture import NativeCaptureManager
 from local_asr_server.recordings import RecordingStore
 from local_asr_server.transcription_jobs import TranscriptionJobManager
 from local_asr_server.paths import get_static_dir
+from local_asr_server.runtime.service_manager import RuntimeServiceManager
+from local_asr_server.services.transcription_service import TranscriptionService
 from local_asr_server.transcriber import transcribe_file_sync
 
 from local_asr_server.routers.helpers import (
@@ -65,7 +69,8 @@ def create_app(
     app.state.active_recording = None
     app.state.is_transcribing = False
     app.state.capture_manager = NativeCaptureManager()
-    app.state.transcription_jobs = TranscriptionJobManager()
+    app.state.runtime_services = RuntimeServiceManager()
+    app.state.transcription_service = TranscriptionService()
     app.state.auth_enabled = _env_bool("LOCAL_ASR_REQUIRE_AUTH", True) if enable_auth is None else enable_auth
     app.state.api_token = os.environ.get("LOCAL_ASR_API_TOKEN") or secrets.token_urlsafe(32)
     
@@ -82,6 +87,9 @@ def create_app(
         catalog_path = CatalogStore.default_db_path()
         
     app.state.catalog_store = CatalogStore(catalog_path)
+    app.state.job_store = JobStore(catalog_path)
+    app.state.transcription_jobs = TranscriptionJobManager(app.state.job_store)
+    app.state.analysis_jobs = AnalysisJobManager(app.state, app.state.job_store)
     app.state.recording_store = RecordingStore(
         recordings_dir or Path("~/Recordings/local-asr"),
         use_settings_dir=recordings_dir is None,
