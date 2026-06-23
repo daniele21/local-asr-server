@@ -40,19 +40,21 @@ class UpdateRecordingRequest(BaseModel):
     project_name: Optional[str] = None
 
 class SettingsRequest(BaseModel):
-    transcriptions_dir: str
-    recordings_dir: Optional[str] = ""
-    gemini_api_key: Optional[str] = ""
-    llm_provider: Optional[str] = "mock"
-    local_llm_url: Optional[str] = ""
-    default_model: Optional[str] = ""
-    default_language: Optional[str] = "it"
-    default_task: Optional[str] = "transcribe"
-    default_temperature: Optional[str] = ""
-    default_word_timestamps: Optional[bool] = False
-    default_condition_on_previous: Optional[bool] = True
-    local_llm_model: Optional[str] = "nemotron-nano-4b"
-    local_llm_model_path: Optional[str] = ""
+    # All fields are optional to support partial updates (e.g. only updating
+    # the LLM provider without touching directory settings).
+    transcriptions_dir: Optional[str] = None
+    recordings_dir: Optional[str] = None
+    gemini_api_key: Optional[str] = None
+    llm_provider: Optional[str] = None
+    local_llm_url: Optional[str] = None
+    default_model: Optional[str] = None
+    default_language: Optional[str] = None
+    default_task: Optional[str] = None
+    default_temperature: Optional[str] = None
+    default_word_timestamps: Optional[bool] = None
+    default_condition_on_previous: Optional[bool] = None
+    local_llm_model: Optional[str] = None
+    local_llm_model_path: Optional[str] = None
     local_llm_model_paths: Optional[dict[str, str]] = None
 
 class MergeTranscriptionsRequest(BaseModel):

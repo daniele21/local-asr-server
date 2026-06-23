@@ -275,19 +275,20 @@ def get_stats(request: Request):
 @router.post("/v1/settings")
 def update_settings(body: SettingsRequest):
     current = load_settings()
-    
-    # Validate transcriptions_dir
-    trans_path = Path(body.transcriptions_dir).expanduser().resolve()
-    try:
-        trans_path.mkdir(parents=True, exist_ok=True)
-        test_file = trans_path / ".write_test"
-        test_file.touch()
-        test_file.unlink()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Directory trascrizioni non valida o non scrivibile: {e}")
-    current["transcriptions_dir"] = str(trans_path)
 
-    # Validate recordings_dir if provided
+    # Validate and apply transcriptions_dir only when provided and non-empty
+    if body.transcriptions_dir:
+        trans_path = Path(body.transcriptions_dir).expanduser().resolve()
+        try:
+            trans_path.mkdir(parents=True, exist_ok=True)
+            test_file = trans_path / ".write_test"
+            test_file.touch()
+            test_file.unlink()
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Directory trascrizioni non valida o non scrivibile: {e}")
+        current["transcriptions_dir"] = str(trans_path)
+
+    # Validate and apply recordings_dir only when provided
     if body.recordings_dir:
         rec_path = Path(body.recordings_dir).expanduser().resolve()
         try:
@@ -298,19 +299,33 @@ def update_settings(body: SettingsRequest):
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Directory audio non valida o non scrivibile: {e}")
         current["recordings_dir"] = str(rec_path)
-        
-    current["gemini_api_key"] = body.gemini_api_key or ""
-    current["llm_provider"] = body.llm_provider or "mock"
-    current["local_llm_url"] = body.local_llm_url or ""
-    current["default_model"] = body.default_model or ""
-    current["default_language"] = body.default_language or "it"
-    current["default_task"] = body.default_task or "transcribe"
-    current["default_temperature"] = body.default_temperature or ""
-    current["default_word_timestamps"] = body.default_word_timestamps if body.default_word_timestamps is not None else False
-    current["default_condition_on_previous"] = body.default_condition_on_previous if body.default_condition_on_previous is not None else True
-    current["local_llm_model"] = body.local_llm_model or "nemotron-nano-4b"
-    current["local_llm_model_path"] = body.local_llm_model_path or ""
-    current["local_llm_model_paths"] = body.local_llm_model_paths if body.local_llm_model_paths is not None else current.get("local_llm_model_paths", {})
+
+    # Apply all other optional fields only when explicitly provided (not None)
+    if body.gemini_api_key is not None:
+        current["gemini_api_key"] = body.gemini_api_key
+    if body.llm_provider is not None:
+        current["llm_provider"] = body.llm_provider
+    if body.local_llm_url is not None:
+        current["local_llm_url"] = body.local_llm_url
+    if body.default_model is not None:
+        current["default_model"] = body.default_model
+    if body.default_language is not None:
+        current["default_language"] = body.default_language
+    if body.default_task is not None:
+        current["default_task"] = body.default_task
+    if body.default_temperature is not None:
+        current["default_temperature"] = body.default_temperature
+    if body.default_word_timestamps is not None:
+        current["default_word_timestamps"] = body.default_word_timestamps
+    if body.default_condition_on_previous is not None:
+        current["default_condition_on_previous"] = body.default_condition_on_previous
+    if body.local_llm_model is not None:
+        current["local_llm_model"] = body.local_llm_model
+    if body.local_llm_model_path is not None:
+        current["local_llm_model_path"] = body.local_llm_model_path
+    if body.local_llm_model_paths is not None:
+        current["local_llm_model_paths"] = body.local_llm_model_paths
+
     save_settings(current)
     return current
 
