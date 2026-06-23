@@ -104,7 +104,7 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
   const [targetModel, setTargetModel] = useState('');
   const [temperature, setTemperature] = useState('');
   const [wordTimestamps, setWordTimestamps] = useState(false);
-  const [conditionOnPrevious, setConditionOnPrevious] = useState(true);
+  const [conditionOnPrevious, setConditionOnPrevious] = useState(DEFAULTS.conditionOnPreviousText);
   const [vadGuided, setVadGuided] = useState(DEFAULTS.vadGuided);
   const [modelCacheStatus, setModelCacheStatus] = useState('Verifica...');
 
@@ -158,7 +158,7 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
       if (!targetLanguage) setTargetLanguage(settings.default_language || 'it');
       if (!targetTask) setTargetTask(settings.default_task || 'transcribe');
       setWordTimestamps(settings.default_word_timestamps || false);
-      setConditionOnPrevious(settings.default_condition_on_previous !== false);
+      setConditionOnPrevious(settings.default_condition_on_previous ?? DEFAULTS.conditionOnPreviousText);
     } catch {}
   };
 

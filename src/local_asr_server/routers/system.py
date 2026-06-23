@@ -379,6 +379,16 @@ def update_settings(body: SettingsRequest):
         current["local_llm_model_path"] = body.local_llm_model_path
     if body.local_llm_model_paths is not None:
         current["local_llm_model_paths"] = body.local_llm_model_paths
+    if body.local_llm_backend is not None:
+        current["local_llm_backend"] = body.local_llm_backend
+    if body.local_llm_mmproj_path is not None:
+        current["local_llm_mmproj_path"] = body.local_llm_mmproj_path
+    if _field_was_set(body, "local_llm_ctx_size"):
+        current["local_llm_ctx_size"] = body.local_llm_ctx_size
+    if _field_was_set(body, "local_llm_startup_timeout"):
+        current["local_llm_startup_timeout"] = body.local_llm_startup_timeout
+    if body.local_llm_llama_server_bin is not None:
+        current["local_llm_llama_server_bin"] = body.local_llm_llama_server_bin
 
     try:
         save_settings(current)

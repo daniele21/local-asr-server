@@ -146,8 +146,9 @@ class NemotronLocalProvider(BaseLLMProvider):
     Does NOT auto-start the server — the user must run local-llm-server separately.
     """
 
-    def __init__(self, base_url: str = DEFAULT_LOCAL_LLM_URL) -> None:
+    def __init__(self, base_url: str = DEFAULT_LOCAL_LLM_URL, model: str | None = None) -> None:
         self.base_url = base_url.rstrip("/")
+        self.model = model
 
     def analyze(
         self,
@@ -164,7 +165,7 @@ class NemotronLocalProvider(BaseLLMProvider):
                 "Installa il wheel con: uv pip install local_llm_server-0.2.0-py3-none-any.whl"
             ) from exc
 
-        client = LocalLLMClient(base_url=self.base_url)
+        client = LocalLLMClient(base_url=self.base_url, model=self.model)
         if not client.is_ready():
             raise RuntimeError(
                 f"Il server LLM locale non è raggiungibile su {self.base_url}. "
@@ -203,8 +204,9 @@ class VoxtralLocalProvider(BaseLLMProvider):
       - analyze_audio(path)   — direct audio analysis (multimodal, requires soundfile+numpy)
     """
 
-    def __init__(self, base_url: str = DEFAULT_LOCAL_LLM_URL) -> None:
+    def __init__(self, base_url: str = DEFAULT_LOCAL_LLM_URL, model: str | None = None) -> None:
         self.base_url = base_url.rstrip("/")
+        self.model = model
 
     def _get_client(self):
         """Return a ready LocalLLMClient or raise a descriptive error."""
@@ -216,7 +218,7 @@ class VoxtralLocalProvider(BaseLLMProvider):
                 "Installa il wheel con: uv pip install local_llm_server-0.2.0-py3-none-any.whl"
             ) from exc
 
-        client = LocalLLMClient(base_url=self.base_url)
+        client = LocalLLMClient(base_url=self.base_url, model=self.model)
         if not client.is_ready():
             raise RuntimeError(
                 f"Il server LLM locale non è raggiungibile su {self.base_url}. "
@@ -301,6 +303,7 @@ class LLMService:
         provider_name: str,
         api_key: Optional[str] = None,
         local_llm_url: Optional[str] = None,
+        local_llm_model: Optional[str] = None,
     ) -> BaseLLMProvider:
         """
         Return an LLM provider instance.
@@ -318,8 +321,7 @@ class LLMService:
         if provider_name == "gemini":
             return GeminiProvider(api_key or "")
         if provider_name == "nemotron_local":
-            return NemotronLocalProvider(base_url=url)
+            return NemotronLocalProvider(base_url=url, model=local_llm_model)
         if provider_name == "voxtral_local":
-            return VoxtralLocalProvider(base_url=url)
+            return VoxtralLocalProvider(base_url=url, model=local_llm_model)
         return MockProvider()
-

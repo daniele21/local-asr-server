@@ -190,6 +190,20 @@ shows the local LLM as a managed service with start/stop/restart/log actions,
 quality presets, and reasoning policy; raw URL/port diagnostics stay under
 advanced settings.
 
+For development, `./run.sh` starts ClosedRoom and follows new entries from the
+managed LLM sidecar log in the same terminal. The persistent log remains
+`~/Library/Logs/ClosedRoom/llm-server.log`.
+
+`llm_provider` selects the analysis adapter, while `local_llm_model` selects
+the process actually loaded by the managed sidecar. The Settings screen aligns
+Nemotron and Voxtral selections automatically; API clients must set both when
+changing them directly. A managed sidecar is restarted before an analysis when
+its model, model path, backend, multimodal projector, context size, startup
+timeout, or `llama-server` executable changes. For a custom Voxtral setup,
+persist `local_llm_backend=llama_server`, `local_llm_model_path`, and
+`local_llm_mmproj_path` through `POST /v1/settings`; the registry can otherwise
+auto-detect Voxtral's backend and projector from its standard LM Studio layout.
+
 ### Job status
 ```bash
 curl -c /tmp/closedroom.cookies http://127.0.0.1:1236/v1/session

@@ -19,7 +19,7 @@ class VadGuidedTranscriptionTests(unittest.TestCase):
             "word_timestamps": False,
             "initial_prompt": None,
             "temperature": None,
-            "condition_on_previous_text": True,
+            "condition_on_previous_text": False,
             "verbose": None,
         }
 
@@ -27,6 +27,8 @@ class VadGuidedTranscriptionTests(unittest.TestCase):
         self.assertFalse(VAD_GUIDED_DEFAULT)
         self.assertFalse(TranscribePathRequest(file="/tmp/meeting.wav").vad_guided)
         self.assertFalse(TranscribeRecordingRequest().vad_guided)
+        self.assertFalse(TranscribePathRequest(file="/tmp/meeting.wav").condition_on_previous_text)
+        self.assertFalse(TranscribeRecordingRequest().condition_on_previous_text)
 
     @patch("local_asr_server.transcriber._transcribe")
     @patch("local_asr_server.audio_intelligence.vad.detect_speech_windows_vad", return_value=[])

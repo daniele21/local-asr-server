@@ -40,9 +40,9 @@ export const DEFAULTS = {
   language: 'it',
   task: 'transcribe',
   outputFormat: 'json',
-  temperature: '',
+  temperature: '0.0',
   wordTimestamps: false,
-  conditionOnPreviousText: true,
+  conditionOnPreviousText: false,
   vadGuided: false,
   theme: 'dark' as 'dark' | 'light',
 };

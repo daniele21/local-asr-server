@@ -39,6 +39,11 @@ class RuntimeServiceManager:
             "model_path": model_path,
             "url": settings.get("local_llm_url") or DEFAULT_LOCAL_LLM_URL,
             "reasoning": settings.get("local_llm_reasoning") or "auto",
+            "backend": settings.get("local_llm_backend") or "",
+            "mmproj_path": settings.get("local_llm_mmproj_path") or "",
+            "ctx_size": settings.get("local_llm_ctx_size"),
+            "startup_timeout": settings.get("local_llm_startup_timeout"),
+            "llama_server_bin": settings.get("local_llm_llama_server_bin") or "",
         }
 
     def llm_status(self) -> dict[str, Any]:
@@ -74,6 +79,7 @@ class RuntimeServiceManager:
         if mode == "external":
             return {
                 "base_url": llm["url"],
+                "model": llm["model"],
                 "reasoning": reasoning or llm["reasoning"],
                 "requested_reasoning": reasoning or llm["reasoning"],
                 "restart_required": False,
@@ -81,6 +87,11 @@ class RuntimeServiceManager:
         return self.llm_sidecar.ensure_ready(
             model=llm["model"],
             model_path=llm["model_path"],
+            backend=llm["backend"],
+            mmproj_path=llm["mmproj_path"],
+            ctx_size=llm["ctx_size"],
+            startup_timeout=llm["startup_timeout"],
+            llama_server_bin=llm["llama_server_bin"],
             reasoning=reasoning or llm["reasoning"],
             capability=capability,
         )
@@ -89,7 +100,7 @@ class RuntimeServiceManager:
         llm = self._llm_settings()
         if llm["mode"] != "auto":
             return self.llm_status()
-        return self.llm_sidecar.start(model=llm["model"], model_path=llm["model_path"])
+        return self.llm_sidecar.start(model=llm["model"], model_path=llm["model_path"], backend=llm["backend"], mmproj_path=llm["mmproj_path"], ctx_size=llm["ctx_size"], startup_timeout=llm["startup_timeout"], llama_server_bin=llm["llama_server_bin"])
 
     def stop_llm(self) -> dict[str, Any]:
         return self.llm_sidecar.stop()
@@ -98,7 +109,7 @@ class RuntimeServiceManager:
         llm = self._llm_settings()
         if llm["mode"] != "auto":
             return self.llm_status()
-        return self.llm_sidecar.restart(model=llm["model"], model_path=llm["model_path"])
+        return self.llm_sidecar.restart(model=llm["model"], model_path=llm["model_path"], backend=llm["backend"], mmproj_path=llm["mmproj_path"], ctx_size=llm["ctx_size"], startup_timeout=llm["startup_timeout"], llama_server_bin=llm["llama_server_bin"])
 
     def llm_logs(self, tail: int = 200) -> dict[str, Any]:
         return {"service": "llm", "tail": tail, "text": self.llm_sidecar.tail_logs(tail)}

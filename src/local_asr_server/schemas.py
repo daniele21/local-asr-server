@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional
 from pydantic import BaseModel
 
-from local_asr_server.transcriber import VAD_GUIDED_DEFAULT
+from local_asr_server.transcriber import VAD_GUIDED_DEFAULT, VAD_POST_FILTER_DEFAULT
 
 class AnalysisRequest(BaseModel):
     transcription_id: Optional[str] = None
@@ -24,9 +24,10 @@ class TranscribePathRequest(BaseModel):
     word_timestamps: bool = False
     initial_prompt: Optional[str] = None
     temperature: Optional[float] = None
-    condition_on_previous_text: bool = True
+    condition_on_previous_text: bool = False
     verbose: Optional[bool] = None
     vad_guided: bool = VAD_GUIDED_DEFAULT
+    vad_post_filter: bool = VAD_POST_FILTER_DEFAULT
 
 class CreateRecordingRequest(BaseModel):
     title: Optional[str] = None
@@ -64,6 +65,11 @@ class SettingsRequest(BaseModel):
     local_llm_json_mode: Optional[bool] = None
     local_llm_model_path: Optional[str] = None
     local_llm_model_paths: Optional[dict[str, str]] = None
+    local_llm_backend: Optional[str] = None
+    local_llm_mmproj_path: Optional[str] = None
+    local_llm_ctx_size: Optional[int] = None
+    local_llm_startup_timeout: Optional[int] = None
+    local_llm_llama_server_bin: Optional[str] = None
 
 class MergeTranscriptionsRequest(BaseModel):
     transcription_ids: list[str]
@@ -77,9 +83,10 @@ class TranscribeRecordingRequest(BaseModel):
     word_timestamps: bool = False
     initial_prompt: Optional[str] = None
     temperature: Optional[float] = None
-    condition_on_previous_text: bool = True
+    condition_on_previous_text: bool = False
     verbose: Optional[bool] = None
     vad_guided: bool = VAD_GUIDED_DEFAULT
+    vad_post_filter: bool = VAD_POST_FILTER_DEFAULT
 
 class OverlayRequest(BaseModel):
     show: bool

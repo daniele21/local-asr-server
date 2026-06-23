@@ -25,6 +25,7 @@ from local_asr_server.transcriber import (
     transcribe_stream_generator,
     _clean_nan_values,
     VAD_GUIDED_DEFAULT,
+    VAD_POST_FILTER_DEFAULT,
 )
 from local_asr_server.schemas import (
     TranscribePathRequest,
@@ -33,6 +34,7 @@ from local_asr_server.schemas import (
     MergeTranscriptionsRequest,
 )
 from local_asr_server.routers.helpers import _build_projects, _merge_track_transcriptions
+from local_asr_server.transcription_quality import audio_stats, is_near_silent_track
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -86,19 +88,22 @@ def run_recording_transcription(
             raise RuntimeError("Transcription job cancelled")
         step = "transcribing_system" if track.get("id") == "system" else "transcribing_mic"
         job_event(step, step, 20 + int(index / total_tracks * 60))
-        result = _transcribe_file(
-            app,
-            audio_path=str(audio_path),
-            model=target_model,
-            language=body.language,
-            task=body.task,
-            word_timestamps=body.word_timestamps,
-            initial_prompt=body.initial_prompt,
-            temperature=body.temperature,
-            condition_on_previous_text=body.condition_on_previous_text,
-            verbose=body.verbose,
-            vad_guided=body.vad_guided,
-        )
+        result = _skip_near_silent_track(audio_path, track)
+        if result is None:
+            result = _transcribe_file(
+                app,
+                audio_path=str(audio_path),
+                model=target_model,
+                language=body.language,
+                task=body.task,
+                word_timestamps=body.word_timestamps,
+                initial_prompt=body.initial_prompt,
+                temperature=body.temperature,
+                condition_on_previous_text=body.condition_on_previous_text,
+                verbose=body.verbose,
+                vad_guided=body.vad_guided,
+                vad_post_filter=body.vad_post_filter,
+            )
         public_track = next(
             (item for item in recording.get("audio_tracks", []) if item.get("id") == track["id"]),
             track,
@@ -125,6 +130,25 @@ def run_recording_transcription(
     payload["saved_id"] = saved_meta["id"]
     payload["saved_file_path"] = str(app.state.transcription_store.root)
     return payload
+
+
+def _skip_near_silent_track(audio_path: Path, track: dict[str, Any]) -> dict[str, Any] | None:
+    """Avoid asking Whisper to hallucinate text from a decodable silent channel."""
+    try:
+        from local_asr_server.audio_intelligence.audio_io import load_audio_samples
+
+        stats = audio_stats(load_audio_samples(audio_path))
+    except Exception as exc:
+        logger.info("[ASR Quality] Cannot inspect track %s; continuing with Whisper: %s", track.get("id"), exc)
+        return None
+    if not is_near_silent_track(stats):
+        return None
+    logger.warning("[ASR Quality] Skipping near-silent track %s: rms=%.6f peak=%.6f", track.get("id"), stats["rms"], stats["peak"])
+    return {
+        "text": "",
+        "segments": [],
+        "metadata": {"skipped": True, "skip_reason": "near_silent_track", "audio_stats": stats},
+    }
 
 
 def _attach_audio_intelligence(
@@ -172,7 +196,7 @@ def transcription_source_data(request: Request, limit: int = 100):
             "default_language": settings.get("default_language", "it"),
             "default_task": settings.get("default_task", "transcribe"),
             "default_word_timestamps": settings.get("default_word_timestamps", False),
-            "default_condition_on_previous": settings.get("default_condition_on_previous", True),
+            "default_condition_on_previous": settings.get("default_condition_on_previous", False),
         },
     }
 
@@ -188,11 +212,12 @@ async def transcribe_upload(
     word_timestamps: str = Form("false"),
     initial_prompt: Optional[str] = Form(None),
     temperature: Optional[float] = Form(None),
-    condition_on_previous_text: str = Form("true"),
+    condition_on_previous_text: str = Form("false"),
     verbose: Optional[str] = Form(None),
     stream: str = Form("false"),
     recording_id: Optional[str] = Form(None),
     vad_guided: str = Form(str(VAD_GUIDED_DEFAULT).lower()),
+    vad_post_filter: str = Form(str(VAD_POST_FILTER_DEFAULT).lower()),
 ):
     started_at = time.perf_counter()
     is_streaming = str_to_bool(stream)
@@ -221,6 +246,7 @@ async def transcribe_upload(
                 temperature=temperature,
                 condition_on_previous_text=condition_on_previous_text,
                 vad_guided=vad_guided,
+                vad_post_filter=vad_post_filter,
             )
 
             cached_res = get_cached_result(cache_key)
@@ -298,9 +324,10 @@ async def transcribe_upload(
                     word_timestamps=str_to_bool(word_timestamps),
                     initial_prompt=initial_prompt,
                     temperature=temperature,
-                    condition_on_previous_text=str_to_bool(condition_on_previous_text, True),
+                    condition_on_previous_text=str_to_bool(condition_on_previous_text, False),
                     verbose=None if verbose is None else str_to_bool(verbose),
                     vad_guided=str_to_bool(vad_guided, VAD_GUIDED_DEFAULT),
+                    vad_post_filter=str_to_bool(vad_post_filter, VAD_POST_FILTER_DEFAULT),
                 )
 
                 elapsed = time.perf_counter() - started_at
@@ -380,6 +407,7 @@ def transcribe_path(request: Request, body: TranscribePathRequest):
             condition_on_previous_text=body.condition_on_previous_text,
             verbose=body.verbose,
             vad_guided=body.vad_guided,
+            vad_post_filter=body.vad_post_filter,
         )
 
         elapsed = time.perf_counter() - started_at

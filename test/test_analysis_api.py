@@ -93,10 +93,11 @@ class AnalysisApiTests(unittest.TestCase):
         }
         mock_client_cls.return_value = mock_client
 
-        provider = LLMService.get_provider("nemotron_local", local_llm_url="http://127.0.0.1:1235")
+        provider = LLMService.get_provider("nemotron_local", local_llm_url="http://127.0.0.1:1235", local_llm_model="nemotron-nano-4b")
         self.assertIsInstance(provider, NemotronLocalProvider)
         
         result = provider.analyze("Test Nemotron Text")
+        mock_client_cls.assert_called_once_with(base_url="http://127.0.0.1:1235", model="nemotron-nano-4b")
         mock_client.analyze_text.assert_called_once_with("Test Nemotron Text", language="it")
         self.assertEqual(result["title"], "Nemotron Title")
 
@@ -112,10 +113,11 @@ class AnalysisApiTests(unittest.TestCase):
         }
         mock_client_cls.return_value = mock_client
 
-        provider = LLMService.get_provider("voxtral_local", local_llm_url="http://127.0.0.1:1235")
+        provider = LLMService.get_provider("voxtral_local", local_llm_url="http://127.0.0.1:1235", local_llm_model="voxtral-mini-3b")
         self.assertIsInstance(provider, VoxtralLocalProvider)
         
         result = provider.analyze_audio("test.wav", task="insights", question="what?")
+        mock_client_cls.assert_called_once_with(base_url="http://127.0.0.1:1235", model="voxtral-mini-3b")
         mock_client.analyze_audio.assert_called_once_with(
             audio_path="test.wav",
             task="insights",

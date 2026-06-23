@@ -22,10 +22,16 @@ from pathlib import Path
 from typing import Optional, Any, Dict, Generator
 
 from local_asr_server.paths import get_cache_dir
+from local_asr_server.transcription_quality import clean_segments, filter_segments_by_vad
 
 logger = logging.getLogger("uvicorn.error")
 CACHE_DIR = get_cache_dir()
 VAD_GUIDED_DEFAULT = False
+VAD_POST_FILTER_DEFAULT = True
+DEFAULT_TEMPERATURE = 0.0
+DEFAULT_COMPRESSION_RATIO_THRESHOLD = 2.2
+DEFAULT_LOGPROB_THRESHOLD = -0.7
+DEFAULT_NO_SPEECH_THRESHOLD = 0.35
 
 
 # ── Utility Helpers ───────────────────────────────────────────────────────────
@@ -159,9 +165,10 @@ def generate_cache_key(
     temperature: Optional[float],
     condition_on_previous_text: str | bool,
     vad_guided: str | bool = VAD_GUIDED_DEFAULT,
+    vad_post_filter: str | bool = VAD_POST_FILTER_DEFAULT,
 ) -> str:
     """Generate a unique SHA-256 cache key based on the audio hash and run parameters."""
-    param_string = f"{audio_hash}:{model}:{language}:{task}:{word_timestamps}:{temperature}:{condition_on_previous_text}:{vad_guided}"
+    param_string = f"{audio_hash}:{model}:{language}:{task}:{word_timestamps}:{temperature}:{condition_on_previous_text}:{vad_guided}:{vad_post_filter}:quality-v1"
     return hashlib.sha256(param_string.encode("utf-8")).hexdigest()
 
 
@@ -204,6 +211,10 @@ def _transcribe(
     temperature: Optional[float],
     condition_on_previous_text: bool,
     verbose: Optional[bool],
+    compression_ratio_threshold: float | None = DEFAULT_COMPRESSION_RATIO_THRESHOLD,
+    logprob_threshold: float | None = DEFAULT_LOGPROB_THRESHOLD,
+    no_speech_threshold: float | None = DEFAULT_NO_SPEECH_THRESHOLD,
+    hallucination_silence_threshold: float | None = None,
 ) -> dict:
     """Import and call mlx_whisper.transcribe with explicit parameters."""
     import mlx_whisper
@@ -219,12 +230,15 @@ def _transcribe(
         "task": task,
         "word_timestamps": word_timestamps,
         "initial_prompt": initial_prompt,
+        "temperature": DEFAULT_TEMPERATURE if temperature is None else temperature,
         "condition_on_previous_text": condition_on_previous_text,
         "verbose": verbose,
+        "compression_ratio_threshold": compression_ratio_threshold,
+        "logprob_threshold": logprob_threshold,
+        "no_speech_threshold": no_speech_threshold,
     }
-
-    if temperature is not None:
-        kwargs["temperature"] = temperature
+    if hallucination_silence_threshold is not None:
+        kwargs["hallucination_silence_threshold"] = hallucination_silence_threshold
 
     # Filter out None values to let mlx_whisper use its defaults
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
@@ -233,6 +247,40 @@ def _transcribe(
         audio_path,
         **kwargs,
     )
+
+
+def _postprocess_full_track_result(audio_path: str, result: dict, *, vad_post_filter: bool) -> dict:
+    """Preserve raw ASR output while producing a cleaned result for users.
+
+    VAD is advisory only: an unavailable detector or no detected speech never
+    converts a valid Whisper result into an empty transcript.
+    """
+    raw_segments = [dict(segment) for segment in result.get("segments", []) or []]
+    segments, dropped = clean_segments(raw_segments)
+    metadata = dict(result.get("metadata") or {})
+    metadata.update({"quality_filter_enabled": True, "raw_segments_count": len(raw_segments)})
+    if vad_post_filter:
+        try:
+            from local_asr_server.audio_intelligence.audio_io import load_audio_samples
+            from local_asr_server.audio_intelligence.vad import detect_speech_windows_vad
+            vad_windows = detect_speech_windows_vad(load_audio_samples(Path(audio_path)), sr=16000)
+            if vad_windows:
+                segments, vad_dropped = filter_segments_by_vad(segments, vad_windows)
+                dropped.extend(vad_dropped)
+                metadata.update({"vad_filter_enabled": True, "vad_windows_count": len(vad_windows)})
+            else:
+                metadata.update({"vad_filter_enabled": False, "vad_filter_fallback": "no_speech_windows_detected"})
+        except Exception as exc:
+            logger.warning("[ASR Quality] VAD post-filter unavailable; retaining cleaned Whisper output: %s", exc)
+            metadata.update({"vad_filter_enabled": False, "vad_filter_fallback": "vad_detection_failed"})
+    cleaned = dict(result)
+    cleaned["raw_text"] = result.get("text", "")
+    cleaned["raw_segments"] = raw_segments
+    cleaned["segments"] = segments
+    cleaned["text"] = " ".join((segment.get("text") or "").strip() for segment in segments).strip()
+    metadata.update({"dropped_segments_count": len(dropped), "dropped_segments": dropped[:200]})
+    cleaned["metadata"] = metadata
+    return cleaned
 
 
 def _transcribe_vad_guided(
@@ -400,10 +448,11 @@ def transcribe_file_sync(
     condition_on_previous_text: bool,
     verbose: Optional[bool] = None,
     vad_guided: bool = VAD_GUIDED_DEFAULT,
+    vad_post_filter: bool = VAD_POST_FILTER_DEFAULT,
 ) -> dict:
     """Run transcription synchronously for the given file."""
     if vad_guided:
-        return _transcribe_vad_guided(
+        result = _transcribe_vad_guided(
             audio_path=audio_path,
             model=model,
             language=language,
@@ -414,7 +463,8 @@ def transcribe_file_sync(
             condition_on_previous_text=condition_on_previous_text,
             verbose=verbose,
         )
-    return _transcribe(
+        return _postprocess_full_track_result(audio_path, result, vad_post_filter=False)
+    result = _transcribe(
         audio_path=audio_path,
         model=model,
         language=language,
@@ -425,6 +475,7 @@ def transcribe_file_sync(
         condition_on_previous_text=condition_on_previous_text,
         verbose=verbose,
     )
+    return _postprocess_full_track_result(audio_path, result, vad_post_filter=vad_post_filter)
 
 
 async def transcribe_stream_generator(
@@ -442,6 +493,7 @@ async def transcribe_stream_generator(
     transcription_store: Any,
     started_at: float,
     vad_guided: str | bool = VAD_GUIDED_DEFAULT,
+    vad_post_filter: str | bool = VAD_POST_FILTER_DEFAULT,
 ) -> Generator[str, None, None]:
     """
     Stream transcription updates using NDJSON. Starts a background worker thread
@@ -492,7 +544,7 @@ async def transcribe_stream_generator(
                         sys.stdout.flush()
 
                 if str_to_bool(vad_guided, VAD_GUIDED_DEFAULT):
-                    res = _transcribe_vad_guided(
+                    res = _postprocess_full_track_result(audio_path, _transcribe_vad_guided(
                         audio_path=audio_path,
                         model=model,
                         language=language,
@@ -500,11 +552,11 @@ async def transcribe_stream_generator(
                         word_timestamps=str_to_bool(word_timestamps),
                         initial_prompt=initial_prompt,
                         temperature=temperature,
-                        condition_on_previous_text=str_to_bool(condition_on_previous_text, True),
+                        condition_on_previous_text=str_to_bool(condition_on_previous_text, False),
                         verbose=True,
-                    )
+                    ), vad_post_filter=False)
                 else:
-                    res = _transcribe(
+                    res = _postprocess_full_track_result(audio_path, _transcribe(
                         audio_path=audio_path,
                         model=model,
                         language=language,
@@ -512,9 +564,9 @@ async def transcribe_stream_generator(
                         word_timestamps=str_to_bool(word_timestamps),
                         initial_prompt=initial_prompt,
                         temperature=temperature,
-                        condition_on_previous_text=str_to_bool(condition_on_previous_text, True),
+                        condition_on_previous_text=str_to_bool(condition_on_previous_text, False),
                         verbose=True,
-                    )
+                    ), vad_post_filter=str_to_bool(vad_post_filter, VAD_POST_FILTER_DEFAULT))
                 transcribe_result.update(res)
             logger.info(f"[Transcriber] [Worker Thread] Transcription completed successfully")
         except Exception as e:

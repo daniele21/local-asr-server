@@ -32,6 +32,17 @@ class ResolvedReasoning:
     restart_required: bool = False
 
 
+@dataclass(frozen=True)
+class LocalLLMProcessConfig:
+    model: str
+    model_path: str = ""
+    backend: str = ""
+    mmproj_path: str = ""
+    ctx_size: int | None = None
+    startup_timeout: int | None = None
+    llama_server_bin: str = ""
+
+
 class LocalLLMSidecar:
     """Owns the process, port, readiness and logs for local-llm-server."""
 
@@ -42,6 +53,7 @@ class LocalLLMSidecar:
         self._port: int | None = None
         self._started_at: float | None = None
         self._last_error: str | None = None
+        self._process_config: LocalLLMProcessConfig | None = None
 
     @property
     def base_url(self) -> str | None:
@@ -69,6 +81,7 @@ class LocalLLMSidecar:
             "status": status,
             "mode": mode,
             "model": model,
+            "loaded_model": self._process_config.model if self._process_config else None,
             "model_path_configured": bool(model_path),
             "managed": mode == "auto",
             "url": None,
@@ -85,6 +98,11 @@ class LocalLLMSidecar:
         *,
         model: str,
         model_path: str = "",
+        backend: str = "",
+        mmproj_path: str = "",
+        ctx_size: int | None = None,
+        startup_timeout: int | None = None,
+        llama_server_bin: str = "",
         reasoning: str = "auto",
         capability: str = "text",
         timeout: float = 30.0,
@@ -97,20 +115,37 @@ class LocalLLMSidecar:
                 "local-llm-server non è installato o non è importabile.",
                 503,
             )
+        config = LocalLLMProcessConfig(model, model_path, backend, mmproj_path, ctx_size, startup_timeout, llama_server_bin)
         if self._process is None or self._process.poll() is not None:
-            self.start(model=model, model_path=model_path)
+            self.start(**config.__dict__)
+        elif self._process_config != config:
+            self.restart(**config.__dict__)
         if not self.wait_until_ready(timeout=timeout):
             raise LocalLLMSidecarError("local_llm_not_ready", "Il servizio LLM locale è ancora in caricamento.", 503)
         resolved_reasoning = self.resolve_reasoning(reasoning, capability)
         return {
             "base_url": self.base_url,
+            "model": model,
             "reasoning": resolved_reasoning.effective,
             "requested_reasoning": resolved_reasoning.requested,
             "restart_required": resolved_reasoning.restart_required,
         }
 
-    def start(self, *, model: str, model_path: str = "") -> dict[str, Any]:
+    def start(
+        self,
+        *,
+        model: str,
+        model_path: str = "",
+        backend: str = "",
+        mmproj_path: str = "",
+        ctx_size: int | None = None,
+        startup_timeout: int | None = None,
+        llama_server_bin: str = "",
+    ) -> dict[str, Any]:
+        config = LocalLLMProcessConfig(model, model_path, backend, mmproj_path, ctx_size, startup_timeout, llama_server_bin)
         if self._process is not None and self._process.poll() is None:
+            if self._process_config != config:
+                return self.restart(**config.__dict__)
             return {"base_url": self.base_url, "pid": self._process.pid}
 
         if not self._runtime_available():
@@ -121,12 +156,13 @@ class LocalLLMSidecar:
             )
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
         self._port = self._select_port()
-        cmd = self._build_command(model=model, model_path=model_path, port=self._port)
+        cmd = self._build_command(port=self._port, **config.__dict__)
         try:
             log_handle = self.log_file.open("ab")
             self._process = subprocess.Popen(cmd, stdout=log_handle, stderr=subprocess.STDOUT)
             self._started_at = time.time()
             self._last_error = None
+            self._process_config = config
         except Exception as exc:
             self._last_error = str(exc)
             raise LocalLLMSidecarError("local_llm_start_failed", f"Avvio local-llm-server non riuscito: {exc}") from exc
@@ -146,11 +182,12 @@ class LocalLLMSidecar:
         self._process = None
         self._port = None
         self._started_at = None
+        self._process_config = None
         return {"stopped": True}
 
-    def restart(self, *, model: str, model_path: str = "") -> dict[str, Any]:
+    def restart(self, **config: Any) -> dict[str, Any]:
         self.stop()
-        return self.start(model=model, model_path=model_path)
+        return self.start(**config)
 
     def tail_logs(self, lines: int = 200) -> str:
         if not self.log_file.exists():
@@ -189,14 +226,35 @@ class LocalLLMSidecar:
     def _runtime_available(self) -> bool:
         return bool(shutil.which("local-llm-server")) or importlib.util.find_spec("local_llm_server") is not None
 
-    def _build_command(self, *, model: str, model_path: str, port: int) -> list[str]:
+    def _build_command(
+        self,
+        *,
+        model: str,
+        model_path: str,
+        backend: str,
+        mmproj_path: str,
+        ctx_size: int | None,
+        startup_timeout: int | None,
+        llama_server_bin: str,
+        port: int,
+    ) -> list[str]:
         binary = shutil.which("local-llm-server")
         cmd = [binary, "serve"] if binary else [sys.executable, "-m", "local_llm_server", "serve"]
         cmd.extend(["--host", self.host, "--port", str(port)])
+        if model != "custom":
+            cmd.extend(["--model", model])
         if model_path:
             cmd.extend(["--model-path", model_path])
-        else:
-            cmd.extend(["--model", model])
+        if backend:
+            cmd.extend(["--backend", backend])
+        if mmproj_path:
+            cmd.extend(["--mmproj-path", mmproj_path])
+        if ctx_size is not None:
+            cmd.extend(["--ctx-size", str(ctx_size)])
+        if startup_timeout is not None:
+            cmd.extend(["--startup-timeout", str(startup_timeout)])
+        if llama_server_bin:
+            cmd.extend(["--llama-server-bin", llama_server_bin])
         return cmd
 
     def _select_port(self) -> int:

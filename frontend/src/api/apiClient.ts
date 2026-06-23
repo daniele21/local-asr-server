@@ -307,6 +307,11 @@ export interface Settings {
   local_llm_model_path?: string;
   /** Mappa model-key → percorso assoluto al file .gguf locale */
   local_llm_model_paths?: Record<string, string>;
+  local_llm_backend?: string;
+  local_llm_mmproj_path?: string;
+  local_llm_ctx_size?: number | null;
+  local_llm_startup_timeout?: number | null;
+  local_llm_llama_server_bin?: string;
   default_model: string;
   default_language: string;
   default_task: string;
@@ -498,6 +503,7 @@ export const ApiClient = {
     temperature?: number | null;
     condition_on_previous_text?: boolean;
     vad_guided?: boolean;
+    vad_post_filter?: boolean;
   }): Promise<Transcription> {
     return request(`/v1/recordings/${recordingId}/transcriptions`, {
       method: 'POST',
@@ -516,6 +522,7 @@ export const ApiClient = {
     temperature?: number | null;
     condition_on_previous_text?: boolean;
     vad_guided?: boolean;
+    vad_post_filter?: boolean;
   }): Promise<TranscriptionJob> {
     return (await request(`/v1/recordings/${recordingId}/transcription-jobs`, {
       method: 'POST',

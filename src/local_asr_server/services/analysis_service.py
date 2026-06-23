@@ -25,6 +25,7 @@ class AnalysisService:
         provider_name = body.llm_provider or settings.get("llm_provider", "mock")
         api_key = body.gemini_api_key or settings.get("gemini_api_key", "")
         local_llm_url = None
+        local_llm_model = None
         temperature = self._resolve_temperature(settings)
 
         if provider_name in {"nemotron_local", "voxtral_local"}:
@@ -35,12 +36,13 @@ class AnalysisService:
                     reasoning=settings.get("local_llm_reasoning") or "auto",
                 )
                 local_llm_url = runtime_options.get("base_url")
+                local_llm_model = runtime_options.get("model")
             except LocalLLMSidecarError as exc:
                 raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": str(exc)}) from exc
             except RuntimeError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        provider = LLMService.get_provider(provider_name, api_key, local_llm_url)
+        provider = LLMService.get_provider(provider_name, api_key, local_llm_url, local_llm_model)
 
         if provider_name == "voxtral_local" and body.recording_id:
             return self._analyze_audio(body, provider)

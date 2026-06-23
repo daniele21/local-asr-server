@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from typing import Any, TYPE_CHECKING
 
+from local_asr_server.transcription_quality import dedupe_cross_track_segments
+
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
@@ -32,6 +34,10 @@ def _merge_track_transcriptions(track_results: list[dict], *, model: str, langua
         }
         if result.get("metadata"):
             source_track["transcription_metadata"] = result["metadata"]
+        if "raw_text" in result:
+            source_track["raw_text"] = result["raw_text"]
+        if "raw_segments" in result:
+            source_track["raw_segments"] = result["raw_segments"]
         source_tracks.append(source_track)
         if result.get("language") and result["language"] not in languages:
             languages.append(result["language"])
@@ -44,6 +50,7 @@ def _merge_track_transcriptions(track_results: list[dict], *, model: str, langua
             merged_seg["speaker_label"] = track.get("label")
             segments.append(merged_seg)
 
+    segments = dedupe_cross_track_segments(segments)
     segments.sort(key=lambda seg: (seg.get("start") or 0.0, seg.get("end") or 0.0, seg.get("track_id") or ""))
     for index, seg in enumerate(segments):
         seg["id"] = index
@@ -63,6 +70,7 @@ def _merge_track_transcriptions(track_results: list[dict], *, model: str, langua
         "stats": {
             "time_total_seconds": elapsed,
             "track_count": len(track_results),
+            "cross_track_deduplication_enabled": True,
         },
     }
 

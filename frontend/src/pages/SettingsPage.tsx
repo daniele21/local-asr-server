@@ -65,7 +65,7 @@ export default function SettingsPage() {
           : ''
       );
       setWordTimestamps(settings.default_word_timestamps || false);
-      setConditionOnPrevious(settings.default_condition_on_previous !== false);
+      setConditionOnPrevious(settings.default_condition_on_previous ?? false);
       setLlmProvider(settings.llm_provider || 'mock');
       setGeminiApiKey('');
       setLocalLlmUrl(settings.local_llm_url || '');
@@ -334,7 +334,12 @@ export default function SettingsPage() {
             <Select
               label={t('settings.providerLabel')}
               value={llmProvider}
-              onChange={(e) => setLlmProvider(e.target.value)}
+              onChange={(e) => {
+                const provider = e.target.value;
+                setLlmProvider(provider);
+                if (provider === 'nemotron_local') setLocalLlmModel('nemotron-nano-4b');
+                if (provider === 'voxtral_local') setLocalLlmModel('voxtral-mini-3b');
+              }}
             >
               <option value="mock">{t('settings.providerMock')}</option>
               <option value="gemini">{t('settings.providerGemini')}</option>
@@ -417,7 +422,7 @@ export default function SettingsPage() {
                   ))}
                 </Select>
 
-                {localLlmModel === 'custom' && (
+                {(localLlmModel === 'custom' || localLlmModel === 'voxtral-mini-3b') && (
                   <div className="flex flex-col gap-1.5 w-full">
                     <label className="text-sm font-medium text-text-secondary">
                       {lang === 'it' ? 'Percorso file .gguf modello' : 'Model .gguf file path'}

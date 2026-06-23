@@ -30,9 +30,9 @@ DEFAULT_SETTINGS: dict[str, any] = {
     "default_model": "",
     "default_language": "it",
     "default_task": "transcribe",
-    "default_temperature": "",
+    "default_temperature": 0.0,
     "default_word_timestamps": False,
-    "default_condition_on_previous": True,
+    "default_condition_on_previous": False,
     "local_llm_mode": "auto",
     "local_llm_url": DEFAULT_LOCAL_LLM_URL,
     "local_llm_model": "nemotron-nano-4b",
@@ -43,6 +43,11 @@ DEFAULT_SETTINGS: dict[str, any] = {
     "local_llm_json_mode": True,
     "local_llm_model_path": "",
     "local_llm_model_paths": {},
+    "local_llm_backend": "",
+    "local_llm_mmproj_path": "",
+    "local_llm_ctx_size": None,
+    "local_llm_startup_timeout": None,
+    "local_llm_llama_server_bin": "",
 }
 
 

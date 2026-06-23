@@ -85,6 +85,11 @@ class RuntimeServiceManagerTests(unittest.TestCase):
         sidecar.ensure_ready.assert_called_once_with(
             model="nemotron-nano-4b",
             model_path="",
+            backend="",
+            mmproj_path="",
+            ctx_size=None,
+            startup_timeout=None,
+            llama_server_bin="",
             reasoning="auto",
             capability="text",
         )
@@ -102,6 +107,7 @@ class RuntimeServiceManagerTests(unittest.TestCase):
             result = RuntimeServiceManager(llm_sidecar=sidecar).ensure_llm_ready(capability="text")
 
         self.assertEqual(result["base_url"], "http://127.0.0.1:5555")
+        self.assertEqual(result["model"], "nemotron-nano-4b")
         self.assertEqual(result["reasoning"], "off")
         sidecar.ensure_ready.assert_not_called()
 
