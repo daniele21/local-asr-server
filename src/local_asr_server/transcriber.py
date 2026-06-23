@@ -25,6 +25,7 @@ from local_asr_server.paths import get_cache_dir
 
 logger = logging.getLogger("uvicorn.error")
 CACHE_DIR = get_cache_dir()
+VAD_GUIDED_DEFAULT = False
 
 
 # ── Utility Helpers ───────────────────────────────────────────────────────────
@@ -157,7 +158,7 @@ def generate_cache_key(
     word_timestamps: str | bool,
     temperature: Optional[float],
     condition_on_previous_text: str | bool,
-    vad_guided: str | bool = True,
+    vad_guided: str | bool = VAD_GUIDED_DEFAULT,
 ) -> str:
     """Generate a unique SHA-256 cache key based on the audio hash and run parameters."""
     param_string = f"{audio_hash}:{model}:{language}:{task}:{word_timestamps}:{temperature}:{condition_on_previous_text}:{vad_guided}"
@@ -254,12 +255,9 @@ def _transcribe_vad_guided(
     from local_asr_server.audio_intelligence.vad import detect_speech_windows_vad
     from local_asr_server.audio_intelligence.features import _speech_threshold, _speech_windows
 
-    logger.info(f"[VAD Guided ASR] Loading audio from: {audio_path}")
-    try:
-        samples = load_audio_samples(Path(audio_path))
-    except Exception as e:
-        logger.warning(f"[VAD Guided ASR] Failed to load samples, falling back to full-track: {e}")
-        return _transcribe(
+    def full_track_fallback(reason: str, *, vad_windows_count: int | None = None) -> dict:
+        """Keep VAD an optimization: it must never suppress a transcription."""
+        result = _transcribe(
             audio_path=audio_path,
             model=model,
             language=language,
@@ -270,6 +268,26 @@ def _transcribe_vad_guided(
             condition_on_previous_text=condition_on_previous_text,
             verbose=verbose,
         )
+        metadata = result.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+            result["metadata"] = metadata
+        metadata.update(
+            {
+                "vad_guided": True,
+                "vad_fallback": True,
+                "vad_fallback_reason": reason,
+                "vad_windows_count": vad_windows_count,
+            }
+        )
+        return result
+
+    logger.info(f"[VAD Guided ASR] Loading audio from: {audio_path}")
+    try:
+        samples = load_audio_samples(Path(audio_path))
+    except Exception as e:
+        logger.warning(f"[VAD Guided ASR] Failed to load samples, falling back to full-track: {e}")
+        return full_track_fallback("audio_load_failed")
 
     duration = len(samples) / 16000.0
     logger.info(f"[VAD Guided ASR] Running VAD detection. Duration: {duration:.2f}s")
@@ -284,21 +302,13 @@ def _transcribe_vad_guided(
             raw_windows = [{"start": w["source_start"], "end": w["source_end"]} for w in raw_w]
         except Exception as e2:
             logger.warning(f"[VAD Guided ASR] Fallback RMS failed, transcribing full-track: {e2}")
-            return _transcribe(
-                audio_path=audio_path,
-                model=model,
-                language=language,
-                task=task,
-                word_timestamps=word_timestamps,
-                initial_prompt=initial_prompt,
-                temperature=temperature,
-                condition_on_previous_text=condition_on_previous_text,
-                verbose=verbose,
-            )
+            return full_track_fallback("vad_and_rms_detection_failed")
 
     if not raw_windows:
-        logger.info("[VAD Guided ASR] No speech windows detected. Returning empty transcript.")
-        return {"text": "", "segments": []}
+        logger.warning(
+            "[VAD Guided ASR] No speech windows detected; falling back to full-track transcription."
+        )
+        return full_track_fallback("no_speech_windows_detected", vad_windows_count=0)
 
     logger.info(f"[VAD Guided ASR] Detected {len(raw_windows)} speech segments to transcribe.")
     combined_segments = []
@@ -363,10 +373,18 @@ def _transcribe_vad_guided(
             except OSError:
                 pass
 
-    return {
-        "text": " ".join(combined_text_parts),
-        "segments": combined_segments,
-    }
+    combined_text = " ".join(combined_text_parts)
+    if not combined_text.strip() and not combined_segments:
+        logger.warning(
+            "[VAD Guided ASR] VAD windows produced an empty transcript; "
+            "falling back to full-track transcription."
+        )
+        return full_track_fallback(
+            "vad_windows_produced_empty_transcript",
+            vad_windows_count=len(raw_windows),
+        )
+
+    return {"text": combined_text, "segments": combined_segments}
 
 
 # ── Transcription Orchestration ───────────────────────────────────────────────
@@ -381,7 +399,7 @@ def transcribe_file_sync(
     temperature: Optional[float],
     condition_on_previous_text: bool,
     verbose: Optional[bool] = None,
-    vad_guided: bool = True,
+    vad_guided: bool = VAD_GUIDED_DEFAULT,
 ) -> dict:
     """Run transcription synchronously for the given file."""
     if vad_guided:
@@ -423,7 +441,7 @@ async def transcribe_stream_generator(
     recording_id: Optional[str],
     transcription_store: Any,
     started_at: float,
-    vad_guided: str | bool = True,
+    vad_guided: str | bool = VAD_GUIDED_DEFAULT,
 ) -> Generator[str, None, None]:
     """
     Stream transcription updates using NDJSON. Starts a background worker thread
@@ -473,7 +491,7 @@ async def transcribe_stream_generator(
                         print(f"DOWNLOAD_COMPLETE:{model}")
                         sys.stdout.flush()
 
-                if str_to_bool(vad_guided, True):
+                if str_to_bool(vad_guided, VAD_GUIDED_DEFAULT):
                     res = _transcribe_vad_guided(
                         audio_path=audio_path,
                         model=model,
@@ -577,6 +595,7 @@ async def transcribe_stream_generator(
         "text": transcribe_result.get("text", ""),
         "language": transcribe_result.get("language", language),
         "segments": transcribe_result.get("segments", []),
+        "metadata": transcribe_result.get("metadata", {}),
         "model": model,
         "backend": "mlx-whisper",
         "recording_id": recording_id or "",

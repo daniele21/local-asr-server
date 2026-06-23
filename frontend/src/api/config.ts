@@ -43,6 +43,7 @@ export const DEFAULTS = {
   temperature: '',
   wordTimestamps: false,
   conditionOnPreviousText: true,
+  vadGuided: false,
   theme: 'dark' as 'dark' | 'light',
 };
 

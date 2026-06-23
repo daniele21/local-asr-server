@@ -391,6 +391,10 @@ class RecordingApiTests(unittest.TestCase):
         self.assertEqual(res.json()["recording_id"], recording_id)
         self.assertEqual(res.json()["capture_backend"], "browser")
 
+        health = self.client.get("/health")
+        self.assertEqual(health.status_code, 200)
+        self.assertEqual(health.json()["status"], "recording")
+
         # 4. Append chunk and verify bytes_written changes
         chunk = self.client.post(
             f"/v1/recordings/{recording_id}/chunks",

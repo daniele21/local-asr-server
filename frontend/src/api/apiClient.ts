@@ -293,7 +293,8 @@ export interface Transcription {
 export interface Settings {
   transcriptions_dir: string;
   recordings_dir: string;
-  gemini_api_key: string;
+  gemini_api_key?: string;
+  gemini_api_key_configured?: boolean;
   llm_provider: string;
   local_llm_mode?: 'auto' | 'external' | 'disabled';
   local_llm_url?: string;

@@ -93,10 +93,10 @@ def detect_speech_windows_vad(
     audio_samples: np.ndarray,
     sr: int = 16000,
     chunk_size: int = 512,
-    threshold: float = 0.5,
-    neg_threshold: float = 0.35,
-    min_speech_duration_ms: int = 250,
-    min_silence_duration_ms: int = 500,
+    threshold: float = 0.20,
+    neg_threshold: float = 0.1,
+    min_speech_duration_ms: int = 80,
+    min_silence_duration_ms: int = 1000,
 ) -> list[dict[str, float]]:
     """
     Perform stateful Silero VAD over the full numpy array of float32 samples.

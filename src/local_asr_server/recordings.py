@@ -456,6 +456,11 @@ class RecordingStore:
         items.sort(key=lambda item: item["created_at"], reverse=True)
         return items[: max(1, min(limit, 100))]
 
+    def active_recording(self) -> dict[str, Any] | None:
+        """Return the newest persisted recording that is still being captured."""
+        active = [item for item in self.list(limit=100) if item.get("status") == "recording"]
+        return active[0] if active else None
+
     def audio_path(self, recording_id: str) -> Path:
         session_dir, metadata = self._load(recording_id)
         metadata = self._ensure_tracks(metadata)

@@ -298,7 +298,7 @@ const it = {
     temperatureLabel: 'Temperatura (creatività)',
     wordTimestampsLabel: 'Genera timestamp per singola parola',
     conditionLabel: 'Condiziona su testo precedente',
-    vadGuidedLabel: 'Trascrizione guidata da VAD (riduce le allucinazioni del silenzio)',
+    vadGuidedLabel: 'Trascrizione guidata da VAD (ottimizzazione sperimentale; fallback completo automatico)',
     advancedOptions: 'Opzioni avanzate',
     audioTrackTitle: 'Traccia audio',
     btnTranscribe: 'Trascrivi',

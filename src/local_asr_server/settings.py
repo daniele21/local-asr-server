@@ -8,6 +8,8 @@ following the macOS convention for user data.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from local_asr_server.paths import get_settings_file, APP_NAME
@@ -69,13 +71,20 @@ def save_settings(settings: dict[str, any]) -> None:
     """
     Persist settings to disk atomically.
 
-    The parent directory is created if it does not exist.  Errors are
-    silently swallowed so a settings failure never crashes the server.
+    The parent directory is created if it does not exist.
     """
+    settings_file = get_settings_file()
+    settings_file.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_path = tempfile.mkstemp(prefix=f".{settings_file.name}.", suffix=".tmp", dir=settings_file.parent)
     try:
-        settings_file = get_settings_file()
-        settings_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(settings_file, "w", encoding="utf-8") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(settings, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary_path, settings_file)
     except Exception:
-        pass
+        try:
+            os.unlink(temporary_path)
+        except FileNotFoundError:
+            pass
+        raise

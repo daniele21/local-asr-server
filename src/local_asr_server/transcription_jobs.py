@@ -114,11 +114,12 @@ class TranscriptionJobManager:
                 return None
             stored = self._store.request_cancel(job_id)
             return self._stored_public(stored) if stored else None
+        if job.status in TERMINAL_JOB_STATUSES:
+            return job.public()
         job.cancel_requested = True
         if self._store is not None:
             self._store.request_cancel(job.id)
-        if job.status not in TERMINAL_JOB_STATUSES:
-            self._emit(job, "cancelled", job.progress)
+        self._emit(job, "cancelling", job.progress, "cancelling")
         return job.public()
 
     def drain_events(self, job_id: str) -> list[dict[str, Any]] | None:
@@ -154,6 +155,9 @@ class TranscriptionJobManager:
             job.result = result
             self._emit(job, "completed", 100)
         except Exception as exc:
+            if job.cancel_requested:
+                self._emit(job, "cancelled", job.progress)
+                return
             job.error = str(exc)[:2000]
             self._emit(job, "failed", job.progress)
 

@@ -74,6 +74,15 @@ class JobStoreTests(unittest.TestCase):
             store = JobStore(Path(tmp) / "closedroom.db")
             self.assertIsNone(store.events_after("missing"))
 
+    def test_restart_marks_incomplete_job_interrupted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JobStore(Path(tmp) / "closedroom.db")
+            store.create(job_id="job-1", job_type="transcription")
+            interrupted = store.interrupt_incomplete()
+            self.assertEqual([job["id"] for job in interrupted], ["job-1"])
+            self.assertEqual(store.get("job-1")["status"], "interrupted")
+            self.assertEqual(store.get("job-1")["error"], "Interrupted by server restart")
+
     def test_analysis_runs_are_persisted_and_filterable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             catalog = CatalogStore(Path(tmp) / "closedroom.db")

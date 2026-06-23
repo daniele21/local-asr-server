@@ -87,7 +87,7 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo }: Anal
     try {
       const settings = await ApiClient.getSettings();
       setProvider(settings.llm_provider || 'mock');
-      setApiKey(settings.gemini_api_key || '');
+      setApiKey('');
       setLocalLlmModel(settings.local_llm_model || 'nemotron-nano-4b');
       setLocalLlmModelPath(settings.local_llm_model_path || '');
     } catch {}
@@ -211,8 +211,16 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo }: Anal
         setStatusText(t('analysis.analyzingStatus'));
       }
 
-      const result = await ApiClient.analyze(payload);
-      setAnalysisResult(result);
+      const created = await ApiClient.createAnalysisJob(payload);
+      let job = await ApiClient.getJob(created.job_id);
+      while (!['completed', 'failed', 'cancelled', 'interrupted'].includes(job.status)) {
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+        job = await ApiClient.getJob(created.job_id);
+      }
+      if (job.status !== 'completed') {
+        throw new Error(job.error || `Analysis job ${job.status}`);
+      }
+      setAnalysisResult(job.result?.analysis || job.result);
 
       // Save counts and settings update
       try {
@@ -224,10 +232,10 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo }: Anal
 
       // Update provider settings in background
       await ApiClient.updateSettings({
-        gemini_api_key: apiKey.trim(),
         llm_provider: provider,
         local_llm_model: localLlmModel,
         local_llm_model_path: localLlmModelPath.trim(),
+        ...(apiKey.trim() ? { gemini_api_key: apiKey.trim() } : {}),
       });
 
     } catch (err: any) {

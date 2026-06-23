@@ -65,9 +65,6 @@ def create_app(
         )
 
     app.state.default_model = default_model
-    app.state.is_recording = False
-    app.state.active_recording = None
-    app.state.is_transcribing = False
     app.state.capture_manager = NativeCaptureManager()
     app.state.runtime_services = RuntimeServiceManager()
     app.state.transcription_service = TranscriptionService()
@@ -88,6 +85,11 @@ def create_app(
         
     app.state.catalog_store = CatalogStore(catalog_path)
     app.state.job_store = JobStore(catalog_path)
+    interrupted_jobs = app.state.job_store.interrupt_incomplete()
+    app.state.catalog_store.interrupt_analysis_runs_for_jobs(
+        [job["id"] for job in interrupted_jobs if job["type"] == "analysis"],
+        reason="Interrupted by server restart",
+    )
     app.state.transcription_jobs = TranscriptionJobManager(app.state.job_store)
     app.state.analysis_jobs = AnalysisJobManager(app.state, app.state.job_store)
     app.state.recording_store = RecordingStore(

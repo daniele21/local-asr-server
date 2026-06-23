@@ -379,6 +379,20 @@ class CatalogStore:
             )
         return self.get_analysis_run(run_id)
 
+    def interrupt_analysis_runs_for_jobs(self, job_ids: list[str], *, reason: str) -> None:
+        if not job_ids:
+            return
+        placeholders = ", ".join("?" for _ in job_ids)
+        with self.connection() as conn:
+            conn.execute(
+                f"""
+                UPDATE analysis_runs
+                SET status = 'interrupted', error = ?, completed_at = ?
+                WHERE job_id IN ({placeholders}) AND status NOT IN ('completed', 'failed', 'cancelled', 'interrupted')
+                """,
+                [reason, time.time(), *job_ids],
+            )
+
     def get_analysis_run(self, run_id: str) -> dict[str, Any] | None:
         with self.connection() as conn:
             row = conn.execute("SELECT * FROM analysis_runs WHERE id = ?", (run_id,)).fetchone()

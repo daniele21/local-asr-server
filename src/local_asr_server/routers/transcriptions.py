@@ -24,6 +24,7 @@ from local_asr_server.transcriber import (
     transcribe_file_sync,
     transcribe_stream_generator,
     _clean_nan_values,
+    VAD_GUIDED_DEFAULT,
 )
 from local_asr_server.schemas import (
     TranscribePathRequest,
@@ -191,7 +192,7 @@ async def transcribe_upload(
     verbose: Optional[str] = Form(None),
     stream: str = Form("false"),
     recording_id: Optional[str] = Form(None),
-    vad_guided: str = Form("true"),
+    vad_guided: str = Form(str(VAD_GUIDED_DEFAULT).lower()),
 ):
     started_at = time.perf_counter()
     is_streaming = str_to_bool(stream)
@@ -263,7 +264,6 @@ async def transcribe_upload(
             # Cache miss, proceed as normal
             if is_streaming:
                 async def event_generator_wrapper():
-                    request.app.state.is_transcribing = True
                     try:
                         async for event in transcribe_stream_generator(
                             audio_path=tmp_path,
@@ -283,12 +283,11 @@ async def transcribe_upload(
                         ):
                             yield event
                     finally:
-                        request.app.state.is_transcribing = False
+                        pass
 
                 return StreamingResponse(event_generator_wrapper(), media_type="application/x-ndjson")
 
             logger.info(f"[/v1/audio/transcriptions] Running non-streaming transcription for {tmp_path} using {target_model}...")
-            request.app.state.is_transcribing = True
             try:
                 result = _transcribe_file(
                     request.app,
@@ -301,7 +300,7 @@ async def transcribe_upload(
                     temperature=temperature,
                     condition_on_previous_text=str_to_bool(condition_on_previous_text, True),
                     verbose=None if verbose is None else str_to_bool(verbose),
-                    vad_guided=str_to_bool(vad_guided, True),
+                    vad_guided=str_to_bool(vad_guided, VAD_GUIDED_DEFAULT),
                 )
 
                 elapsed = time.perf_counter() - started_at
@@ -311,6 +310,7 @@ async def transcribe_upload(
                     "text": result.get("text", ""),
                     "language": result.get("language", language),
                     "segments": result.get("segments", []),
+                    "metadata": result.get("metadata", {}),
                     "model": target_model,
                     "backend": "mlx-whisper",
                     "recording_id": recording_id or "",
@@ -333,7 +333,7 @@ async def transcribe_upload(
 
                 return JSONResponse({"text": payload["text"]})
             finally:
-                request.app.state.is_transcribing = False
+                pass
 
     except Exception as exc:
         logger.error(f"[/v1/audio/transcriptions] Request failed: {exc}", exc_info=True)
@@ -367,7 +367,6 @@ def transcribe_path(request: Request, body: TranscribePathRequest):
             detail=f"Audio file not found: {audio_path}",
         )
 
-    request.app.state.is_transcribing = True
     try:
         result = _transcribe_file(
             request.app,
@@ -390,6 +389,7 @@ def transcribe_path(request: Request, body: TranscribePathRequest):
             "text": result.get("text", ""),
             "language": result.get("language", body.language),
             "segments": result.get("segments", []),
+            "metadata": result.get("metadata", {}),
             "model": target_model,
             "backend": "mlx-whisper",
             "stats": {
@@ -416,12 +416,11 @@ def transcribe_path(request: Request, body: TranscribePathRequest):
             detail=f"Transcription failed: {exc}",
         ) from exc
     finally:
-        request.app.state.is_transcribing = False
+        pass
 
 
 @router.post("/v1/recordings/{recording_id}/transcriptions")
 def transcribe_recording(recording_id: str, request: Request, body: TranscribeRecordingRequest):
-    request.app.state.is_transcribing = True
     try:
         payload = run_recording_transcription(request.app, recording_id, body)
         if body.response_format == "text":
@@ -435,7 +434,7 @@ def transcribe_recording(recording_id: str, request: Request, body: TranscribeRe
         logger.error(f"[/v1/recordings/{recording_id}/transcriptions] Transcription failed: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Transcription failed: {exc}") from exc
     finally:
-        request.app.state.is_transcribing = False
+        pass
 
 
 @router.post("/v1/recordings/{recording_id}/transcription-jobs", status_code=202)
@@ -446,11 +445,10 @@ def create_transcription_job(recording_id: str, request: Request, body: Transcri
         raise HTTPException(status_code=404, detail="Recording not found") from exc
 
     def runner(job: TranscriptionJob) -> dict[str, Any]:
-        request.app.state.is_transcribing = True
         try:
             return run_recording_transcription(request.app, recording_id, body, job)
         finally:
-            request.app.state.is_transcribing = False
+            pass
 
     return request.app.state.transcription_jobs.create(recording_id, runner)
 
@@ -496,7 +494,7 @@ def job_events(job_id: str, request: Request):
             for event in events:
                 last_sequence = max(last_sequence, int(event.get("sequence") or last_sequence))
                 yield f"data: {json.dumps(event)}\n\n"
-                if event.get("status") in {"completed", "failed", "cancelled"}:
+                if event.get("status") in {"completed", "failed", "cancelled", "interrupted"}:
                     return
             time.sleep(0.5)
 
@@ -505,7 +503,10 @@ def job_events(job_id: str, request: Request):
 
 @router.post("/v1/jobs/{job_id}/cancel")
 def cancel_job(job_id: str, request: Request):
-    job = request.app.state.transcription_jobs.cancel(job_id)
+    existing = request.app.state.job_store.get(job_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job = request.app.state.transcription_jobs.cancel(job_id) if existing["type"] == "transcription" else request.app.state.job_store.request_cancel(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return job

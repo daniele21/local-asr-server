@@ -298,7 +298,7 @@ const en = {
     temperatureLabel: 'Temperature (creativity)',
     wordTimestampsLabel: 'Generate word-level timestamps',
     conditionLabel: 'Condition on previous text',
-    vadGuidedLabel: 'VAD-guided transcription (reduces silence hallucinations)',
+    vadGuidedLabel: 'VAD-guided transcription (experimental optimization; full-track fallback is automatic)',
     advancedOptions: 'Advanced options',
     audioTrackTitle: 'Audio track',
     btnTranscribe: 'Transcribe',

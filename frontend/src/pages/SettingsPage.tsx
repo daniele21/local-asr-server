@@ -67,7 +67,7 @@ export default function SettingsPage() {
       setWordTimestamps(settings.default_word_timestamps || false);
       setConditionOnPrevious(settings.default_condition_on_previous !== false);
       setLlmProvider(settings.llm_provider || 'mock');
-      setGeminiApiKey(settings.gemini_api_key || '');
+      setGeminiApiKey('');
       setLocalLlmUrl(settings.local_llm_url || '');
       setLocalLlmMode(settings.local_llm_mode || 'auto');
       setLocalLlmModel(settings.local_llm_model || 'nemotron-nano-4b');
@@ -168,7 +168,6 @@ export default function SettingsPage() {
         default_word_timestamps: wordTimestamps,
         default_condition_on_previous: conditionOnPrevious,
         llm_provider: llmProvider,
-        gemini_api_key: geminiApiKey.trim(),
         local_llm_mode: localLlmMode,
         local_llm_url: showAdvancedLlm ? localLlmUrl.trim() : undefined,
         local_llm_model: localLlmModel,
@@ -179,6 +178,7 @@ export default function SettingsPage() {
         local_llm_json_mode: localLlmJsonMode,
         local_llm_model_path: localLlmModelPath.trim(),
       };
+      if (geminiApiKey.trim()) payload.gemini_api_key = geminiApiKey.trim();
 
       await ApiClient.updateSettings(payload);
       showToast(t('settings.successSave'), 'success');

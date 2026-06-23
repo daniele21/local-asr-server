@@ -24,12 +24,15 @@ def _merge_track_transcriptions(track_results: list[dict], *, model: str, langua
     for item in track_results:
         track = item["track"]
         result = item["result"]
-        source_tracks.append({
+        source_track = {
             "id": track["id"],
             "source": track.get("source"),
             "label": track.get("label"),
             "audio_file": track.get("audio_file"),
-        })
+        }
+        if result.get("metadata"):
+            source_track["transcription_metadata"] = result["metadata"]
+        source_tracks.append(source_track)
         if result.get("language") and result["language"] not in languages:
             languages.append(result["language"])
         for seg in result.get("segments", []) or []:

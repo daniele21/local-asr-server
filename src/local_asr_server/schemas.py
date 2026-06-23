@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Optional
 from pydantic import BaseModel
 
+from local_asr_server.transcriber import VAD_GUIDED_DEFAULT
+
 class AnalysisRequest(BaseModel):
     transcription_id: Optional[str] = None
     recording_id: Optional[str] = None
@@ -24,7 +26,7 @@ class TranscribePathRequest(BaseModel):
     temperature: Optional[float] = None
     condition_on_previous_text: bool = True
     verbose: Optional[bool] = None
-    vad_guided: bool = True
+    vad_guided: bool = VAD_GUIDED_DEFAULT
 
 class CreateRecordingRequest(BaseModel):
     title: Optional[str] = None
@@ -77,7 +79,7 @@ class TranscribeRecordingRequest(BaseModel):
     temperature: Optional[float] = None
     condition_on_previous_text: bool = True
     verbose: Optional[bool] = None
-    vad_guided: bool = True
+    vad_guided: bool = VAD_GUIDED_DEFAULT
 
 class OverlayRequest(BaseModel):
     show: bool

@@ -152,7 +152,7 @@ class JobStore:
         now = time.time()
         next_step = current_step or status
         next_progress = existing["progress"] if progress is None else progress
-        completed_at = now if status in {"completed", "failed", "cancelled"} else existing.get("completed_at")
+        completed_at = now if status in {"completed", "failed", "cancelled", "interrupted"} else existing.get("completed_at")
         started_at = existing.get("started_at")
         if status in {"running", "waiting_for_service", "retrying"} and started_at is None:
             started_at = now
@@ -198,7 +198,21 @@ class JobStore:
         return self.get(job_id)
 
     def request_cancel(self, job_id: str) -> dict[str, Any] | None:
-        return self.update(job_id, status="cancel_requested", cancel_requested=True)
+        existing = self.get(job_id)
+        if existing is None or existing["status"] in {"completed", "failed", "cancelled", "interrupted"}:
+            return existing
+        return self.update(job_id, status="cancelling", current_step="cancelling", cancel_requested=True)
+
+    def interrupt_incomplete(self, *, reason: str = "Interrupted by server restart") -> list[dict[str, Any]]:
+        """Terminally mark work that cannot survive this process restart."""
+        interrupted = []
+        for job in self.list_jobs(limit=500):
+            if job["status"] in {"completed", "failed", "cancelled", "interrupted"}:
+                continue
+            updated = self.update(job["id"], status="interrupted", current_step="interrupted", error=reason, message=reason)
+            if updated:
+                interrupted.append(updated)
+        return interrupted
 
     def get(self, job_id: str) -> dict[str, Any] | None:
         with self.connection() as conn:
@@ -311,4 +325,3 @@ class JobStore:
             "payload": _json_load(row["payload_json"], None),
             "created_at": row["created_at"],
         }
-

@@ -49,6 +49,14 @@ class AnalysisApiTests(unittest.TestCase):
         self.assertIn("action_items", data)
 
     @patch("local_asr_server.routers.system.load_settings")
+    def test_settings_does_not_return_gemini_secret(self, mock_load) -> None:
+        mock_load.return_value = {"gemini_api_key": "secret-value", "llm_provider": "gemini"}
+        response = self.client.get("/v1/settings")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("gemini_api_key", response.json())
+        self.assertTrue(response.json()["gemini_api_key_configured"])
+
+    @patch("local_asr_server.routers.system.load_settings")
     @patch("local_asr_server.llm.urllib.request.urlopen")
     def test_gemini_analysis_endpoint(self, mock_urlopen, mock_load) -> None:
         mock_load.return_value = {

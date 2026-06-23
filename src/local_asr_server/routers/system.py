@@ -37,7 +37,13 @@ def _field_was_set(body: object, field_name: str) -> bool:
 
 @router.get("/health")
 def health(request: Request) -> dict:
-    status_str = "recording" if request.app.state.is_recording else ("transcribing" if request.app.state.is_transcribing else "idle")
+    active_recording = request.app.state.recording_store.active_recording()
+    active_jobs = request.app.state.job_store.list_jobs(limit=100)
+    transcribing = any(
+        job["type"] == "transcription" and job["status"] not in {"completed", "failed", "cancelled", "interrupted"}
+        for job in active_jobs
+    )
+    status_str = "recording" if active_recording else ("transcribing" if transcribing else "idle")
     return {
         "ok": True,
         "server": "local-asr-server",
@@ -181,20 +187,6 @@ def start_capture(recording_id: str, request: Request, body: CaptureStartRequest
         session_dir = store.session_dir(recording_id)
         result = request.app.state.capture_manager.start(recording_id, session_dir, body.mode)
         store.mark_capture_started(recording_id, backend="native")
-        request.app.state.is_recording = True
-        
-        # Initialize/update active recording metadata
-        rec_meta = store.get(recording_id, include_result=False)
-        request.app.state.active_recording = {
-            "recording_id": recording_id,
-            "title": rec_meta.get("title") or "Registrazione nativa",
-            "capture_backend": "native",
-            "capture_mode": body.mode,
-            "started_at": time.time(),
-            "bytes_written": 0,
-            "chunk_count": 0,
-            "stopped": False,
-        }
         return result
     except RecordingNotFound as exc:
         raise HTTPException(status_code=404, detail="Recording not found") from exc
@@ -220,8 +212,6 @@ def capture_events(recording_id: str, request: Request):
                     logger.warning("Failed to persist capture event", exc_info=True)
                 yield f"data: {json.dumps(event)}\n\n"
                 if event.get("type") in {"stopped", "error"}:
-                    request.app.state.active_recording = None
-                    request.app.state.is_recording = False
                     return
             time.sleep(0.5)
 
@@ -245,8 +235,6 @@ def stop_capture(recording_id: str, request: Request):
             metadata = store.save_quality_report(recording_id, report)
         except Exception as exc:
             logger.warning("Failed to build recording quality report: %s", exc)
-        request.app.state.active_recording = None
-        request.app.state.is_recording = False
         return {"capture": result, "recording": metadata}
     except RecordingNotFound as exc:
         raise HTTPException(status_code=404, detail="Recording not found") from exc
@@ -259,8 +247,6 @@ def cancel_capture(recording_id: str, request: Request):
     try:
         result = request.app.state.capture_manager.cancel(recording_id)
         request.app.state.recording_store.discard(recording_id)
-        request.app.state.active_recording = None
-        request.app.state.is_recording = False
         return result
     except RecordingNotFound as exc:
         raise HTTPException(status_code=404, detail="Recording not found") from exc
@@ -277,7 +263,11 @@ def check_model_cache(request: Request, model: Optional[str] = None):
 
 @router.get("/v1/settings")
 def get_settings():
-    return load_settings()
+    settings = load_settings()
+    return {
+        **{key: value for key, value in settings.items() if key != "gemini_api_key"},
+        "gemini_api_key_configured": bool(settings.get("gemini_api_key")),
+    }
 
 
 @router.get("/v1/stats")
@@ -390,8 +380,11 @@ def update_settings(body: SettingsRequest):
     if body.local_llm_model_paths is not None:
         current["local_llm_model_paths"] = body.local_llm_model_paths
 
-    save_settings(current)
-    return current
+    try:
+        save_settings(current)
+    except OSError as exc:
+        raise HTTPException(status_code=507, detail="Unable to persist settings") from exc
+    return get_settings()
 
 
 @router.post("/v1/system/window/overlay")

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ApiClient, Recording, Transcription } from '../api/apiClient';
+import { DEFAULTS } from '../api/config';
 import { useTranslation } from '../i18n/i18n';
 import { useToast } from '../context/ToastContext';
 import SourceStep from './transcription/components/SourceStep';
@@ -104,7 +105,7 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
   const [temperature, setTemperature] = useState('');
   const [wordTimestamps, setWordTimestamps] = useState(false);
   const [conditionOnPrevious, setConditionOnPrevious] = useState(true);
-  const [vadGuided, setVadGuided] = useState(true);
+  const [vadGuided, setVadGuided] = useState(DEFAULTS.vadGuided);
   const [modelCacheStatus, setModelCacheStatus] = useState('Verifica...');
 
   // Processing state
