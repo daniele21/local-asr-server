@@ -58,3 +58,10 @@ export const getDurationSeconds = (recording: {
   }
   return 0;
 };
+
+export const estimateTokenCount = (text: string | null | undefined): number => {
+  if (!text) return 0;
+  // Standard approximation for European languages: 1 token is ~4 characters.
+  return Math.ceil(text.length / 4);
+};
+

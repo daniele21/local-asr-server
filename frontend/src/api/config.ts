@@ -1,18 +1,11 @@
 export const MODELS = [
   { value: '', label: 'Predefinito del Server', badge: 'default' },
-  { value: 'mlx-community/whisper-tiny', label: 'Whisper Tiny', badge: 'fast' },
-  { value: 'mlx-community/whisper-base', label: 'Whisper Base', badge: '' },
-  { value: 'mlx-community/whisper-small', label: 'Whisper Small', badge: '' },
-  { value: 'mlx-community/whisper-medium', label: 'Whisper Medium', badge: '' },
   { value: 'mlx-community/whisper-large-v3-turbo', label: 'Whisper Large V3 Turbo', badge: 'recommended' },
   { value: 'mlx-community/nemotron-3.5-asr-streaming-0.6b', label: 'Nemotron 3.5 ASR Streaming 0.6B', badge: 'streaming' },
 ];
 
 export const LOCAL_LLM_MODELS = [
   { value: 'nemotron-nano-4b-q8', label: 'Nemotron Nano 4B Q8 (Default)' },
-  { value: 'qwen3-8b', label: 'Qwen3 8B (Reasoning)' },
-  { value: 'phi-3-mini', label: 'Phi-3 Mini 3.8B' },
-  { value: 'qwen2.5-7b', label: 'Qwen2.5 Instruct 7B' },
   { value: 'voxtral-mini-3b', label: 'Voxtral Mini 3B (Audio Multimodal)' },
   { value: 'custom', label: 'File .gguf personalizzato...' },
 ];

@@ -313,13 +313,30 @@ class RecordingStore:
     def mark_capture_event(self, recording_id: str, event: dict[str, Any]) -> dict[str, Any]:
         with self._lock_for(recording_id):
             session_dir, metadata = self._load(recording_id)
-            timeline = metadata.setdefault("timeline", {"events": []})
-            timeline.setdefault("events", []).append(event)
+            timeline = metadata.get("timeline")
+            if not isinstance(timeline, dict):
+                timeline = {"events": []}
+                metadata["timeline"] = timeline
+
+            events = timeline.get("events")
+            if not isinstance(events, list):
+                events = []
+                timeline["events"] = events
+            events.append(event)
+
             if event.get("type") == "warning":
-                metadata.setdefault("warnings", []).append(event.get("message") or event.get("reason") or "capture_warning")
+                warnings = metadata.get("warnings")
+                if not isinstance(warnings, list):
+                    warnings = []
+                    metadata["warnings"] = warnings
+                warnings.append(event.get("message") or event.get("reason") or "capture_warning")
             if event.get("type") == "error":
                 metadata["capture_status"] = "error"
-                metadata.setdefault("warnings", []).append(event.get("message") or "capture_error")
+                warnings = metadata.get("warnings")
+                if not isinstance(warnings, list):
+                    warnings = []
+                    metadata["warnings"] = warnings
+                warnings.append(event.get("message") or "capture_error")
             self._write_timeline(session_dir, metadata)
             self._write_metadata(session_dir, metadata)
             self._upsert_catalog(metadata)

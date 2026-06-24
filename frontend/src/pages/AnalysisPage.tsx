@@ -8,6 +8,7 @@ import { Select } from '../components/ui/Select';
 import { Input } from '../components/ui/Input';
 
 import { renderMarkdown } from '../utils/markdown';
+import { estimateTokenCount } from '../utils/formatters';
 import { TourAnalysisResult } from '../features/tour/TourAnalysisResult';
 
 interface AnalysisPageProps {
@@ -337,25 +338,45 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMo
             </div>
 
             {activeTab === 'history' ? (
-              <Select
-                label={t('analysis.chooseExisting')}
-                value={selectedTranscriptionId}
-                onChange={(e) => {
-                  setSelectedTranscriptionId(e.target.value);
-                  setAnalysisResult(null);
-                }}
-              >
-                <option value="">-- {t('analysis.selectTranscriptionLabel')} --</option>
-                {transcriptions.map((tr) => (
-                  <option key={tr.id} value={tr.id}>
-                    {new Date(tr.timestamp).toLocaleString(lang === 'it' ? 'it-IT' : 'en-US', {
-                      dateStyle: 'short',
-                      timeStyle: 'short',
-                    })}{' '}
-                    - {tr.audio_filename}
-                  </option>
-                ))}
-              </Select>
+              <div className="flex flex-col gap-3">
+                <Select
+                  label={t('analysis.chooseExisting')}
+                  value={selectedTranscriptionId}
+                  onChange={(e) => {
+                    setSelectedTranscriptionId(e.target.value);
+                    setAnalysisResult(null);
+                  }}
+                >
+                  <option value="">-- {t('analysis.selectTranscriptionLabel')} --</option>
+                  {transcriptions.map((tr) => (
+                    <option key={tr.id} value={tr.id}>
+                      {new Date(tr.timestamp).toLocaleString(lang === 'it' ? 'it-IT' : 'en-US', {
+                        dateStyle: 'short',
+                        timeStyle: 'short',
+                      })}{' '}
+                      - {tr.audio_filename}
+                    </option>
+                  ))}
+                </Select>
+                {selectedTranscriptionId && (() => {
+                  const selectedTr = transcriptions.find((tr) => tr.id === selectedTranscriptionId);
+                  if (!selectedTr) return null;
+                  const tokenCount = estimateTokenCount(selectedTr.text);
+                  const charCount = selectedTr.text?.length || 0;
+                  return (
+                    <div className="text-[11px] text-text-secondary bg-bg-surface border border-border-subtle/55 rounded-xl p-3 flex flex-col gap-1.5 animate-in fade-in duration-100">
+                      <div className="flex justify-between items-center">
+                        <span className="font-medium text-text-muted">{t('analysis.selectedChars') || 'Caratteri:'}</span>
+                        <strong className="text-text-primary font-semibold">{charCount}</strong>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="font-medium text-text-muted">{t('analysis.selectedTokens') || 'Token stimati:'}</span>
+                        <strong className="text-accent font-bold">{tokenCount}</strong>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
             ) : (
               <div className="flex flex-col gap-3">
                 <input

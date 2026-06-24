@@ -183,6 +183,25 @@ class RecordingStoreTests(unittest.TestCase):
         self.assertEqual(tracks["mic"]["bytes_written"], len(b"mic wav"))
         self.assertEqual(tracks["system"]["bytes_written"], len(b"system wav"))
         self.assertEqual(tracks["mixed"]["bytes_written"], len(b"mixed wav"))
+    def test_mark_capture_event_handles_none_or_missing_fields(self) -> None:
+        recording = self.create_recording()
+
+        # Test 1: timeline is None (which is the default initialized state)
+        event1 = {"type": "info", "message": "starting"}
+        updated_meta = self.store.mark_capture_event(recording["id"], event1)
+        self.assertEqual(updated_meta["timeline"]["events"], [event1])
+
+        # Test 2: timeline has a value, we append more events
+        event2 = {"type": "warning", "message": "high memory usage"}
+        updated_meta2 = self.store.mark_capture_event(recording["id"], event2)
+        self.assertEqual(updated_meta2["timeline"]["events"], [event1, event2])
+        self.assertIn("high memory usage", updated_meta2["warnings"])
+
+        # Test 3: error event marks status as error and appends warning
+        event3 = {"type": "error", "message": "microphone lost"}
+        updated_meta3 = self.store.mark_capture_event(recording["id"], event3)
+        self.assertEqual(updated_meta3["capture_status"], "error")
+        self.assertIn("microphone lost", updated_meta3["warnings"])
 
 
 if __name__ == "__main__":

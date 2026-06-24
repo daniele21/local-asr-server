@@ -291,9 +291,28 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
         localStorage.removeItem('asr-active-recording-id');
         sessionIdRef.current = null;
         captureBackendRef.current = 'browser';
-        setStatusText(t('recording.saved'));
-        setStatusState('success');
-        setProgressText(t('recording.audioCompleteSaved'));
+
+        const warnings = recording.warnings || [];
+        const isMicEmpty = warnings.includes('track_mic_empty');
+        const isSystemEmpty = warnings.includes('track_system_empty');
+        const mode = recording.capture_mode;
+
+        const isFullyEmpty = recording.bytes_written === 0 || (
+          mode === 'both' ? (isMicEmpty && isSystemEmpty) :
+          mode === 'mic_only' ? isMicEmpty :
+          mode === 'pc_only' ? isSystemEmpty : false
+        );
+
+        if (isFullyEmpty) {
+          setStatusText(t('recording.emptyRecordingWarning'));
+          setStatusState('error');
+          setProgressText(t('recording.emptyRecordingWarning'));
+          showToast(t('recording.emptyRecordingWarning'), 'error');
+        } else {
+          setStatusText(t('recording.saved'));
+          setStatusState('success');
+          setProgressText(t('recording.audioCompleteSaved'));
+        }
         setIsRecording(false);
         if (onSaved) onSaved(recording);
       }

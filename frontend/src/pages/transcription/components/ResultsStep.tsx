@@ -3,7 +3,7 @@ import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
 import { ApiClient, Transcription, TranscriptionSegment } from '../../../api/apiClient';
 import { useTranslation } from '../../../i18n/i18n';
-import { formatTime } from '../../../utils/formatters';
+import { formatTime, estimateTokenCount } from '../../../utils/formatters';
 import { renderMarkdown } from '../../../utils/markdown';
 import { useToast } from '../../../context/ToastContext';
 import { ProjectPromptModal } from '../../../components/ui/ProjectPromptModal';
@@ -210,7 +210,7 @@ export default function ResultsStep({
       </div>
 
       {/* Stats grid */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="flex flex-col py-3 px-4">
           <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider mb-1">
             {t('transcription.statTime')}
@@ -235,6 +235,14 @@ export default function ResultsStep({
           </span>
           <strong className="text-sm font-semibold text-text-primary truncate">
             {transcriptionResult.model ? transcriptionResult.model.split('/').pop() : 'Default'}
+          </strong>
+        </Card>
+        <Card className="flex flex-col py-3 px-4">
+          <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider mb-1">
+            {t('transcription.statTokens') || 'Token stimati'}
+          </span>
+          <strong className="text-sm font-semibold text-text-primary">
+            {estimateTokenCount(transcriptionResult.text)}
           </strong>
         </Card>
       </div>
