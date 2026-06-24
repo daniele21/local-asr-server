@@ -7,10 +7,12 @@ import { Button } from '../components/ui/Button';
 import { Select } from '../components/ui/Select';
 import { Input } from '../components/ui/Input';
 import { LOCAL_LLM_MODELS } from '../api/config';
+import { TourAnalysisResult } from '../features/tour/TourAnalysisResult';
 
 interface AnalysisPageProps {
   detailId: string | null;
   navigateTo: (page: string, detail?: string | null) => void;
+  demoMode?: boolean;
 }
 
 interface AnalysisResult {
@@ -22,7 +24,7 @@ interface AnalysisResult {
   [key: string]: unknown;
 }
 
-export default function AnalysisPage({ detailId, navigateTo: _navigateTo }: AnalysisPageProps) {
+export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMode = false }: AnalysisPageProps) {
   const { t, lang } = useTranslation();
   const { showToast } = useToast();
 
@@ -94,12 +96,14 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo }: Anal
   };
 
   useEffect(() => {
+    if (demoMode) return;
     loadTranscriptions();
     loadSettings();
-  }, []);
+  }, [demoMode]);
 
   // Preselected transcription from URL/Router Detail
   useEffect(() => {
+    if (demoMode) return;
     if (detailId) {
       // Find if we have loaded it
       setSelectedTranscriptionId(detailId);
@@ -111,7 +115,7 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo }: Anal
         }
       }).catch(() => {});
     }
-  }, [detailId, transcriptions]);
+  }, [demoMode, detailId, transcriptions]);
 
   const handleBrowseModel = async () => {
     try {
@@ -268,6 +272,8 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo }: Anal
     }
     return !importedFile;
   };
+
+  if (demoMode) return <TourAnalysisResult />;
 
   return (
     <div className="flex flex-col gap-6">

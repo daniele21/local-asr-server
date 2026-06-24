@@ -7,13 +7,15 @@ import SourceStep from './transcription/components/SourceStep';
 import ConfigureStep from './transcription/components/ConfigureStep';
 import ProcessingStep from './transcription/components/ProcessingStep';
 import ResultsStep from './transcription/components/ResultsStep';
+import { TourTranscriptionResult } from '../features/tour/TourTranscriptionResult';
 
 interface TranscriptionPageProps {
   detailPath: string | null;
   navigateTo: (page: string, detail?: string | null) => void;
+  demoMode?: boolean;
 }
 
-export default function TranscriptionPage({ detailPath, navigateTo }: TranscriptionPageProps) {
+export default function TranscriptionPage({ detailPath, navigateTo, demoMode = false }: TranscriptionPageProps) {
   const { t, lang } = useTranslation();
   const { showToast } = useToast();
 
@@ -163,11 +165,13 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
   };
 
   useEffect(() => {
+    if (demoMode) return;
     loadRecordings();
-  }, [t]);
+  }, [demoMode, t]);
 
   // Check model cache on model select change
   useEffect(() => {
+    if (demoMode) return;
     const checkCache = async () => {
       if (!targetModel) return;
       setModelCacheStatus('Verifica...');
@@ -183,10 +187,11 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
       }
     };
     checkCache();
-  }, [targetModel]);
+  }, [demoMode, targetModel]);
 
   // Handle URL Preselections (e.g. from Recording detail action)
   useEffect(() => {
+    if (demoMode) return;
     if (detailPath) {
       if (detailPath.startsWith('file-') || detailPath.startsWith('retranscribe-')) {
         const recordingId = detailPath.startsWith('file-')
@@ -215,7 +220,7 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
         }).catch(() => {});
       }
     }
-  }, [detailPath]);
+  }, [demoMode, detailPath]);
 
   const handleSelectAudioFile = (file: File) => {
     if (selectedObjectUrl) URL.revokeObjectURL(selectedObjectUrl);
@@ -482,6 +487,8 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
       showToast(t('transcription.copyFailed'), 'error');
     });
   };
+
+  if (demoMode) return <TourTranscriptionResult />;
 
   return (
     <div className="flex flex-col gap-6">

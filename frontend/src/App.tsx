@@ -12,6 +12,7 @@ import SettingsPage from './pages/SettingsPage';
 import RecordingOverlayPage from './pages/RecordingOverlayPage';
 import { Badge } from './components/ui/Badge';
 import { Tooltip } from './components/ui/Tooltip';
+import { TourOverlay, TourStep } from './features/tour/TourOverlay';
 
 function MainApp() {
   const { t, lang, setLang } = useTranslation();
@@ -23,6 +24,8 @@ function MainApp() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [helpOpen, setHelpOpen] = useState(false);
   const [routeDetail, setRouteDetail] = useState<string | null>(null);
+  const [tourStep, setTourStep] = useState<TourStep | null>(null);
+  const [tourReturnHash, setTourReturnHash] = useState('');
 
   // Sync hash with activePage
   useEffect(() => {
@@ -75,6 +78,28 @@ function MainApp() {
     window.location.hash = detail ? `${route}/${detail}` : route;
   };
 
+  const startTour = () => {
+    setTourReturnHash(window.location.hash || '#home');
+    setTourStep('transcription');
+    navigateTo('transcription');
+  };
+
+  const advanceTour = () => {
+    if (tourStep === 'transcription') {
+      setTourStep('analysis');
+      navigateTo('analysis');
+    } else if (tourStep === 'analysis') {
+      setTourStep('complete');
+    }
+  };
+
+  const closeTour = () => {
+    const returnHash = tourReturnHash;
+    setTourStep(null);
+    setTourReturnHash('');
+    if (returnHash) window.location.hash = returnHash;
+  };
+
   // Theme Sync
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') || 'dark';
@@ -125,11 +150,11 @@ function MainApp() {
       case 'recording':
         return <RecordingPage detailId={routeDetail} navigateTo={navigateTo} />;
       case 'transcription':
-        return <TranscriptionPage detailPath={routeDetail} navigateTo={navigateTo} />;
+        return <TranscriptionPage detailPath={routeDetail} navigateTo={navigateTo} demoMode={tourStep === 'transcription'} />;
       case 'projects':
         return <ProjectsPage navigateTo={navigateTo} />;
       case 'analysis':
-        return <AnalysisPage detailId={routeDetail} navigateTo={navigateTo} />;
+        return <AnalysisPage detailId={routeDetail} navigateTo={navigateTo} demoMode={tourStep === 'analysis' || tourStep === 'complete'} />;
       case 'settings':
         return <SettingsPage />;
       default:
@@ -225,8 +250,8 @@ function MainApp() {
                 <button
                   onClick={() => {
                     setHelpOpen(false);
-                    navigateTo('transcription');
-                    showToast(t('help.tour') + ' avviato', 'info');
+                    startTour();
+                    showToast(t('tour.started'), 'info');
                   }}
                   className="w-full py-1.5 px-3 bg-bg-hover hover:bg-bg-elevated text-xs font-medium rounded-lg text-left transition-colors cursor-pointer"
                 >
@@ -319,6 +344,7 @@ function MainApp() {
       <footer className="border-t border-border-subtle pt-4 text-center text-[11px] text-text-muted mt-8 leading-relaxed select-none">
         <span dangerouslySetInnerHTML={{ __html: t('common.powerBy') }} />
       </footer>
+      {tourStep && <TourOverlay step={tourStep} onNext={advanceTour} onClose={closeTour} />}
     </div>
   );
 }
