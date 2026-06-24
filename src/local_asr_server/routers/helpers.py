@@ -4,6 +4,7 @@ import os
 from typing import Any, TYPE_CHECKING
 
 from local_asr_server.transcription_quality import dedupe_cross_track_segments
+from local_asr_server.asr_models import get_asr_backend
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -65,7 +66,7 @@ def _merge_track_transcriptions(track_results: list[dict], *, model: str, langua
         "segments": segments,
         "source_tracks": source_tracks,
         "model": model,
-        "backend": "mlx-whisper",
+        "backend": get_asr_backend(model),
         "recording_id": recording_id,
         "stats": {
             "time_total_seconds": elapsed,

@@ -5,6 +5,7 @@ export const MODELS = [
   { value: 'mlx-community/whisper-small', label: 'Whisper Small', badge: '' },
   { value: 'mlx-community/whisper-medium', label: 'Whisper Medium', badge: '' },
   { value: 'mlx-community/whisper-large-v3-turbo', label: 'Whisper Large V3 Turbo', badge: 'recommended' },
+  { value: 'mlx-community/nemotron-3.5-asr-streaming-0.6b', label: 'Nemotron 3.5 ASR Streaming 0.6B', badge: 'streaming' },
 ];
 
 export const LOCAL_LLM_MODELS = [

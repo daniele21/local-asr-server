@@ -23,11 +23,18 @@ from typing import Optional, Any, Dict, Generator
 
 from local_asr_server.paths import get_cache_dir
 from local_asr_server.transcription_quality import clean_segments, filter_segments_by_vad
+from local_asr_server.asr_models import (
+    NEMOTRON_BACKEND,
+    get_asr_backend,
+    is_nemotron_model,
+    resolve_nemotron_language,
+)
 
 logger = logging.getLogger("uvicorn.error")
 CACHE_DIR = get_cache_dir()
 VAD_GUIDED_DEFAULT = False
 VAD_POST_FILTER_DEFAULT = True
+TRANSCRIPTION_CACHE_VERSION = "asr-v2"
 DEFAULT_TEMPERATURE = 0.0
 DEFAULT_COMPRESSION_RATIO_THRESHOLD = 2.2
 DEFAULT_LOGPROB_THRESHOLD = -0.7
@@ -162,14 +169,38 @@ def generate_cache_key(
     language: Optional[str],
     task: str,
     word_timestamps: str | bool,
+    initial_prompt: Optional[str],
     temperature: Optional[float],
     condition_on_previous_text: str | bool,
     vad_guided: str | bool = VAD_GUIDED_DEFAULT,
     vad_post_filter: str | bool = VAD_POST_FILTER_DEFAULT,
 ) -> str:
     """Generate a unique SHA-256 cache key based on the audio hash and run parameters."""
-    param_string = f"{audio_hash}:{model}:{language}:{task}:{word_timestamps}:{temperature}:{condition_on_previous_text}:{vad_guided}:{vad_post_filter}:quality-v1"
-    return hashlib.sha256(param_string.encode("utf-8")).hexdigest()
+    params = {
+        "version": TRANSCRIPTION_CACHE_VERSION,
+        "audio_hash": audio_hash,
+        "model": model,
+        "language": language or None,
+        "task": task,
+        "word_timestamps": str_to_bool(word_timestamps),
+        "initial_prompt": initial_prompt or None,
+        "temperature": temperature,
+        "condition_on_previous_text": str_to_bool(condition_on_previous_text),
+        "vad_guided": str_to_bool(vad_guided, VAD_GUIDED_DEFAULT),
+        "vad_post_filter": str_to_bool(vad_post_filter, VAD_POST_FILTER_DEFAULT),
+    }
+    return hashlib.sha256(
+        json.dumps(params, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def hash_audio_file(path: str | Path) -> str:
+    """Hash audio bytes without loading a full recording into memory."""
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def get_cached_result(cache_key: str) -> Optional[Dict[str, Any]]:
@@ -216,7 +247,48 @@ def _transcribe(
     no_speech_threshold: float | None = DEFAULT_NO_SPEECH_THRESHOLD,
     hallucination_silence_threshold: float | None = None,
 ) -> dict:
-    """Import and call mlx_whisper.transcribe with explicit parameters."""
+    """Run the selected ASR runtime while preserving the shared result shape."""
+    if is_nemotron_model(model):
+        if task != "transcribe":
+            raise ValueError("Nemotron ASR supports transcription only; select 'transcribe'.")
+        from mlx_audio.stt import load
+
+        nemotron_language = resolve_nemotron_language(language)
+        # Nemotron's offline generate() builds a full attention matrix for the
+        # input. That grows quadratically with a recording's duration and can
+        # exhaust MLX's single-buffer limit. Its native streaming iterator
+        # keeps encoder state bounded while returning a cumulative result.
+        generated = None
+        for generated in load(resolve_model(model)).stream_generate(
+            audio_path,
+            language=nemotron_language,
+        ):
+            pass
+        if generated is None:
+            return {
+                "text": "",
+                "segments": [],
+                "language": nemotron_language or "",
+                "metadata": {"backend": NEMOTRON_BACKEND, "timestamps_available": True},
+            }
+        text = (getattr(generated, "text", "") or "").strip()
+        segments = [
+            {
+                "id": index,
+                "start": float(sentence.start),
+                "end": float(sentence.end),
+                "text": (sentence.text or "").strip(),
+            }
+            for index, sentence in enumerate(getattr(generated, "sentences", []) or [])
+            if (sentence.text or "").strip()
+        ]
+        return {
+            "text": text,
+            "segments": segments,
+            "language": nemotron_language or "",
+            "metadata": {"backend": NEMOTRON_BACKEND, "timestamps_available": True},
+        }
+
     import mlx_whisper
 
     if not language:
@@ -256,6 +328,17 @@ def _postprocess_full_track_result(audio_path: str, result: dict, *, vad_post_fi
     converts a valid Whisper result into an empty transcript.
     """
     raw_segments = [dict(segment) for segment in result.get("segments", []) or []]
+    if result.get("metadata", {}).get("timestamps_available") is False:
+        cleaned = dict(result)
+        cleaned["raw_text"] = result.get("text", "")
+        cleaned["raw_segments"] = raw_segments
+        cleaned["metadata"] = {
+            **dict(result.get("metadata") or {}),
+            "quality_filter_enabled": False,
+            "quality_filter_skipped_reason": "timestamps_unavailable",
+            "raw_segments_count": len(raw_segments),
+        }
+        return cleaned
     segments, dropped = clean_segments(raw_segments)
     metadata = dict(result.get("metadata") or {})
     metadata.update({"quality_filter_enabled": True, "raw_segments_count": len(raw_segments)})
@@ -502,6 +585,8 @@ async def transcribe_stream_generator(
     q: queue.Queue = queue.Queue()
     
     # Send initial progress payload
+    backend = get_asr_backend(model)
+    backend_label = "Nemotron" if backend == NEMOTRON_BACKEND else "Whisper"
     model_is_cached = is_model_cached(model)
     logger.info(f"[Transcriber] Model cache status for {model}: cached={model_is_cached}")
 
@@ -509,7 +594,7 @@ async def transcribe_stream_generator(
         yield json.dumps({
             "type": "progress",
             "step": "loading_model",
-            "message": "Caricamento del modello Whisper in memoria..."
+            "message": f"Caricamento del modello {backend_label} in memoria..."
         }) + "\n"
     else:
         yield json.dumps({
@@ -649,7 +734,7 @@ async def transcribe_stream_generator(
         "segments": transcribe_result.get("segments", []),
         "metadata": transcribe_result.get("metadata", {}),
         "model": model,
-        "backend": "mlx-whisper",
+        "backend": get_asr_backend(model),
         "recording_id": recording_id or "",
         "stats": {
             "time_total_seconds": elapsed,

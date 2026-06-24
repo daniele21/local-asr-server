@@ -380,7 +380,9 @@ export default function TranscriptionPage({ detailPath, navigateTo }: Transcript
       formData.append('file', selectedFile);
       formData.append('stream', 'true');
       if (targetModel) formData.append('model', targetModel);
-      if (targetLanguage) formData.append('language', targetLanguage);
+      // Send an empty value explicitly so the server can preserve the
+      // automatic language-detection choice (including for Nemotron).
+      formData.append('language', targetLanguage);
       formData.append('task', targetTask);
       formData.append('response_format', 'verbose_json');
       formData.append('word_timestamps', String(wordTimestamps));

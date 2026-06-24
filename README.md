@@ -1,14 +1,15 @@
 # local-asr-server
 
-Local ASR server powered by MLX Whisper.
+Local ASR server powered by MLX Whisper, with optional Nemotron streaming ASR.
 
 ## Requirements
 
 - macOS Apple Silicon recommended
 - Python >= 3.10
 - ffmpeg
-- MLX Whisper model, for example:
+- ASR model, for example:
   - `mlx-community/whisper-large-v3-turbo`
+  - `mlx-community/nemotron-3.5-asr-streaming-0.6b` (requires `mlx-audio`)
 
 ## Install
 
@@ -215,6 +216,17 @@ curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/jobs/<job-id>/events
 Long-running local work writes job snapshots and events to the local SQLite
 catalog database so status survives process restarts. Transcription jobs remain
 compatible with the existing polling and event-stream endpoints.
+
+## Result caching
+
+ClosedRoom reuses a completed transcription when the audio bytes and every ASR
+option match, including model, language, task, initial prompt, temperature and
+VAD settings. The same cache is used for uploaded files, filesystem paths and
+recording tracks. Analysis results are likewise reused when the input content,
+prompt or question, provider/model and output-affecting provider settings
+match. Transcription cache files live in `.cache/` during development and in
+`~/Library/Caches/ClosedRoom/` in the bundle; analysis cache entries are stored
+in the local SQLite catalog.
 
 ### Transcribe uploaded audio
 ```bash

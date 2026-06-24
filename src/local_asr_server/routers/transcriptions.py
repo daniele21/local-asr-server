@@ -19,6 +19,7 @@ from local_asr_server.audio_intelligence import build_audio_intelligence
 from local_asr_server.transcriber import (
     str_to_bool,
     generate_cache_key,
+    hash_audio_file,
     get_cached_result,
     save_cached_result,
     transcribe_file_sync,
@@ -35,6 +36,7 @@ from local_asr_server.schemas import (
 )
 from local_asr_server.routers.helpers import _build_projects, _merge_track_transcriptions
 from local_asr_server.transcription_quality import audio_stats, is_near_silent_track
+from local_asr_server.asr_models import get_asr_backend
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -57,6 +59,36 @@ def _transcribe_file(app: Any, **kwargs: Any) -> dict[str, Any]:
     if service is not None:
         return service.transcribe_file(**kwargs)
     return transcribe_file_sync(**kwargs)
+
+
+def _cache_key_for_audio_file(audio_path: Path, **options: Any) -> str:
+    cache_options = {
+        name: options[name]
+        for name in (
+            "model",
+            "language",
+            "task",
+            "word_timestamps",
+            "initial_prompt",
+            "temperature",
+            "condition_on_previous_text",
+            "vad_guided",
+            "vad_post_filter",
+        )
+    }
+    return generate_cache_key(audio_hash=hash_audio_file(audio_path), **cache_options)
+
+
+def _transcribe_audio_file_with_cache(app: Any, audio_path: Path, **options: Any) -> dict[str, Any]:
+    """Reuse the engine result for uploads, disk paths, and recording tracks."""
+    cache_key = _cache_key_for_audio_file(audio_path, **options)
+    cached = get_cached_result(cache_key)
+    if cached is not None:
+        logger.info("[ASR Cache] Hit for %s", audio_path.name)
+        return cached
+    result = _transcribe_file(app, audio_path=str(audio_path), **options)
+    save_cached_result(cache_key, result)
+    return result
 
 
 def run_recording_transcription(
@@ -90,9 +122,9 @@ def run_recording_transcription(
         job_event(step, step, 20 + int(index / total_tracks * 60))
         result = _skip_near_silent_track(audio_path, track)
         if result is None:
-            result = _transcribe_file(
+            result = _transcribe_audio_file_with_cache(
                 app,
-                audio_path=str(audio_path),
+                audio_path,
                 model=target_model,
                 language=body.language,
                 task=body.task,
@@ -243,6 +275,7 @@ async def transcribe_upload(
                 language=language,
                 task=task,
                 word_timestamps=word_timestamps,
+                initial_prompt=initial_prompt,
                 temperature=temperature,
                 condition_on_previous_text=condition_on_previous_text,
                 vad_guided=vad_guided,
@@ -252,6 +285,16 @@ async def transcribe_upload(
             cached_res = get_cached_result(cache_key)
             if cached_res is not None:
                 logger.info(f"[/v1/audio/transcriptions] Cache hit! Returning cached result for key: {cache_key}")
+                # A hit may have been produced by the path or recording flow,
+                # which caches the engine result rather than this HTTP payload.
+                # Rehydrate the public response contract before returning it.
+                cached_res = {
+                    **cached_res,
+                    "language": cached_res.get("language", language),
+                    "model": cached_res.get("model", target_model),
+                    "backend": cached_res.get("backend", get_asr_backend(target_model)),
+                    "stats": cached_res.get("stats", {"time_total_seconds": 0.0}),
+                }
                 
                 # Cleanup temp file as it's not needed
                 try:
@@ -339,7 +382,7 @@ async def transcribe_upload(
                     "segments": result.get("segments", []),
                     "metadata": result.get("metadata", {}),
                     "model": target_model,
-                    "backend": "mlx-whisper",
+                    "backend": get_asr_backend(target_model),
                     "recording_id": recording_id or "",
                     "stats": {
                         "time_total_seconds": elapsed,
@@ -395,9 +438,9 @@ def transcribe_path(request: Request, body: TranscribePathRequest):
         )
 
     try:
-        result = _transcribe_file(
+        result = _transcribe_audio_file_with_cache(
             request.app,
-            audio_path=str(audio_path),
+            audio_path,
             model=target_model,
             language=body.language,
             task=body.task,
@@ -419,7 +462,7 @@ def transcribe_path(request: Request, body: TranscribePathRequest):
             "segments": result.get("segments", []),
             "metadata": result.get("metadata", {}),
             "model": target_model,
-            "backend": "mlx-whisper",
+            "backend": get_asr_backend(target_model),
             "stats": {
                 "time_total_seconds": elapsed,
             },

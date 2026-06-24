@@ -29,6 +29,9 @@ class RecordingApiTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.transcriptions_dir = Path(self.temp_dir.name) / "transcriptions"
         self.transcriptions_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_dir = Path(self.temp_dir.name) / "asr-cache"
+        self.cache_patcher = patch("local_asr_server.transcriber.CACHE_DIR", self.cache_dir)
+        self.cache_patcher.start()
         self.settings_patcher = patch("local_asr_server.transcriptions.load_settings")
         self.mock_load_settings = self.settings_patcher.start()
         self.mock_load_settings.return_value = {
@@ -50,6 +53,7 @@ class RecordingApiTests(unittest.TestCase):
         self.client = TestClient(self.app)
 
     def tearDown(self) -> None:
+        self.cache_patcher.stop()
         self.settings_patcher.stop()
         self.client.close()
         self.temp_dir.cleanup()

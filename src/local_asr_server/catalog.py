@@ -4,6 +4,7 @@ import contextlib
 import json
 import sqlite3
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -145,6 +146,12 @@ class CatalogStore:
                 completed_at REAL
             );
 
+            CREATE TABLE IF NOT EXISTS analysis_cache (
+                cache_key TEXT PRIMARY KEY,
+                result_json TEXT NOT NULL,
+                created_at REAL NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_recordings_created_at ON recordings(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_recordings_project ON recordings(project_name);
             CREATE INDEX IF NOT EXISTS idx_recordings_status ON recordings(status);
@@ -155,6 +162,7 @@ class CatalogStore:
             CREATE INDEX IF NOT EXISTS idx_analysis_runs_scope ON analysis_runs(scope_type, scope_id, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_analysis_runs_transcription ON analysis_runs(transcription_id);
             CREATE INDEX IF NOT EXISTS idx_analysis_runs_input_hash ON analysis_runs(input_hash);
+            CREATE INDEX IF NOT EXISTS idx_analysis_cache_created_at ON analysis_cache(created_at DESC);
             """
         )
         self._ensure_column(conn, "recordings", "capture_mode", "TEXT")
@@ -308,6 +316,27 @@ class CatalogStore:
             conn.execute(
                 "UPDATE transcriptions SET analysis = ? WHERE id = ?",
                 (_json_dump(analysis), transcription_id),
+            )
+
+    def get_analysis_cache(self, cache_key: str) -> dict[str, Any] | None:
+        with self.connection() as conn:
+            row = conn.execute(
+                "SELECT result_json FROM analysis_cache WHERE cache_key = ?",
+                (cache_key,),
+            ).fetchone()
+        return _json_load(row["result_json"], None) if row else None
+
+    def save_analysis_cache(self, cache_key: str, result: dict[str, Any]) -> None:
+        with self.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO analysis_cache (cache_key, result_json, created_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(cache_key) DO UPDATE SET
+                    result_json = excluded.result_json,
+                    created_at = excluded.created_at
+                """,
+                (cache_key, _json_dump(result), time.time()),
             )
 
     def create_analysis_run(self, run: dict[str, Any]) -> dict[str, Any]:
