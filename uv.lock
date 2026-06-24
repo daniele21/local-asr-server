@@ -663,7 +663,7 @@ build = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
-    { name = "local-llm-server", path = "/Users/moltisantid/Personal/local-llm-server/dist/local_llm_server-0.2.0-py3-none-any.whl" },
+    { name = "local-llm-server", path = "/Users/moltisantid/Personal/local-llm-server/dist/local_llm_server-0.3.0-py3-none-any.whl" },
     { name = "mlx-audio", extras = ["stt"] },
     { name = "mlx-whisper" },
     { name = "numpy", specifier = ">=1.24.0" },
@@ -680,8 +680,8 @@ provides-extras = ["app", "build"]
 
 [[package]]
 name = "local-llm-server"
-version = "0.2.0"
-source = { path = "/Users/moltisantid/Personal/local-llm-server/dist/local_llm_server-0.2.0-py3-none-any.whl" }
+version = "0.3.0"
+source = { path = "/Users/moltisantid/Personal/local-llm-server/dist/local_llm_server-0.3.0-py3-none-any.whl" }
 dependencies = [
     { name = "fastapi" },
     { name = "llama-cpp-python" },
@@ -689,7 +689,7 @@ dependencies = [
     { name = "uvicorn" },
 ]
 wheels = [
-    { filename = "local_llm_server-0.2.0-py3-none-any.whl", hash = "sha256:a97347984a0c4f75c87d9f26031a64d956af8adb007ef3c61b9cc8907e4fe781" },
+    { filename = "local_llm_server-0.3.0-py3-none-any.whl", hash = "sha256:33b2c651ecd152f8f19a91dfa33404525ab940bb90923e1cb9f01fab2a133cd6" },
 ]
 
 [package.metadata]

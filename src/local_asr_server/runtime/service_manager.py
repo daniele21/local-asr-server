@@ -22,6 +22,18 @@ class RuntimeServiceStatus:
         }
 
 
+def _query_external_health(url: str) -> dict[str, Any] | None:
+    from urllib.request import urlopen
+    import json
+    try:
+        with urlopen(f"{url.rstrip('/')}/health", timeout=1.0) as response:
+            if 200 <= response.status < 300:
+                return json.loads(response.read().decode("utf-8"))
+    except Exception:
+        pass
+    return None
+
+
 class RuntimeServiceManager:
     """Owns local runtime service status without owning product workflows."""
 
@@ -30,7 +42,7 @@ class RuntimeServiceManager:
 
     def _llm_settings(self) -> dict[str, Any]:
         settings = load_settings()
-        model = settings.get("local_llm_model") or "nemotron-nano-4b"
+        model = settings.get("local_llm_model") or "nemotron-nano-4b-q8"
         model_paths = settings.get("local_llm_model_paths") or {}
         model_path = settings.get("local_llm_model_path") or model_paths.get(model) or ""
         return {
@@ -52,12 +64,27 @@ class RuntimeServiceManager:
 
         if mode == "auto":
             return self.llm_sidecar.status(llm["model"], mode, llm["model_path"])
+
+        health_data = None
+        if mode == "external" and llm["url"]:
+            health_data = _query_external_health(llm["url"])
+
         if mode == "disabled":
             status = "not_configured"
-        elif llm["model"] == "custom" and not llm["model_path"]:
-            status = "model_missing"
+        elif health_data is not None:
+            status = "ready"
         else:
             status = "stopped"
+
+        loaded_model = None
+        loaded_model_id = None
+        loaded_model_path = None
+        loaded_model_backend = None
+        if health_data:
+            loaded_model = health_data.get("model_key") or health_data.get("model")
+            loaded_model_id = health_data.get("model")
+            loaded_model_path = health_data.get("model_path")
+            loaded_model_backend = health_data.get("backend")
 
         return RuntimeServiceStatus(
             name="llm",
@@ -65,6 +92,10 @@ class RuntimeServiceManager:
             details={
                 "mode": mode,
                 "model": llm["model"],
+                "loaded_model": loaded_model,
+                "loaded_model_id": loaded_model_id,
+                "loaded_model_path": loaded_model_path,
+                "loaded_model_backend": loaded_model_backend,
                 "model_path_configured": bool(llm["model_path"]),
                 "url": llm["url"] if mode == "external" else None,
                 "managed": False,

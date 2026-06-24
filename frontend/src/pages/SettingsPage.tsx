@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ApiClient, Settings } from '../api/apiClient';
-import { MODELS, LANGUAGES, TASKS, LOCAL_LLM_MODELS } from '../api/config';
+import { MODELS, LANGUAGES, TASKS } from '../api/config';
 import { useTranslation } from '../i18n/i18n';
 import { useToast } from '../context/ToastContext';
 import { Card } from '../components/ui/Card';
@@ -11,7 +11,7 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 
 export default function SettingsPage() {
-  const { t, lang } = useTranslation();
+  const { t } = useTranslation();
   const { showToast } = useToast();
 
   const [loading, setLoading] = useState(true);
@@ -30,7 +30,7 @@ export default function SettingsPage() {
   const [geminiApiKey, setGeminiApiKey] = useState('');
   const [localLlmUrl, setLocalLlmUrl] = useState('');
   const [localLlmMode, setLocalLlmMode] = useState<'auto' | 'external' | 'disabled'>('auto');
-  const [localLlmModel, setLocalLlmModel] = useState('nemotron-nano-4b');
+  const [localLlmModel, setLocalLlmModel] = useState('nemotron-nano-4b-q8');
   const [localLlmModelPath, setLocalLlmModelPath] = useState('');
   const [localLlmQualityPreset, setLocalLlmQualityPreset] = useState<'precise' | 'balanced' | 'creative'>('balanced');
   const [localLlmTemperature, setLocalLlmTemperature] = useState('');
@@ -70,7 +70,7 @@ export default function SettingsPage() {
       setGeminiApiKey('');
       setLocalLlmUrl(settings.local_llm_url || '');
       setLocalLlmMode(settings.local_llm_mode || 'auto');
-      setLocalLlmModel(settings.local_llm_model || 'nemotron-nano-4b');
+      setLocalLlmModel(settings.local_llm_model || 'nemotron-nano-4b-q8');
       setLocalLlmModelPath(settings.local_llm_model_path || '');
       setLocalLlmQualityPreset(settings.local_llm_quality_preset || 'balanced');
       setLocalLlmTemperature(
@@ -337,7 +337,7 @@ export default function SettingsPage() {
               onChange={(e) => {
                 const provider = e.target.value;
                 setLlmProvider(provider);
-                if (provider === 'nemotron_local') setLocalLlmModel('nemotron-nano-4b');
+                if (provider === 'nemotron_local') setLocalLlmModel('nemotron-nano-4b-q8');
                 if (provider === 'voxtral_local') setLocalLlmModel('voxtral-mini-3b');
               }}
             >
@@ -392,6 +392,31 @@ export default function SettingsPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-text-muted">
                       <span>{t('settings.localLlmManaged')}: {llmService?.managed ? 'yes' : 'no'}</span>
                       <span>{t('settings.localLlmPort')}: {llmService?.port || t('common.notAvailable')}</span>
+                      {llmService?.loaded_model && (
+                        <span className="md:col-span-2">
+                          <strong>{t('settings.localLlmActiveModel')}</strong>: {llmService.loaded_model}{' '}
+                          {llmService.loaded_model_id && `(${llmService.loaded_model_id})`}{' '}
+                          {llmService.loaded_model_backend ? `[${llmService.loaded_model_backend}]` : ''}
+                        </span>
+                      )}
+                      {llmService?.url && (
+                        <span className="md:col-span-2">
+                          <strong>{t('settings.localLlmWebUi')}</strong>:{' '}
+                          <a
+                            href={llmService.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-accent hover:underline inline-flex items-center gap-1 font-mono"
+                          >
+                            {llmService.url} ↗
+                          </a>
+                        </span>
+                      )}
+                      {llmService?.url && (
+                        <span className="md:col-span-2 text-[10px] text-text-muted italic">
+                          💡 {t('settings.localLlmChangeModelNote')}
+                        </span>
+                      )}
                       {llmService?.error && <span className="md:col-span-2 text-danger">{llmService.error}</span>}
                     </div>
                   )}
@@ -410,92 +435,17 @@ export default function SettingsPage() {
                   <option value="disabled">{t('settings.localLlmModeDisabled')}</option>
                 </Select>
 
-                <Select
-                  label={lang === 'it' ? 'Modello LLM locale' : 'Local LLM model'}
-                  value={localLlmModel}
-                  onChange={(e) => setLocalLlmModel(e.target.value)}
-                >
-                  {LOCAL_LLM_MODELS.map((m) => (
-                    <option key={m.value} value={m.value}>
-                      {m.label}
-                    </option>
-                  ))}
-                </Select>
-
-                {(localLlmModel === 'custom' || localLlmModel === 'voxtral-mini-3b') && (
-                  <div className="flex flex-col gap-1.5 w-full">
-                    <label className="text-sm font-medium text-text-secondary">
-                      {lang === 'it' ? 'Percorso file .gguf modello' : 'Model .gguf file path'}
-                    </label>
-                    <div className="flex gap-2 w-full">
-                      <Input
-                        value={localLlmModelPath}
-                        onChange={(e) => setLocalLlmModelPath(e.target.value)}
-                        placeholder="/Users/.../models/model.gguf"
-                        required
-                        className="flex-1"
-                      />
-                      <Button type="button" variant="secondary" onClick={() => handleBrowse('model')}>
-                        {t('settings.btnBrowse')}
-                      </Button>
-                    </div>
-                  </div>
+                {localLlmMode === 'external' && (
+                  <Checkbox
+                    variant="toggle"
+                    label={t('settings.localLlmAdvanced')}
+                    checked={showAdvancedLlm}
+                    onChange={(e) => setShowAdvancedLlm(e.target.checked)}
+                  />
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Select
-                    label={t('settings.localLlmQuality')}
-                    value={localLlmQualityPreset}
-                    onChange={(e) => setLocalLlmQualityPreset(e.target.value as 'precise' | 'balanced' | 'creative')}
-                  >
-                    <option value="precise">{t('settings.localLlmQualityPrecise')}</option>
-                    <option value="balanced">{t('settings.localLlmQualityBalanced')}</option>
-                    <option value="creative">{t('settings.localLlmQualityCreative')}</option>
-                  </Select>
-                  <Select
-                    label={t('settings.localLlmReasoning')}
-                    value={localLlmReasoning}
-                    onChange={(e) => setLocalLlmReasoning(e.target.value as 'auto' | 'on' | 'off')}
-                  >
-                    <option value="auto">{t('settings.localLlmReasoningAuto')}</option>
-                    <option value="on">{t('settings.localLlmReasoningOn')}</option>
-                    <option value="off">{t('settings.localLlmReasoningOff')}</option>
-                  </Select>
-                </div>
-
-                <Checkbox
-                  variant="toggle"
-                  label={t('settings.localLlmAdvanced')}
-                  checked={showAdvancedLlm}
-                  onChange={(e) => setShowAdvancedLlm(e.target.checked)}
-                />
-
-                {showAdvancedLlm && (
+                {localLlmMode === 'external' && showAdvancedLlm && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Input
-                      label={t('settings.localLlmTemperature')}
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      max="1"
-                      placeholder="Auto"
-                      value={localLlmTemperature}
-                      onChange={(e) => setLocalLlmTemperature(e.target.value)}
-                    />
-                    <Input
-                      label={t('settings.localLlmMaxTokens')}
-                      type="number"
-                      min="1"
-                      placeholder="Auto"
-                      value={localLlmMaxOutputTokens}
-                      onChange={(e) => setLocalLlmMaxOutputTokens(e.target.value)}
-                    />
-                    <Checkbox
-                      variant="toggle"
-                      label={t('settings.localLlmJsonMode')}
-                      checked={localLlmJsonMode}
-                      onChange={(e) => setLocalLlmJsonMode(e.target.checked)}
-                    />
                     <Input
                       label={t('settings.localLlmUrl')}
                       value={localLlmUrl}

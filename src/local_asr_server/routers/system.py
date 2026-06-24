@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from local_asr_server.audio_router import AudioRouter
 from local_asr_server.settings import load_settings, save_settings
+from local_asr_server.prompts import load_prompts, save_prompts
 from local_asr_server.recordings import RecordingConflict, RecordingNotFound
 from local_asr_server.services.analysis_service import AnalysisService
 from local_asr_server.schemas import (
@@ -268,6 +269,20 @@ def get_settings():
         **{key: value for key, value in settings.items() if key != "gemini_api_key"},
         "gemini_api_key_configured": bool(settings.get("gemini_api_key")),
     }
+
+
+@router.get("/v1/prompts")
+def get_prompts():
+    return load_prompts()
+
+
+@router.post("/v1/prompts")
+def update_prompts(body: dict[str, dict[str, str]]):
+    try:
+        save_prompts(body)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore nel salvataggio dei prompt: {e}")
 
 
 @router.get("/v1/stats")

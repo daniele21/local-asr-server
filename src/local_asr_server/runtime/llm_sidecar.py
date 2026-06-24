@@ -61,8 +61,22 @@ class LocalLLMSidecar:
             return None
         return f"http://{self.host}:{self._port}"
 
+    def _query_health(self) -> dict[str, Any] | None:
+        if not self.base_url:
+            return None
+        import json
+        try:
+            with urlopen(f"{self.base_url}/health", timeout=1.0) as response:
+                if 200 <= response.status < 300:
+                    return json.loads(response.read().decode("utf-8"))
+        except Exception:
+            pass
+        return None
+
     def status(self, model: str, mode: str, model_path: str = "") -> dict[str, Any]:
         process = self._process
+        health_data = self._query_health()
+
         if mode == "disabled":
             status = "not_configured"
         elif model == "custom" and not model_path:
@@ -71,20 +85,33 @@ class LocalLLMSidecar:
             status = "stopped"
         elif process.poll() is not None:
             status = "crashed"
-        elif self.is_ready():
+        elif health_data is not None:
             status = "ready"
         else:
             status = "loading_model"
+
+        loaded_model = None
+        loaded_model_id = None
+        loaded_model_path = None
+        loaded_model_backend = None
+        if health_data:
+            loaded_model = health_data.get("model_key") or health_data.get("model")
+            loaded_model_id = health_data.get("model")
+            loaded_model_path = health_data.get("model_path")
+            loaded_model_backend = health_data.get("backend")
 
         return {
             "name": "llm",
             "status": status,
             "mode": mode,
             "model": model,
-            "loaded_model": self._process_config.model if self._process_config else None,
+            "loaded_model": loaded_model,
+            "loaded_model_id": loaded_model_id,
+            "loaded_model_path": loaded_model_path,
+            "loaded_model_backend": loaded_model_backend,
             "model_path_configured": bool(model_path),
             "managed": mode == "auto",
-            "url": None,
+            "url": self.base_url,
             "host": self.host if self._port else None,
             "port": self._port,
             "pid": process.pid if process and process.poll() is None else None,

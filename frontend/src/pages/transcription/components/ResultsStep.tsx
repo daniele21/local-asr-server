@@ -4,6 +4,7 @@ import { Button } from '../../../components/ui/Button';
 import { ApiClient, Transcription, TranscriptionSegment } from '../../../api/apiClient';
 import { useTranslation } from '../../../i18n/i18n';
 import { formatTime } from '../../../utils/formatters';
+import { renderMarkdown } from '../../../utils/markdown';
 import { useToast } from '../../../context/ToastContext';
 import { ProjectPromptModal } from '../../../components/ui/ProjectPromptModal';
 
@@ -127,6 +128,32 @@ export default function ResultsStep({
       setIsSplitting(false);
     }
   };
+
+  const getAnalysisMarkdown = () => {
+    if (!transcriptionResult.analysis) return '';
+    const obj = transcriptionResult.analysis.result || transcriptionResult.analysis;
+    if (typeof obj === 'string') return obj;
+    if (obj && typeof obj === 'object') {
+      if (obj.markdown) return obj.markdown;
+      const lines = [];
+      if (obj.title) lines.push(`# ${obj.title}\n`);
+      if (obj.summary) lines.push(`## Riassunto\n${obj.summary}\n`);
+      if (Array.isArray(obj.key_points) && obj.key_points.length > 0) {
+        lines.push("## Punti Chiave");
+        obj.key_points.forEach((kp: string) => lines.push(`- ${kp}`));
+        lines.push("");
+      }
+      if (Array.isArray(obj.action_items) && obj.action_items.length > 0) {
+        lines.push("## Prossimi Passi");
+        obj.action_items.forEach((ai: string) => lines.push(`- ${ai}`));
+        lines.push("");
+      }
+      return lines.join('\n');
+    }
+    return '';
+  };
+
+
 
   return (
     <div className="flex flex-col gap-5 animate-in fade-in duration-150">
@@ -341,49 +368,8 @@ export default function ResultsStep({
       {/* Display panels */}
       <Card className="min-h-80 select-text leading-relaxed text-sm text-text-secondary">
         {resultTab === 'analysis' && transcriptionResult.analysis && (
-          <div className="flex flex-col gap-5 text-text-secondary">
-            {typeof transcriptionResult.analysis === 'string' ? (
-              <p className="whitespace-pre-wrap">{transcriptionResult.analysis}</p>
-            ) : (
-              <>
-                {transcriptionResult.analysis.summary && (
-                  <div className="flex flex-col gap-2">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-accent border-b border-border-subtle pb-1">
-                      {t('analysis.sectionSummary') || 'Summary'}
-                    </h4>
-                    <p className="text-sm leading-relaxed whitespace-pre-line">
-                      {transcriptionResult.analysis.summary}
-                    </p>
-                  </div>
-                )}
-
-                {Array.isArray(transcriptionResult.analysis.key_points) && transcriptionResult.analysis.key_points.length > 0 && (
-                  <div className="flex flex-col gap-2">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-accent border-b border-border-subtle pb-1">
-                      {t('analysis.sectionKeyPoints') || 'Key Points'}
-                    </h4>
-                    <ul className="list-disc pl-5 text-sm leading-relaxed flex flex-col gap-1.5">
-                      {transcriptionResult.analysis.key_points.map((kp: string, idx: number) => (
-                        <li key={idx}>{kp}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {Array.isArray(transcriptionResult.analysis.action_items) && transcriptionResult.analysis.action_items.length > 0 && (
-                  <div className="flex flex-col gap-2">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-accent border-b border-border-subtle pb-1">
-                      {t('analysis.sectionActionItems') || 'Action Items'}
-                    </h4>
-                    <ul className="list-disc pl-5 text-sm leading-relaxed flex flex-col gap-1.5">
-                      {transcriptionResult.analysis.action_items.map((ai: string, idx: number) => (
-                        <li key={idx}>{ai}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </>
-            )}
+          <div className="prose prose-sm max-w-none text-text-secondary">
+            {renderMarkdown(getAnalysisMarkdown())}
           </div>
         )}
 

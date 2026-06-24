@@ -515,7 +515,10 @@ const it = {
     localLlmAdvanced: 'Mostra impostazioni avanzate LLM',
     localLlmTemperature: 'Temperatura',
     localLlmMaxTokens: 'Max output tokens',
-    localLlmJsonMode: 'JSON mode'
+    localLlmJsonMode: 'JSON mode',
+    localLlmActiveModel: 'Modello attivo',
+    localLlmWebUi: 'Accedi alla Web UI',
+    localLlmChangeModelNote: 'Per cambiare o configurare i modelli, usa la Web UI di local-llm-server.'
   },
   common: {
     loading: 'Caricamento...',

@@ -551,6 +551,10 @@ export const ApiClient = {
     return (await request('/v1/settings')).json();
   },
 
+  async getPrompts(): Promise<Record<string, Record<string, string>>> {
+    return (await request('/v1/prompts')).json();
+  },
+
   async checkModelCache(modelName: string): Promise<{ model: string; cached: boolean }> {
     return (await request(`/v1/models/check-cache?model=${encodeURIComponent(modelName)}`)).json();
   },
@@ -560,6 +564,14 @@ export const ApiClient = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings),
+    })).json();
+  },
+
+  async savePrompts(prompts: Record<string, Record<string, string>>): Promise<{ status: string }> {
+    return (await request('/v1/prompts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(prompts),
     })).json();
   },
 

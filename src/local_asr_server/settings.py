@@ -35,7 +35,7 @@ DEFAULT_SETTINGS: dict[str, any] = {
     "default_condition_on_previous": False,
     "local_llm_mode": "auto",
     "local_llm_url": DEFAULT_LOCAL_LLM_URL,
-    "local_llm_model": "nemotron-nano-4b",
+    "local_llm_model": "nemotron-nano-4b-q8",
     "local_llm_quality_preset": DEFAULT_LLM_QUALITY_PRESET,
     "local_llm_temperature": None,
     "local_llm_reasoning": DEFAULT_LLM_REASONING,

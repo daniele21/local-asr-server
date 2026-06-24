@@ -9,7 +9,7 @@ export const MODELS = [
 ];
 
 export const LOCAL_LLM_MODELS = [
-  { value: 'nemotron-nano-4b', label: 'Nemotron Nano 4B (Default)' },
+  { value: 'nemotron-nano-4b-q8', label: 'Nemotron Nano 4B Q8 (Default)' },
   { value: 'qwen3-8b', label: 'Qwen3 8B (Reasoning)' },
   { value: 'phi-3-mini', label: 'Phi-3 Mini 3.8B' },
   { value: 'qwen2.5-7b', label: 'Qwen2.5 Instruct 7B' },

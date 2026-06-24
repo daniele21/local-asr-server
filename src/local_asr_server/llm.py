@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Optional
 
 from local_asr_server.runtime.models import DEFAULT_LOCAL_LLM_URL
+from local_asr_server.prompts import load_prompts
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -80,35 +81,19 @@ class GeminiProvider(BaseLLMProvider):
             f"gemini-2.5-flash:generateContent?key={self.api_key}"
         )
 
-        prompt_instruction = prompt or "Analizza la seguente trascrizione audio e restituisci un oggetto JSON strutturato."
+        if not prompt:
+            prompts = load_prompts()
+            prompt_instruction = prompts.get("default_instruction", {}).get("it", "Analizza la seguente trascrizione audio.")
+        else:
+            prompt_instruction = prompt
         prompt_str = (
             f"{prompt_instruction}\n\n"
             "La trascrizione è la seguente:\n\n"
-            f"{text}\n\n"
-            "Il JSON di risposta deve avere esattamente questo schema:\n"
-            "{\n"
-            '  "title": "Un titolo breve e significativo per la discussione (in italiano)",\n'
-            '  "summary": "Un riassunto coerente e approfondito di circa 3-4 frasi (in italiano)",\n'
-            '  "key_points": ["Punto chiave 1", "Punto chiave 2", ... (almeno 3 punti chiave in italiano)],\n'
-            '  "action_items": ["Azione da intraprendere 1", ... (se presenti, altrimenti lista vuota, in italiano)]\n'
-            "}"
+            f"{text}"
         )
 
         payload = {
-            "contents": [{"parts": [{"text": prompt_str}]}],
-            "generationConfig": {
-                "responseMimeType": "application/json",
-                "responseSchema": {
-                    "type": "OBJECT",
-                    "properties": {
-                        "title": {"type": "STRING"},
-                        "summary": {"type": "STRING"},
-                        "key_points": {"type": "ARRAY", "items": {"type": "STRING"}},
-                        "action_items": {"type": "ARRAY", "items": {"type": "STRING"}},
-                    },
-                    "required": ["title", "summary", "key_points", "action_items"],
-                },
-            },
+            "contents": [{"parts": [{"text": prompt_str}]}]
         }
 
         req = urllib.request.Request(
@@ -125,7 +110,7 @@ class GeminiProvider(BaseLLMProvider):
                 if not candidates:
                     raise ValueError("Nessuna risposta generata da Gemini.")
                 content_text = candidates[0]["content"]["parts"][0]["text"]
-                return json.loads(content_text)
+                return content_text
 
         except urllib.error.HTTPError as e:
             err_body = e.read().decode("utf-8")
@@ -162,7 +147,7 @@ class NemotronLocalProvider(BaseLLMProvider):
         except ModuleNotFoundError as exc:
             raise RuntimeError(
                 "local-llm-server non è installato. "
-                "Installa il wheel con: uv pip install local_llm_server-0.2.0-py3-none-any.whl"
+                "Installa il wheel con: uv pip install local_llm_server-0.3.0-py3-none-any.whl"
             ) from exc
 
         client = LocalLLMClient(base_url=self.base_url, model=self.model)
@@ -175,23 +160,13 @@ class NemotronLocalProvider(BaseLLMProvider):
             full_prompt = (
                 f"{prompt}\n\n"
                 f"Lingua: {language}\n"
-                f"Trascrizione:\n{text}\n\n"
-                "Rispondi SOLTANTO con un oggetto JSON avente i campi title (string), summary (string), key_points (array di stringhe) e action_items (array di stringhe)."
+                f"Trascrizione:\n{text}"
             )
             content = client.chat(
                 [{"role": "user", "content": full_prompt}],
-                response_format={"type": "json_object"},
                 temperature=temperature if temperature is not None else 0.0,
             )
-            try:
-                from local_llm_server.client import _parse_json_object
-                return _parse_json_object(content)
-            except Exception:
-                import re
-                match = re.search(r"\{.*\}", content, re.DOTALL)
-                if match:
-                    return json.loads(match.group(0))
-                raise ValueError(f"La risposta non contiene un oggetto JSON valido: {content[:300]}")
+            return content
         return client.analyze_text(text, language=language)
 
 
@@ -215,7 +190,7 @@ class VoxtralLocalProvider(BaseLLMProvider):
         except ModuleNotFoundError as exc:
             raise RuntimeError(
                 "local-llm-server non è installato. "
-                "Installa il wheel con: uv pip install local_llm_server-0.2.0-py3-none-any.whl"
+                "Installa il wheel con: uv pip install local_llm_server-0.3.0-py3-none-any.whl"
             ) from exc
 
         client = LocalLLMClient(base_url=self.base_url, model=self.model)
@@ -239,23 +214,13 @@ class VoxtralLocalProvider(BaseLLMProvider):
             full_prompt = (
                 f"{prompt}\n\n"
                 f"Lingua: {language}\n"
-                f"Trascrizione:\n{text}\n\n"
-                "Rispondi SOLTANTO con un oggetto JSON avente i campi title (string), summary (string), key_points (array di stringhe) e action_items (array di stringhe)."
+                f"Trascrizione:\n{text}"
             )
             content = client.chat(
                 [{"role": "user", "content": full_prompt}],
-                response_format={"type": "json_object"},
                 temperature=temperature if temperature is not None else 0.0,
             )
-            try:
-                from local_llm_server.client import _parse_json_object
-                return _parse_json_object(content)
-            except Exception:
-                import re
-                match = re.search(r"\{.*\}", content, re.DOTALL)
-                if match:
-                    return json.loads(match.group(0))
-                raise ValueError(f"La risposta non contiene un oggetto JSON valido: {content[:300]}")
+            return content
         return client.analyze_text(text, language=language)
 
     def analyze_audio(

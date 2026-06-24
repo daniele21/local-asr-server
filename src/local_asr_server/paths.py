@@ -108,6 +108,12 @@ def get_settings_file() -> Path:
     return get_app_support_dir() / "settings.json"
 
 
+def get_prompts_file() -> Path:
+    """Return the path to ``prompts.json`` (not created here)."""
+    return get_app_support_dir() / "prompts.json"
+
+
+
 def get_runtime_state_file() -> Path:
     """Return the local runtime state file path."""
     return get_app_support_dir() / "runtime-state.json"

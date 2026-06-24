@@ -6,7 +6,8 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Select } from '../components/ui/Select';
 import { Input } from '../components/ui/Input';
-import { LOCAL_LLM_MODELS } from '../api/config';
+
+import { renderMarkdown } from '../utils/markdown';
 import { TourAnalysisResult } from '../features/tour/TourAnalysisResult';
 
 interface AnalysisPageProps {
@@ -20,8 +21,9 @@ interface AnalysisResult {
   summary?: string;
   key_points?: string[] | null;
   action_items?: string[] | null;
+  markdown?: string;
   // Allow arbitrary additional fields from different LLM providers
-  [key: string]: unknown;
+  [key: string]: any;
 }
 
 export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMode = false }: AnalysisPageProps) {
@@ -44,33 +46,34 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMo
   const [question, setQuestion] = useState('');
   const [promptType, setPromptType] = useState('summary');
   const [customPrompt, setCustomPrompt] = useState('');
-  const [localLlmModel, setLocalLlmModel] = useState('nemotron-nano-4b');
+  const [localLlmModel, setLocalLlmModel] = useState('nemotron-nano-4b-q8');
   const [localLlmModelPath, setLocalLlmModelPath] = useState('');
+  const [llmService, setLlmService] = useState<any>(null);
 
-  const DEFAULT_PROMPTS: Record<string, { it: string; en: string }> = {
+  const [prompts, setPrompts] = useState<Record<string, { it: string; en: string }>>({
     summary: {
-      it: 'Analizza la seguente trascrizione e genera un titolo breve, un riassunto di 3-4 frasi, i punti chiave principali (almeno 3) e le azioni pratiche da intraprendere.',
-      en: 'Analyze the following transcription and generate a short title, a summary of 3-4 sentences, the main key points (at least 3), and actionable items to be taken.'
+      it: 'Analizza la seguente trascrizione identificando chiaramente i contributi di "Tu" (microfono locale) e "Computer" (audio di sistema/interlocutore remoto). Genera un titolo breve, un riassunto ben dettagliato che descriva la dinamica del colloquio, tutti i punti chiave evidenziando chi ha espresso cosa, e le azioni pratiche da intraprendere.',
+      en: 'Analyze the following transcription, clearly identifying the contributions of "You" (local microphone) and "Computer" (system audio/remote speaker). Generate a short title, a detailed summary describing the dynamics of the conversation, all key points highlighting who said what, and practical actions to be taken.'
     },
     minutes: {
-      it: 'Genera un verbale di riunione formale basato sulla trascrizione, strutturando i punti chiave e le decisioni in modo formale.',
-      en: 'Generate formal meeting minutes based on the transcription, structuring key points and decisions in a formal manner.'
+      it: 'Genera un verbale di riunione formale basato sulla trascrizione, strutturando i punti chiave e le decisioni in modo formale. Identifica chiaramente il ruolo di "Tu" (microfono locale) e "Computer" (audio di sistema/interlocutore remoto) e attribuisci correttamente a ciascuno i concetti espressi.',
+      en: 'Generate formal meeting minutes based on the transcription, structuring key points and decisions in a formal manner. Clearly identify the roles of "You" (local microphone) and "Computer" (system audio/remote speaker) and attribute the expressed points to the correct speaker.'
     },
     actions: {
-      it: 'Estrai tutti gli "action items" (le attività pratiche da svolgere, i responsabili e le scadenze se menzionate) in modo dettagliato.',
-      en: 'Extract all action items (practical tasks, assignees, and deadlines if mentioned) in a detailed manner.'
+      it: 'Estrai tutti gli "action items" (le attività pratiche da svolgere, i responsabili e le scadenze se menzionate) in modo dettagliato. Specifica chiaramente se l\'azione è assegnata a "Tu" o a "Computer" basandoti su quanto discusso nella trascrizione.',
+      en: 'Extract all action items (practical tasks, assignees, and deadlines if mentioned) in a detailed manner. Clearly specify if the task is assigned to "Tu" or "Computer" based on the transcription discussion.'
     },
     custom: {
       it: '',
       en: ''
     }
-  };
+  });
 
   useEffect(() => {
     if (promptType !== 'custom') {
-      setCustomPrompt(DEFAULT_PROMPTS[promptType]?.[lang === 'it' ? 'it' : 'en'] || '');
+      setCustomPrompt(prompts[promptType]?.[lang === 'it' ? 'it' : 'en'] || '');
     }
-  }, [promptType, lang]);
+  }, [promptType, lang, prompts]);
 
   // Results & Progress State
   const [loading, setLoading] = useState(false);
@@ -85,19 +88,34 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMo
     } catch {}
   };
 
+  const loadPrompts = async () => {
+    try {
+      const backendPrompts = await ApiClient.getPrompts();
+      setPrompts(prev => ({
+        ...prev,
+        ...backendPrompts
+      }) as Record<string, { it: string; en: string }>);
+    } catch {}
+  };
+
   const loadSettings = async () => {
     try {
       const settings = await ApiClient.getSettings();
       setProvider(settings.llm_provider || 'mock');
       setApiKey('');
-      setLocalLlmModel(settings.local_llm_model || 'nemotron-nano-4b');
+      setLocalLlmModel(settings.local_llm_model || 'nemotron-nano-4b-q8');
       setLocalLlmModelPath(settings.local_llm_model_path || '');
+      try {
+        const service = await ApiClient.getLlmService();
+        setLlmService(service);
+      } catch {}
     } catch {}
   };
 
   useEffect(() => {
     if (demoMode) return;
     loadTranscriptions();
+    loadPrompts();
     loadSettings();
   }, [demoMode]);
 
@@ -111,23 +129,13 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMo
       // Proactively fetch and check if it already has an analysis
       ApiClient.getTranscription(detailId).then((tr) => {
         if (tr.analysis) {
-          setAnalysisResult(tr.analysis);
+          setAnalysisResult(tr.analysis.result || tr.analysis);
         }
       }).catch(() => {});
     }
   }, [demoMode, detailId, transcriptions]);
 
-  const handleBrowseModel = async () => {
-    try {
-      const result = await ApiClient.selectFile();
-      if (result && result.path) {
-        setLocalLlmModelPath(result.path);
-        showToast(t('transcription.browseSelectDir'), 'info');
-      }
-    } catch (err: any) {
-      showToast(err.message || t('transcription.browseError'), 'error');
-    }
-  };
+
 
   const handleImportFile = (file: File) => {
     setImportedFile(file);
@@ -251,9 +259,7 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMo
 
   const copyResults = () => {
     if (!analysisResult) return;
-    const keyPoints = (analysisResult.key_points || []).map((kp) => `- ${kp}`).join('\n');
-    const actionItems = (analysisResult.action_items || []).map((ai) => `- ${ai}`).join('\n');
-    const formatted = `# ${analysisResult.title || ''}\n\n## Riassunto\n${analysisResult.summary || ''}\n\n## Punti Chiave\n${keyPoints}\n\n## Prossimi Passi\n${actionItems}`;
+    const formatted = analysisResult.markdown || '';
 
     navigator.clipboard.writeText(formatted).then(() => {
       showToast(t('analysis.copySuccess'), 'success');
@@ -263,6 +269,27 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMo
       showToast(t('analysis.copyError'), 'error');
     });
   };
+
+  const getDisplayTitle = () => {
+    if (!analysisResult) return '';
+    if (analysisResult.title) return analysisResult.title;
+    if (analysisResult.markdown) {
+      const match = analysisResult.markdown.match(/^#\s+(.+)$/m);
+      if (match) return match[1];
+    }
+    return t('analysis.resultTitle');
+  };
+
+  const getMarkdownBody = () => {
+    if (!analysisResult || !analysisResult.markdown) return '';
+    const lines = analysisResult.markdown.split('\n');
+    if (lines[0] && lines[0].startsWith('# ')) {
+      return lines.slice(1).join('\n').trim();
+    }
+    return analysisResult.markdown;
+  };
+
+
 
   const isStartButtonDisabled = () => {
     if (loading) return true;
@@ -402,36 +429,39 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMo
               </Select>
 
               {(provider === 'nemotron_local' || provider === 'voxtral_local') && (
-                <div className="flex flex-col gap-4">
-                  <Select
-                    label={lang === 'it' ? 'Modello LLM locale' : 'Local LLM model'}
-                    value={localLlmModel}
-                    onChange={(e) => setLocalLlmModel(e.target.value)}
-                  >
-                    {LOCAL_LLM_MODELS.map((m) => (
-                      <option key={m.value} value={m.value}>
-                        {m.label}
-                      </option>
-                    ))}
-                  </Select>
-
-                  {localLlmModel === 'custom' && (
-                    <div className="flex flex-col gap-1.5 w-full">
-                      <label className="text-xs font-semibold text-text-secondary">
-                        {lang === 'it' ? 'Percorso file .gguf modello' : 'Model .gguf file path'}
-                      </label>
-                      <div className="flex gap-2 w-full">
-                        <Input
-                          value={localLlmModelPath}
-                          onChange={(e) => setLocalLlmModelPath(e.target.value)}
-                          placeholder="/Users/.../models/model.gguf"
-                          required
-                          className="flex-1"
-                        />
-                        <Button type="button" variant="secondary" onClick={handleBrowseModel}>
-                          {t('settings.btnBrowse')}
-                        </Button>
-                      </div>
+                <div className="flex flex-col gap-2 p-3.5 rounded-xl border border-border-subtle bg-bg-surface text-xs text-text-secondary">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold">{t('settings.localLlmActiveModel')}:</span>
+                    <span className="font-mono text-text-primary">
+                      {llmService?.loaded_model || t('common.notAvailable')}
+                    </span>
+                  </div>
+                  {llmService?.loaded_model_id && (
+                    <div className="flex items-center justify-between">
+                      <span className="opacity-75">Model ID:</span>
+                      <span className="font-mono text-text-primary">{llmService.loaded_model_id}</span>
+                    </div>
+                  )}
+                  {llmService?.loaded_model_backend && (
+                    <div className="flex items-center justify-between">
+                      <span className="opacity-75">Backend:</span>
+                      <span className="font-mono text-text-primary">{llmService.loaded_model_backend}</span>
+                    </div>
+                  )}
+                  {llmService?.url && (
+                    <div className="flex flex-col gap-1 mt-1 pt-1.5 border-t border-border-subtle/50">
+                      <span className="font-semibold">{t('settings.localLlmWebUi')}:</span>
+                      <a
+                        href={llmService.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-accent hover:underline font-mono"
+                      >
+                        {llmService.url} ↗
+                      </a>
+                      <span className="text-[10px] text-text-muted italic mt-0.5">
+                        💡 {t('settings.localLlmChangeModelNote')}
+                      </span>
                     </div>
                   )}
                 </div>
@@ -543,48 +573,17 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMo
             <div className="flex flex-col gap-4">
               <div className="flex justify-between items-center bg-bg-elevated/40 border border-border-subtle rounded-xl px-4 py-3.5">
                 <h3 className="text-sm font-bold text-text-primary">
-                  {analysisResult.title || t('analysis.resultTitle')}
+                  {getDisplayTitle()}
                 </h3>
                 <Button size="sm" variant="secondary" onClick={copyResults}>
                   📄 {copiedText}
                 </Button>
               </div>
 
-              <Card className="flex flex-col gap-5">
-                <div className="flex flex-col gap-2">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-accent border-b border-border-subtle pb-1">
-                    {t('analysis.sectionSummary')}
-                  </h4>
-                  <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
-                    {analysisResult.summary}
-                  </p>
+              <Card className="flex flex-col gap-5 max-h-[70vh] overflow-y-auto">
+                <div className="prose prose-sm max-w-none text-text-secondary">
+                  {renderMarkdown(getMarkdownBody())}
                 </div>
-
-                {Array.isArray(analysisResult.key_points) && analysisResult.key_points.length > 0 && (
-                  <div className="flex flex-col gap-2">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-accent border-b border-border-subtle pb-1">
-                      {t('analysis.sectionKeyPoints')}
-                    </h4>
-                    <ul className="list-disc pl-5 text-sm text-text-secondary leading-relaxed flex flex-col gap-1.5">
-                      {analysisResult.key_points.map((kp, idx) => (
-                        <li key={idx}>{kp}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {Array.isArray(analysisResult.action_items) && analysisResult.action_items.length > 0 && (
-                  <div className="flex flex-col gap-2">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-accent border-b border-border-subtle pb-1">
-                      {t('analysis.sectionActionItems')}
-                    </h4>
-                    <ul className="list-disc pl-5 text-sm text-text-secondary leading-relaxed flex flex-col gap-1.5">
-                      {analysisResult.action_items.map((ai, idx) => (
-                        <li key={idx}>{ai}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
               </Card>
             </div>
           ) : (

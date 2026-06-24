@@ -88,7 +88,10 @@ class AnalysisService:
                     task=body.audio_task or "analysis",
                     question=body.question,
                 )
+                result = self._normalize_result(result)
                 self.app_state.catalog_store.save_analysis_cache(cache_key, result)
+            else:
+                result = self._normalize_result(result)
             if body.transcription_id:
                 try:
                     self.app_state.transcription_store.save_analysis(body.transcription_id, result)
@@ -127,7 +130,10 @@ class AnalysisService:
             result = self._get_cached_analysis(cache_key)
             if result is None:
                 result = provider.analyze(text_to_analyze, prompt=body.prompt, temperature=temperature)
+                result = self._normalize_result(result)
                 self.app_state.catalog_store.save_analysis_cache(cache_key, result)
+            else:
+                result = self._normalize_result(result)
             if body.transcription_id:
                 self.app_state.transcription_store.save_analysis(body.transcription_id, result)
             return result
@@ -184,3 +190,39 @@ class AnalysisService:
         }
         serialized = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
         return self._hash_text(serialized)
+
+    def _normalize_result(self, result: Any) -> dict[str, Any]:
+        if isinstance(result, str):
+            try:
+                parsed = json.loads(result)
+                if isinstance(parsed, dict):
+                    result = parsed
+            except Exception:
+                pass
+
+        if isinstance(result, str):
+            return {"markdown": result}
+        if isinstance(result, dict):
+            if "markdown" in result:
+                return result
+            # Convert structured dict to markdown
+            lines = []
+            if result.get("title"):
+                lines.append(f"# {result['title']}\n")
+            if result.get("summary"):
+                lines.append(f"## Riassunto\n{result['summary']}\n")
+            if result.get("key_points"):
+                lines.append("## Punti Chiave")
+                for kp in result["key_points"]:
+                    lines.append(f"- {kp}")
+                lines.append("")
+            if result.get("action_items"):
+                lines.append("## Prossimi Passi")
+                for ai in result["action_items"]:
+                    lines.append(f"- {ai}")
+                lines.append("")
+            
+            normalized = result.copy()
+            normalized["markdown"] = "\n".join(lines)
+            return normalized
+        return {"markdown": str(result)}

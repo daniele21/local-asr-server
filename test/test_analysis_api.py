@@ -178,5 +178,35 @@ class AnalysisApiTests(unittest.TestCase):
         data = response.json()
         self.assertEqual(data["title"], "Voxtral Endpoint Title")
 
+    def test_prompts_endpoints(self) -> None:
+        # Test GET /v1/prompts
+        response = self.client.get("/v1/prompts")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("summary", data)
+        self.assertIn("default_instruction", data)
+        
+        # Test POST /v1/prompts
+        custom_prompts = {
+            "summary": {
+                "it": "Custom summary prompt",
+                "en": "Custom summary prompt en"
+            },
+            "default_instruction": {
+                "it": "Custom instruction",
+                "en": "Custom instruction en"
+            }
+        }
+        post_response = self.client.post("/v1/prompts", json=custom_prompts)
+        self.assertEqual(post_response.status_code, 200)
+        
+        # Re-fetch and check
+        get_response = self.client.get("/v1/prompts")
+        self.assertEqual(get_response.status_code, 200)
+        updated_data = get_response.json()
+        self.assertEqual(updated_data["summary"]["it"], "Custom summary prompt")
+        self.assertEqual(updated_data["default_instruction"]["it"], "Custom instruction")
+
+
 if __name__ == "__main__":
     unittest.main()

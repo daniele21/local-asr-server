@@ -69,7 +69,7 @@ def _build_parser() -> argparse.ArgumentParser:
     serve.add_argument(
         "--llm-model",
         default=None,
-        help="The local LLM model key to run in local-llm-server (e.g. nemotron-nano-4b, voxtral-mini-3b).",
+        help="The local LLM model key to run in local-llm-server (e.g. nemotron-nano-4b-q8, voxtral-mini-3b).",
     )
     serve.add_argument(
         "--llm-model-path",
@@ -212,7 +212,7 @@ def main() -> None:
         settings["local_llm_url"] = f"http://{LOCAL_SERVICE_HOST}:{args.llm_port}"
         
         # Get model key from args, settings, or default
-        llm_model = args.llm_model or settings.get("local_llm_model") or "nemotron-nano-4b"
+        llm_model = args.llm_model or settings.get("local_llm_model") or "nemotron-nano-4b-q8"
         llm_model_paths = settings.get("local_llm_model_paths", {})
         llm_model_path = args.llm_model_path or llm_model_paths.get(llm_model) or settings.get("local_llm_model_path") or ""
         settings["local_llm_model"] = llm_model
