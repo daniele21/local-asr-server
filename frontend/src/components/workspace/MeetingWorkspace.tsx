@@ -143,14 +143,14 @@ export function MeetingCard({
   const duration = getDurationSeconds(meeting.recording);
   const analysisTypes = Object.keys(meeting.latest_analysis || {});
   return (
-    <article className="group rounded-lg border border-border-subtle bg-bg-elevated p-4 shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition-all duration-200 hover:-translate-y-0.5 hover:border-border-focus hover:bg-bg-hover">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <article className="group rounded-xl border border-border-subtle bg-bg-elevated/45 px-4 py-3 shadow-[0_4px_20px_rgba(0,0,0,0.08)] transition-all duration-200 hover:border-border-focus hover:bg-bg-hover">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="truncate text-sm font-semibold text-text-primary">{meetingTitle(meeting)}</h3>
             <Badge variant={status.variant}>{status.label}</Badge>
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-text-muted">
+          <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs text-text-muted">
             <span className="inline-flex items-center gap-1">
               <CalendarDays className="h-3.5 w-3.5" />
               {formatProjectDate(meeting.created_at, lang)}
@@ -167,8 +167,8 @@ export function MeetingCard({
             )}
           </div>
         </div>
-        <div className="flex flex-col gap-2 lg:w-[260px]">
-          <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-col gap-2 lg:min-w-[200px] lg:items-end">
+          <div className="flex flex-wrap gap-1.5 lg:justify-end">
             {meeting.transcription ? (
               <span className="inline-flex items-center gap-1 rounded-md border border-success/25 bg-success/10 px-2 py-1 text-[11px] text-success">
                 <CheckCircle2 className="h-3 w-3" />
@@ -186,7 +186,7 @@ export function MeetingCard({
               </span>
             ))}
           </div>
-          <Button size="sm" variant={meeting.transcription ? 'primary' : 'secondary'} onClick={onOpen}>
+          <Button size="sm" className="w-full lg:w-auto lg:px-4" variant={meeting.transcription ? 'primary' : 'secondary'} onClick={onOpen}>
             {actionLabel(meeting)}
           </Button>
         </div>
@@ -208,9 +208,9 @@ export function ActionChecklist({
     return <EmptyState icon={ListChecks} title={emptyTitle} description={emptyDescription} className="py-7" />;
   }
   return (
-    <div className="flex flex-col divide-y divide-border-subtle rounded-lg border border-border-subtle bg-bg-elevated">
+    <div className="flex flex-col divide-y divide-border-subtle rounded-lg border border-border-subtle bg-bg-elevated/45">
       {items.map((item) => (
-        <div key={item.id} className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-3 px-4 py-3">
+        <div key={item.id} className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-2.5 px-3.5 py-2.5 hover:bg-bg-hover/30 transition-colors">
           <input
             type="checkbox"
             checked={Boolean(item.completed)}
@@ -250,7 +250,7 @@ export function DecisionLog({
   return (
     <div className="flex flex-col gap-2">
       {items.map((item) => (
-        <div key={item.id} className="rounded-lg border border-border-subtle bg-bg-elevated px-4 py-3">
+        <div key={item.id} className="rounded-lg border border-border-subtle bg-bg-elevated/45 px-3.5 py-2.5 hover:border-border-focus hover:bg-bg-hover transition-all duration-200">
           <p className="text-sm leading-snug text-text-primary">{limitText(item.text, 190)}</p>
           <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-text-muted">
             {item.projectName && <span>{item.projectName}</span>}
@@ -278,7 +278,7 @@ export function RiskPanel({
   return (
     <div className="flex flex-col gap-2">
       {items.map((item) => (
-        <div key={item.id} className="rounded-lg border border-warning/25 bg-warning/5 px-4 py-3">
+        <div key={item.id} className="rounded-lg border border-warning/20 bg-warning/5 px-3.5 py-2.5 hover:border-warning/35 transition-all duration-200">
           <div className="flex items-start justify-between gap-3">
             <p className="text-sm leading-snug text-text-primary">{limitText(item.text, 180)}</p>
             {item.severity && <Badge variant="warning">{item.severity}</Badge>}
@@ -303,25 +303,25 @@ export function DigestPanel({
   generatedAt?: string | null;
 }) {
   return (
-    <section className="rounded-lg border border-border-subtle bg-bg-elevated p-4">
+    <section className="rounded-xl border border-border-subtle bg-bg-surface/20 p-4 theme-digest">
       <SectionHeader
         icon={Sparkles}
         title={title}
         description="Sintesi composta dagli insight già generati per i meeting filtrati."
         tooltip="Usa i brief e gli aggiornamenti progetto già disponibili. Non rilancia analisi sui transcript."
       />
-      {generatedAt && <p className="mt-2 text-[11px] text-text-muted">Situazione aggiornata: {generatedAt}</p>}
+      {generatedAt && <p className="mt-1.5 text-[11px] text-text-muted">Situazione aggiornata: {generatedAt}</p>}
       {items.length === 0 ? (
         <EmptyState
           icon={Sparkles}
           title="Digest non ancora disponibile"
           description="Genera o completa le analisi dei meeting per alimentare questa sintesi."
-          className="mt-4 py-7"
+          className="mt-3 py-6"
         />
       ) : (
-        <div className="mt-4 flex flex-col gap-3">
+        <div className="mt-3 flex flex-col gap-2.5">
           {items.slice(0, 4).map((item) => (
-            <div key={item.id} className="border-l-2 border-accent/70 pl-3">
+            <div key={item.id} className="border-l-2 border-accent/70 pl-2.5">
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
                 <span>{item.title}</span>
                 {item.projectName && <span>{item.projectName}</span>}
@@ -414,20 +414,27 @@ export function ProjectStatusPanel({
   riskCount: number;
 }) {
   const stats = [
-    { label: 'Meeting nel range', value: meetingCount, icon: FileAudio },
-    { label: 'Trascritti', value: transcribedCount, icon: CheckCircle2 },
-    { label: 'Con insight', value: readyCount, icon: Sparkles },
-    { label: 'Azioni aperte', value: actionCount, icon: ListChecks },
-    { label: 'Decisioni', value: decisionCount, icon: Target },
-    { label: 'Rischi', value: riskCount, icon: ShieldAlert },
+    { label: 'Meeting nel range', value: meetingCount, icon: FileAudio, color: 'text-accent', bgColor: 'bg-accent/10 border-accent/20' },
+    { label: 'Trascritti', value: transcribedCount, icon: CheckCircle2, color: 'text-info', bgColor: 'bg-info/10 border-info/20' },
+    { label: 'Con insight', value: readyCount, icon: Sparkles, color: 'text-accent', bgColor: 'bg-accent/10 border-accent/20' },
+    { label: 'Azioni aperte', value: actionCount, icon: ListChecks, color: 'text-success', bgColor: 'bg-success/10 border-success/20' },
+    { label: 'Decisioni', value: decisionCount, icon: Target, color: 'text-info', bgColor: 'bg-info/10 border-info/20' },
+    { label: 'Rischi', value: riskCount, icon: ShieldAlert, color: 'text-warning', bgColor: 'bg-warning/10 border-warning/20' },
   ];
   return (
-    <section className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border-subtle bg-border-subtle lg:grid-cols-3">
+    <section className="grid grid-cols-2 gap-3 lg:grid-cols-3">
       {stats.map((stat) => (
-        <div key={stat.label} className="bg-bg-elevated px-4 py-3">
-          <stat.icon className="mb-2 h-4 w-4 text-text-muted" />
-          <div className="text-xl font-semibold text-text-primary">{stat.value}</div>
-          <div className="text-[11px] uppercase tracking-wider text-text-muted">{stat.label}</div>
+        <div key={stat.label} className="group relative overflow-hidden rounded-xl border border-border-subtle bg-bg-surface/50 p-3.5 transition-all duration-300 hover:border-border-focus hover:bg-bg-hover hover:shadow-[0_8px_24px_rgba(0,0,0,0.1)]">
+          <div className="absolute -right-6 -top-6 h-12 w-12 rounded-full bg-accent/5 blur-lg transition-all duration-500 group-hover:scale-150" />
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted transition-colors group-hover:text-text-secondary">{stat.label}</span>
+            <span className={`inline-flex items-center justify-center rounded-lg border p-1 ${stat.bgColor}`}>
+              <stat.icon className={`h-3.5 w-3.5 ${stat.color}`} />
+            </span>
+          </div>
+          <div className="mt-2 flex items-baseline gap-1">
+            <div className="text-2xl font-bold tracking-tight text-text-primary">{stat.value}</div>
+          </div>
         </div>
       ))}
     </section>

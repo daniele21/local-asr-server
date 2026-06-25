@@ -131,13 +131,13 @@ export default function DashboardPage({ navigateTo }: DashboardPageProps) {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <section className="flex flex-col gap-5 border-b border-border-subtle pb-5">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+    <div className="flex flex-col gap-5">
+      <section className="flex flex-col gap-4 border-b border-border-subtle pb-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
             <span className="text-xs font-semibold uppercase tracking-widest text-accent">{rangeLabel}</span>
-            <h2 className="mt-1 text-3xl font-semibold text-text-primary">Oggi</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-text-secondary">
+            <h2 className="mt-1 text-2xl font-bold tracking-tight text-text-primary">Oggi</h2>
+            <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-text-secondary">
               Cosa è successo nei meeting selezionati e cosa richiede attenzione adesso.
             </p>
           </div>
@@ -166,24 +166,31 @@ export default function DashboardPage({ navigateTo }: DashboardPageProps) {
         </div>
       </section>
 
-      <section className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border-subtle bg-border-subtle lg:grid-cols-4">
+      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {[
-          { label: 'Meeting nel periodo', value: periodMeetings.length, icon: FileAudio },
-          { label: 'Da trascrivere', value: periodMeetings.length - transcribedCount, icon: Clock3 },
-          { label: 'Analisi in corso', value: analyzingCount, icon: Activity },
-          { label: 'Azioni aperte', value: actionItems.length, icon: ListChecks },
+          { label: 'Meeting nel periodo', value: periodMeetings.length, icon: FileAudio, color: 'text-accent', bgColor: 'bg-accent/10 border-accent/20' },
+          { label: 'Da trascrivere', value: periodMeetings.length - transcribedCount, icon: Clock3, color: 'text-warning', bgColor: 'bg-warning/10 border-warning/20' },
+          { label: 'Analisi in corso', value: analyzingCount, icon: Activity, color: 'text-info', bgColor: 'bg-info/10 border-info/20' },
+          { label: 'Azioni aperte', value: actionItems.length, icon: ListChecks, color: 'text-success', bgColor: 'bg-success/10 border-success/20' },
         ].map((item) => (
-          <div key={item.label} className="bg-bg-elevated px-4 py-3">
-            <item.icon className="mb-2 h-4 w-4 text-text-muted" />
-            <div className="text-2xl font-semibold text-text-primary">{item.value}</div>
-            <div className="text-[11px] uppercase tracking-wider text-text-muted">{item.label}</div>
+          <div key={item.label} className="group relative overflow-hidden rounded-xl border border-border-subtle bg-bg-surface/50 p-4 transition-all duration-300 hover:border-border-focus hover:bg-bg-hover hover:shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
+            <div className="absolute -right-6 -top-6 h-16 w-16 rounded-full bg-accent/5 blur-xl transition-all duration-500 group-hover:scale-150" />
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted transition-colors group-hover:text-text-secondary">{item.label}</span>
+              <span className={`inline-flex items-center justify-center rounded-lg border p-1.5 ${item.bgColor}`}>
+                <item.icon className={`h-4 w-4 ${item.color}`} />
+              </span>
+            </div>
+            <div className="mt-2.5 flex items-baseline gap-1.5">
+              <span className="text-3xl font-bold tracking-tight text-text-primary">{item.value}</span>
+            </div>
           </div>
         ))}
       </section>
 
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <main className="flex min-w-0 flex-col gap-6">
-          <section className="flex flex-col gap-3">
+      <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <main className="flex min-w-0 flex-col gap-5">
+          <section className="flex flex-col gap-3 rounded-xl border border-border-subtle bg-bg-surface/20 p-4 theme-audio">
             <SectionHeader
               icon={FileAudio}
               title="Meeting nel periodo"
@@ -216,8 +223,8 @@ export default function DashboardPage({ navigateTo }: DashboardPageProps) {
             )}
           </section>
 
-          <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <div className="flex flex-col gap-3">
+          <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            <div className="flex flex-col gap-3 rounded-xl border border-border-subtle bg-bg-surface/20 p-4 theme-tasks">
               <SectionHeader
                 icon={ListChecks}
                 title="Azioni aperte"
@@ -226,7 +233,7 @@ export default function DashboardPage({ navigateTo }: DashboardPageProps) {
               />
               <ActionChecklist items={actionItems.slice(0, 8)} />
             </div>
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3 rounded-xl border border-border-subtle bg-bg-surface/20 p-4 theme-decisions">
               <SectionHeader
                 icon={Target}
                 title="Decisioni recenti"
@@ -238,24 +245,24 @@ export default function DashboardPage({ navigateTo }: DashboardPageProps) {
           </section>
         </main>
 
-        <aside className="flex flex-col gap-5">
+        <aside className="flex flex-col gap-4">
           <DigestPanel items={digestItems} title="Digest del periodo" />
 
-          <section className="rounded-lg border border-border-subtle bg-bg-elevated p-4">
+          <section className="rounded-xl border border-border-subtle bg-bg-surface/20 p-4 theme-pipeline">
             <SectionHeader
               icon={AlertTriangle}
               title="Da completare"
               description="Meeting del periodo che richiedono trascrizione, analisi o revisione."
             />
-            <div className="mt-4 flex flex-col gap-2">
+            <div className="mt-3 flex flex-col gap-2">
               {incompleteMeetings.slice(0, 6).map((meeting) => (
                 <button
                   key={meeting.id}
                   onClick={() => navigateTo('meeting', meeting.id)}
-                  className="rounded-lg border border-border-subtle bg-bg-surface px-3 py-2 text-left transition-colors hover:border-border-focus hover:bg-bg-hover"
+                  className="rounded-lg border border-border-subtle bg-bg-surface px-3 py-1.5 text-left transition-colors hover:border-border-focus hover:bg-bg-hover"
                 >
                   <div className="truncate text-xs font-semibold text-text-primary">{meetingTitle(meeting)}</div>
-                  <div className="mt-1 text-[11px] text-text-muted">
+                  <div className="mt-0.5 text-[11px] text-text-muted">
                     {!meeting.transcription ? 'Trascrizione mancante' : 'Insight da completare'}
                   </div>
                 </button>
@@ -266,7 +273,7 @@ export default function DashboardPage({ navigateTo }: DashboardPageProps) {
             </div>
           </section>
 
-          <section className="flex flex-col gap-3">
+          <section className="flex flex-col gap-3 rounded-xl border border-border-subtle bg-bg-surface/20 p-4 theme-risks">
             <SectionHeader
               icon={Sparkles}
               title="Rischi e blocker"

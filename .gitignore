@@ -168,3 +168,4 @@ test-out-2/recording.wav
 test-out-2/system.wav
 build_assets/native-capture-helper
 build_assets/ClosedRoomNativeCapture.app/Contents/MacOS/ClosedRoomNativeCapture
+update-uv-dependences-llm-local-server
