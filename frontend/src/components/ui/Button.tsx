@@ -14,13 +14,13 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         disabled={disabled || isLoading}
         className={cn(
-          'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all duration-150 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer',
+          'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all duration-200 active:scale-[0.96] ease-spring focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer',
           // Variants
           {
-            'bg-accent text-white hover:bg-accent-hover shadow-md shadow-accent/10 focus-visible:outline-accent': variant === 'primary',
-            'bg-bg-hover text-text-primary border border-border-subtle hover:border-border-focus focus-visible:outline-border-focus': variant === 'secondary',
+            'bg-gradient-to-b from-accent to-accent/90 text-white hover:from-accent-hover hover:to-accent shadow-[0_4px_12px_rgba(14,165,233,0.2),inset_0_1px_0px_rgba(255,255,255,0.15)] focus-visible:outline-accent': variant === 'primary',
+            'bg-bg-elevated text-text-primary border border-border-subtle hover:border-border-focus hover:bg-bg-hover shadow-[0_2px_8px_rgba(0,0,0,0.1),inset_0_1px_0px_rgba(255,255,255,0.05)] focus-visible:outline-border-focus': variant === 'secondary',
             'bg-transparent text-text-secondary hover:bg-bg-hover hover:text-text-primary focus-visible:outline-border-focus': variant === 'ghost',
-            'bg-danger/8 text-danger border border-danger hover:bg-danger/15 focus-visible:outline-danger': variant === 'danger',
+            'bg-danger/8 text-danger border border-danger/30 hover:bg-danger/15 focus-visible:outline-danger': variant === 'danger',
           },
           // Sizes
           {

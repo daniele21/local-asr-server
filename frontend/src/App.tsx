@@ -181,12 +181,13 @@ function MainApp() {
           onClick={() => navigateTo('home')}
           className="flex items-center gap-4.5 bg-transparent border-0 text-inherit text-left cursor-pointer p-0 select-none group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-8 focus-visible:outline-border-focus focus-visible:rounded-lg"
         >
-          <div className="w-11 h-11 bg-bg-elevated border border-border-subtle rounded-lg p-2 shadow-sm hover:border-accent-hover transition-all duration-200 flex items-center justify-center relative overflow-hidden">
-            <img src="/logo-dark.svg" alt="Logo" className="w-full h-full object-contain dark:block hidden" />
-            <img src="/logo-light.svg" alt="Logo" className="w-full h-full object-contain dark:hidden block" />
+          <div className="w-11 h-11 bg-bg-elevated border border-border-subtle rounded-xl p-2 shadow-[0_4px_12px_rgba(0,0,0,0.15),inset_0_1px_0px_rgba(255,255,255,0.1)] hover:border-accent-hover/60 hover:scale-105 transition-all duration-300 ease-spring flex items-center justify-center relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-tr from-accent/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+            <img src="/logo-dark.svg" alt="Logo" className="w-full h-full object-contain dark:block hidden relative z-10" />
+            <img src="/logo-light.svg" alt="Logo" className="w-full h-full object-contain dark:hidden block relative z-10" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-text-primary">
+            <h1 className="text-xl font-bold text-text-primary transition-colors duration-200 group-hover:text-accent-hover">
               ClosedRoom
             </h1>
             <p className="text-xs text-text-secondary mt-0.5">{t('header.subtitle')}</p>
@@ -194,7 +195,7 @@ function MainApp() {
         </button>
 
         {/* Navigation */}
-        <nav className="flex bg-bg-elevated border border-border-subtle rounded-lg p-1 gap-1 mx-auto xl:mx-0 w-full xl:w-auto overflow-x-auto select-none">
+        <nav className="flex bg-bg-elevated border border-border-subtle rounded-lg p-1 gap-1 mx-auto xl:mx-0 w-full xl:w-auto overflow-x-auto select-none shadow-[inset_0_1px_1px_rgba(255,255,255,0.03)]">
           {[
             { id: 'home', label: 'Oggi', icon: BarChart3 },
             { id: 'projects', label: t('nav.projects'), icon: FolderKanban },
@@ -204,9 +205,9 @@ function MainApp() {
             <button
               key={item.id}
               onClick={() => navigateTo(item.id)}
-              className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150 cursor-pointer whitespace-nowrap ${
+              className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 active:scale-95 ease-spring cursor-pointer whitespace-nowrap ${
                 activePage === item.id || (item.id === 'home' && activePage === 'meeting')
-                  ? 'bg-accent text-white shadow-md shadow-accent/15'
+                  ? 'bg-gradient-to-b from-accent to-accent/95 text-white shadow-md shadow-accent/15'
                   : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover'
               }`}
             >
