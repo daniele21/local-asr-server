@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BarChart3, CircleHelp, FolderKanban, Mic, Moon, Settings, Sparkles, Sun, Upload } from 'lucide-react';
+import { BarChart3, CircleHelp, FolderKanban, Mic, Moon, Settings, Sun } from 'lucide-react';
 import { I18nProvider, useTranslation } from './i18n/i18n';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { ApiClient } from './api/apiClient';
@@ -199,8 +199,6 @@ function MainApp() {
           {[
             { id: 'home', label: 'Oggi', icon: BarChart3 },
             { id: 'projects', label: t('nav.projects'), icon: FolderKanban },
-            { id: 'transcription', label: 'Importa', icon: Upload },
-            { id: 'analysis', label: 'Analisi avanzata', icon: Sparkles },
           ].map((item) => (
             <button
               key={item.id}

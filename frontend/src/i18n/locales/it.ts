@@ -1,6 +1,6 @@
 const it = {
   nav: {
-    home: 'Dashboard',
+    home: 'Oggi',
     projects: 'Progetti',
     recording: 'Registrazione',
     transcription: 'Trascrizione',
@@ -65,7 +65,7 @@ const it = {
     recentRecordings: 'Registrazioni del progetto'
   },
   dashboard: {
-    title: 'Dashboard',
+    title: 'Oggi',
     eyebrow: 'AUDIO INTELLIGENCE LOCALE',
     welcome: 'Benvenuto in ClosedRoom!',
     welcomeBack: 'Bentornato su ClosedRoom!',
@@ -411,7 +411,7 @@ const it = {
     analyzingStatus: 'Analisi in corso con il provider LLM...',
     resultTitle: 'Risultato dell\'Analisi',
     btnCopyMarkdown: 'Copia Markdown',
-    btnGoDashboard: 'Vai alla Dashboard',
+    btnGoDashboard: 'Vai a Oggi',
     successTitle: 'Analisi completata!',
     successBody: 'L\'analisi del testo è pronta. Puoi copiarla come file Markdown per condividerla.',
     selectSource: 'Seleziona la sorgente',

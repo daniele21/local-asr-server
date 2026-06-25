@@ -1,58 +1,66 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  AlertCircle,
-  CheckCircle2,
+  Activity,
+  AlertTriangle,
   Clock3,
   FileAudio,
-  FolderKanban,
   ListChecks,
   Mic,
   Search,
   Sparkles,
+  Target,
 } from 'lucide-react';
 import { ApiClient, Meeting } from '../api/apiClient';
-import { ANALYSIS_TYPE_LABELS } from '../api/config';
-import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
-import { formatProjectDate, getDurationSeconds } from '../utils/formatters';
+import { TimeRangeFilter } from '../components/workspace/TimeRangeFilter';
+import {
+  ActionChecklist,
+  AdvancedDetailsAccordion,
+  DecisionLog,
+  DigestPanel,
+  EmptyState,
+  MeetingCard,
+  RiskPanel,
+  SectionHeader,
+} from '../components/workspace/MeetingWorkspace';
+import {
+  TimeRangeState,
+  extractActionItems,
+  extractDecisions,
+  extractDigest,
+  extractRisks,
+  formatTimeRangeLabel,
+  isWithinTimeRange,
+  meetingTitle,
+  resolveTimeRange,
+  sortByNewest,
+  sourceFromMeeting,
+  uniqueInsightItems,
+} from '../utils/meetingInsights';
 import { useTranslation } from '../i18n/i18n';
 
 interface DashboardPageProps {
   navigateTo: (page: string, detail?: string | null) => void;
 }
 
-const statusCopy: Record<string, { label: string; variant: 'idle' | 'success' | 'warning' | 'info' }> = {
-  recording: { label: 'In registrazione', variant: 'warning' },
-  recorded: { label: 'Audio pronto', variant: 'idle' },
-  transcribed: { label: 'Trascritto', variant: 'info' },
-  analyzing: { label: 'Analisi in corso', variant: 'warning' },
-  ready: { label: 'Pronto', variant: 'success' },
-};
-
-function meetingTitle(meeting: Meeting): string {
-  return meeting.recording.title || `Meeting ${meeting.id.slice(0, 8)}`;
-}
-
-function sameDay(value: string | undefined, date: Date): boolean {
-  if (!value) return false;
-  const parsed = new Date(value);
-  return parsed.getFullYear() === date.getFullYear()
-    && parsed.getMonth() === date.getMonth()
-    && parsed.getDate() === date.getDate();
-}
+const HOME_RANGE_OPTIONS = [
+  { mode: 'today' as const, label: 'Oggi' },
+  { mode: 'last3' as const, label: 'Ultimi 3 giorni' },
+  { mode: 'week' as const, label: 'Settimana' },
+  { mode: 'custom' as const, label: 'Range custom' },
+];
 
 export default function DashboardPage({ navigateTo }: DashboardPageProps) {
   const { t, lang } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [query, setQuery] = useState('');
-
-  const locale = lang === 'it' ? 'it-IT' : 'en-US';
+  const [timeRange, setTimeRange] = useState<TimeRangeState>({ mode: 'today' });
 
   const load = async () => {
     try {
       setLoading(true);
-      const data = await ApiClient.listMeetings(80);
+      const data = await ApiClient.listMeetings(120);
       setMeetings(data.items || []);
     } catch (error) {
       console.error('Failed to load meetings:', error);
@@ -66,8 +74,10 @@ export default function DashboardPage({ navigateTo }: DashboardPageProps) {
     load();
   }, []);
 
-  const today = useMemo(() => new Date(), []);
-  const filteredMeetings = useMemo(() => {
+  const resolvedRange = useMemo(() => resolveTimeRange(timeRange), [timeRange]);
+  const rangeLabel = useMemo(() => formatTimeRangeLabel(timeRange, lang), [timeRange, lang]);
+
+  const searchedMeetings = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return meetings;
     return meetings.filter((meeting) => {
@@ -80,177 +90,205 @@ export default function DashboardPage({ navigateTo }: DashboardPageProps) {
     });
   }, [meetings, query]);
 
-  const todayMeetings = filteredMeetings.filter((meeting) => sameDay(meeting.created_at, today));
-  const backlogMeetings = filteredMeetings.filter((meeting) => meeting.status !== 'ready');
-  const readyCount = meetings.filter((meeting) => meeting.status === 'ready').length;
-  const actionCount = meetings.reduce((count, meeting) => {
-    const run = meeting.latest_analysis?.action_items;
-    const items = run?.result?.action_items;
-    return count + (Array.isArray(items) ? items.length : 0);
-  }, 0);
+  const periodMeetings = useMemo(
+    () => searchedMeetings.filter((meeting) => isWithinTimeRange(meeting.created_at, resolvedRange)),
+    [searchedMeetings, resolvedRange]
+  );
+
+  const sources = useMemo(() => periodMeetings.map(sourceFromMeeting), [periodMeetings]);
+  const actionItems = useMemo(
+    () => sortByNewest(uniqueInsightItems(sources.flatMap(extractActionItems))).filter((item) => !item.completed),
+    [sources]
+  );
+  const decisions = useMemo(
+    () => sortByNewest(uniqueInsightItems(sources.flatMap(extractDecisions))),
+    [sources]
+  );
+  const risks = useMemo(
+    () => sortByNewest(uniqueInsightItems(sources.flatMap(extractRisks))),
+    [sources]
+  );
+  const digestItems = useMemo(
+    () => sortByNewest(sources.map(extractDigest).filter((item): item is NonNullable<typeof item> => Boolean(item))),
+    [sources]
+  );
+
+  const incompleteMeetings = useMemo(
+    () => periodMeetings.filter((meeting) => meeting.status !== 'ready'),
+    [periodMeetings]
+  );
+  const transcribedCount = periodMeetings.filter((meeting) => Boolean(meeting.transcription)).length;
+  const analyzingCount = periodMeetings.filter((meeting) => meeting.status === 'analyzing' || meeting.jobs.some((job) => !['completed', 'failed', 'cancelled', 'interrupted'].includes(job.status))).length;
+  const readyCount = periodMeetings.filter((meeting) => meeting.status === 'ready').length;
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 gap-4">
-        <div className="w-10 h-10 border-4 border-accent border-t-transparent rounded-full animate-spin" />
-        <span className="text-text-secondary text-sm">{t('common.loading')}</span>
+      <div className="flex flex-col items-center justify-center gap-4 py-20">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-accent border-t-transparent" />
+        <span className="text-sm text-text-secondary">{t('common.loading')}</span>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <section className="flex flex-col lg:flex-row lg:items-end justify-between gap-5 border-b border-border-subtle pb-5">
-        <div className="min-w-0">
-          <span className="text-xs font-semibold text-accent uppercase tracking-widest">Oggi</span>
-          <h2 className="text-3xl font-semibold text-text-primary mt-1">Meeting workspace</h2>
-          <p className="text-sm text-text-secondary mt-2 max-w-2xl">
-            Registrazioni, trascrizioni e analisi sono raccolte per meeting. Parti da una nuova registrazione o riprendi una pipeline incompleta.
-          </p>
+      <section className="flex flex-col gap-5 border-b border-border-subtle pb-5">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <span className="text-xs font-semibold uppercase tracking-widest text-accent">{rangeLabel}</span>
+            <h2 className="mt-1 text-3xl font-semibold text-text-primary">Oggi</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-text-secondary">
+              Cosa è successo nei meeting selezionati e cosa richiede attenzione adesso.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => navigateTo('recording')}>
+              <Mic className="h-4 w-4" />
+              Registra meeting
+            </Button>
+            <Button variant="secondary" onClick={() => navigateTo('transcription')}>
+              <FileAudio className="h-4 w-4" />
+              Importa audio
+            </Button>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => navigateTo('recording')}>
-            <Mic className="w-4 h-4" />
-            Registra meeting
-          </Button>
-          <Button variant="secondary" onClick={() => navigateTo('transcription')}>
-            <FileAudio className="w-4 h-4" />
-            Importa audio
-          </Button>
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <TimeRangeFilter value={timeRange} options={HOME_RANGE_OPTIONS} onChange={setTimeRange} />
+          <label className="flex h-10 min-w-[260px] items-center gap-2 rounded-lg border border-border-subtle bg-bg-elevated px-3">
+            <Search className="h-4 w-4 text-text-muted" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Cerca meeting, progetto o testo"
+              className="min-w-0 flex-1 border-0 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
+            />
+          </label>
         </div>
       </section>
 
-      <section className="grid grid-cols-2 lg:grid-cols-4 gap-px border border-border-subtle rounded-lg overflow-hidden bg-border-subtle">
+      <section className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border-subtle bg-border-subtle lg:grid-cols-4">
         {[
-          { label: 'Meeting', value: meetings.length, icon: FileAudio },
-          { label: 'Pronti', value: readyCount, icon: CheckCircle2 },
-          { label: 'Da completare', value: backlogMeetings.length, icon: Clock3 },
-          { label: 'Azioni estratte', value: actionCount, icon: ListChecks },
+          { label: 'Meeting nel periodo', value: periodMeetings.length, icon: FileAudio },
+          { label: 'Da trascrivere', value: periodMeetings.length - transcribedCount, icon: Clock3 },
+          { label: 'Analisi in corso', value: analyzingCount, icon: Activity },
+          { label: 'Azioni aperte', value: actionItems.length, icon: ListChecks },
         ].map((item) => (
-          <div key={item.label} className="bg-bg-elevated px-4 py-3 flex items-center gap-3">
-            <item.icon className="w-4 h-4 text-text-muted" />
-            <div>
-              <div className="text-xl font-semibold text-text-primary">{item.value}</div>
-              <div className="text-[11px] uppercase tracking-wider text-text-muted">{item.label}</div>
-            </div>
+          <div key={item.label} className="bg-bg-elevated px-4 py-3">
+            <item.icon className="mb-2 h-4 w-4 text-text-muted" />
+            <div className="text-2xl font-semibold text-text-primary">{item.value}</div>
+            <div className="text-[11px] uppercase tracking-wider text-text-muted">{item.label}</div>
           </div>
         ))}
       </section>
 
-      <section className="flex flex-col xl:flex-row gap-6">
-        <div className="flex-1 min-w-0">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
-            <div>
-              <h3 className="text-base font-semibold text-text-primary">Meeting recenti</h3>
-              <p className="text-xs text-text-muted">Stato, output disponibili e prossima azione.</p>
-            </div>
-            <label className="flex items-center gap-2 bg-bg-elevated border border-border-subtle rounded-lg px-3 py-2 min-w-[240px]">
-              <Search className="w-4 h-4 text-text-muted" />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Cerca meeting"
-                className="bg-transparent border-0 outline-none text-sm text-text-primary placeholder:text-text-muted w-full"
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <main className="flex min-w-0 flex-col gap-6">
+          <section className="flex flex-col gap-3">
+            <SectionHeader
+              icon={FileAudio}
+              title="Meeting nel periodo"
+              description="Il filtro selezionato governa questa lista e tutti i blocchi della pagina."
+              tooltip="Default: solo i meeting di oggi. Estendi il periodo con i chip o un range custom."
+            />
+            {periodMeetings.length === 0 ? (
+              <EmptyState
+                icon={Mic}
+                title="Nessun meeting nel periodo"
+                description="Registra un meeting o importa un audio. I meeting fuori dal periodo restano nascosti finché non cambi filtro."
+                action={
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <Button onClick={() => navigateTo('recording')}>Registra meeting</Button>
+                    <Button variant="secondary" onClick={() => navigateTo('transcription')}>Importa audio</Button>
+                  </div>
+                }
               />
-            </label>
-          </div>
-
-          {filteredMeetings.length === 0 ? (
-            <div className="border border-dashed border-border-subtle rounded-lg px-5 py-10 text-center">
-              <Mic className="w-8 h-8 mx-auto text-text-muted mb-3" />
-              <h3 className="text-base font-semibold text-text-primary">Nessun meeting ancora</h3>
-              <p className="text-sm text-text-secondary mt-1">Registra o importa un audio per creare il primo workspace.</p>
-              <div className="mt-4 flex justify-center gap-2">
-                <Button onClick={() => navigateTo('recording')}>Registra meeting</Button>
-                <Button variant="secondary" onClick={() => navigateTo('transcription')}>Importa audio</Button>
-              </div>
-            </div>
-          ) : (
-            <div className="border border-border-subtle rounded-lg overflow-hidden">
-              {filteredMeetings.slice(0, 20).map((meeting) => {
-                const status = statusCopy[meeting.status] || { label: meeting.status, variant: 'idle' as const };
-                const analysisTypes = Object.keys(meeting.latest_analysis || {});
-                return (
-                  <button
+            ) : (
+              <div className="flex flex-col gap-3">
+                {periodMeetings.slice(0, 24).map((meeting) => (
+                  <MeetingCard
                     key={meeting.id}
-                    onClick={() => navigateTo('meeting', meeting.id)}
-                    className="w-full text-left grid grid-cols-1 lg:grid-cols-[minmax(0,1.5fr)_180px_220px] gap-3 px-4 py-3 bg-bg-elevated hover:bg-bg-hover border-b border-border-subtle last:border-b-0 transition-colors"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <strong className="text-sm text-text-primary truncate">{meetingTitle(meeting)}</strong>
-                        <Badge variant={status.variant}>{status.label}</Badge>
-                      </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-text-muted">
-                        <span>{formatProjectDate(meeting.created_at, lang)}</span>
-                        <span>{getDurationSeconds(meeting.recording) > 0 ? `${Math.round(getDurationSeconds(meeting.recording) / 60)} min` : 'Durata n/d'}</span>
-                        {meeting.project_name && (
-                          <span className="inline-flex items-center gap-1">
-                            <FolderKanban className="w-3 h-3" />
-                            {meeting.project_name}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-text-secondary">
-                      {meeting.transcription ? <CheckCircle2 className="w-4 h-4 text-success" /> : <AlertCircle className="w-4 h-4 text-warning" />}
-                      {meeting.transcription ? 'Trascrizione pronta' : 'Da trascrivere'}
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {analysisTypes.length === 0 ? (
-                        <span className="text-xs text-text-muted">Nessuna analisi</span>
-                      ) : (
-                        analysisTypes.slice(0, 4).map((type) => (
-                          <span key={type} className="text-[11px] px-2 py-1 rounded-md bg-bg-surface border border-border-subtle text-text-secondary">
-                            {ANALYSIS_TYPE_LABELS[type] || type}
-                          </span>
-                        ))
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                    meeting={meeting}
+                    lang={lang}
+                    onOpen={() => navigateTo('meeting', meeting.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
 
-        <aside className="xl:w-[320px] flex flex-col gap-5">
-          <section className="border border-border-subtle rounded-lg p-4 bg-bg-elevated">
-            <div className="flex items-center gap-2 mb-3">
-              <Clock3 className="w-4 h-4 text-text-muted" />
-              <h3 className="text-sm font-semibold text-text-primary">In corso</h3>
+          <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div className="flex flex-col gap-3">
+              <SectionHeader
+                icon={ListChecks}
+                title="Azioni aperte"
+                description="Task derivati dalle analisi action item già disponibili."
+                tooltip="Le azioni sono lette dagli ultimi risultati strutturati dei meeting nel periodo."
+              />
+              <ActionChecklist items={actionItems.slice(0, 8)} />
             </div>
-            <div className="flex flex-col gap-2">
-              {backlogMeetings.slice(0, 5).map((meeting) => (
+            <div className="flex flex-col gap-3">
+              <SectionHeader
+                icon={Target}
+                title="Decisioni recenti"
+                description="Decision log ordinato dai meeting più recenti del periodo."
+                tooltip="Non rilegge i transcript: usa l'ultimo output decisioni salvato per ciascun meeting."
+              />
+              <DecisionLog items={decisions.slice(0, 8)} />
+            </div>
+          </section>
+        </main>
+
+        <aside className="flex flex-col gap-5">
+          <DigestPanel items={digestItems} title="Digest del periodo" />
+
+          <section className="rounded-lg border border-border-subtle bg-bg-elevated p-4">
+            <SectionHeader
+              icon={AlertTriangle}
+              title="Da completare"
+              description="Meeting del periodo che richiedono trascrizione, analisi o revisione."
+            />
+            <div className="mt-4 flex flex-col gap-2">
+              {incompleteMeetings.slice(0, 6).map((meeting) => (
                 <button
                   key={meeting.id}
                   onClick={() => navigateTo('meeting', meeting.id)}
-                  className="text-left rounded-md px-3 py-2 hover:bg-bg-hover transition-colors"
+                  className="rounded-lg border border-border-subtle bg-bg-surface px-3 py-2 text-left transition-colors hover:border-border-focus hover:bg-bg-hover"
                 >
-                  <div className="text-xs font-semibold text-text-primary truncate">{meetingTitle(meeting)}</div>
-                  <div className="text-[11px] text-text-muted mt-0.5">{statusCopy[meeting.status]?.label || meeting.status}</div>
+                  <div className="truncate text-xs font-semibold text-text-primary">{meetingTitle(meeting)}</div>
+                  <div className="mt-1 text-[11px] text-text-muted">
+                    {!meeting.transcription ? 'Trascrizione mancante' : 'Insight da completare'}
+                  </div>
                 </button>
               ))}
-              {backlogMeetings.length === 0 && (
-                <p className="text-xs text-text-muted">Nessuna pipeline aperta.</p>
+              {incompleteMeetings.length === 0 && (
+                <p className="text-xs text-text-muted">Nessuna pipeline aperta nel periodo.</p>
               )}
             </div>
           </section>
 
-          <section className="border border-border-subtle rounded-lg p-4 bg-bg-elevated">
-            <div className="flex items-center gap-2 mb-3">
-              <Sparkles className="w-4 h-4 text-accent" />
-              <h3 className="text-sm font-semibold text-text-primary">Digest giornaliero</h3>
-            </div>
-            {todayMeetings.length === 0 ? (
-              <p className="text-xs text-text-muted">Nessun meeting registrato oggi.</p>
-            ) : (
-              <div className="flex flex-col gap-2 text-xs text-text-secondary">
-                <p>{todayMeetings.length} meeting nel giorno corrente ({today.toLocaleDateString(locale)}).</p>
-                <p>{todayMeetings.filter((meeting) => meeting.status === 'ready').length} già pronti per review.</p>
-              </div>
-            )}
+          <section className="flex flex-col gap-3">
+            <SectionHeader
+              icon={Sparkles}
+              title="Rischi e blocker"
+              description="Segnali aggregati dalle analisi rischi del periodo."
+            />
+            <RiskPanel items={risks.slice(0, 5)} />
           </section>
+
+          <AdvancedDetailsAccordion>
+            <dl className="grid grid-cols-[140px_minmax(0,1fr)] gap-2 text-xs">
+              <dt className="text-text-muted">Meeting caricati</dt>
+              <dd className="text-text-secondary">{meetings.length}</dd>
+              <dt className="text-text-muted">Meeting filtrati</dt>
+              <dd className="text-text-secondary">{periodMeetings.length}</dd>
+              <dt className="text-text-muted">Pronti</dt>
+              <dd className="text-text-secondary">{readyCount}</dd>
+              <dt className="text-text-muted">Job attivi</dt>
+              <dd className="text-text-secondary">{analyzingCount}</dd>
+              <dt className="text-text-muted">Range</dt>
+              <dd className="truncate text-text-secondary">{rangeLabel}</dd>
+            </dl>
+          </AdvancedDetailsAccordion>
         </aside>
       </section>
     </div>

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ApiClient, AudioIntelligence, ProjectItem, Recording } from '../api/apiClient';
+import { NEW_RECORDING_PROJECT_STORAGE_KEY } from '../api/config';
 import { useTranslation } from '../i18n/i18n';
 import { useToast } from '../context/ToastContext';
 import { useRecorder, openBrowserPopup } from '../hooks/useRecorder';
@@ -104,6 +105,14 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
         return t('recording.permissionMicUnknown');
     }
   };
+
+  useEffect(() => {
+    if (detailId) return;
+    const projectFromWorkspace = sessionStorage.getItem(NEW_RECORDING_PROJECT_STORAGE_KEY);
+    if (!projectFromWorkspace) return;
+    setProjectName(projectFromWorkspace);
+    sessionStorage.removeItem(NEW_RECORDING_PROJECT_STORAGE_KEY);
+  }, [detailId]);
   const screenCaptureStatusLabel = (status?: string) => {
     if (status === 'granted') return t('recording.permissionScreenGranted');
     if (status === 'required') return t('recording.permissionScreenRequired');
