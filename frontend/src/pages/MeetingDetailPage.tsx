@@ -40,7 +40,7 @@ function jobProgress(job: TranscriptionJob): string {
 }
 
 export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDetailPageProps) {
-  const { lang } = useTranslation();
+  const { t, lang } = useTranslation();
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -58,7 +58,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
         setSelectedAnalysisType(availableTypes[0]);
       }
     } catch (err: any) {
-      setError(err?.message || 'Meeting non disponibile.');
+      setError(err?.message || t('meeting.errorNotAvailable'));
     } finally {
       setLoading(false);
     }
@@ -88,7 +88,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
       await ApiClient.createTranscriptionJob(meeting.id, {});
       window.setTimeout(load, 700);
     } catch (err: any) {
-      setError(err?.message || 'Trascrizione non avviata.');
+      setError(err?.message || t('meeting.errorTranscriptionNotStarted'));
     } finally {
       setBusyAction(null);
     }
@@ -105,7 +105,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
       });
       window.setTimeout(load, 700);
     } catch (err: any) {
-      setError(err?.message || 'Pipeline non avviata.');
+      setError(err?.message || t('meeting.errorPipelineNotStarted'));
     } finally {
       setBusyAction(null);
     }
@@ -114,8 +114,8 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
   if (!recordingId) {
     return (
       <div className="border border-border-subtle rounded-lg p-8 text-center">
-        <p className="text-text-secondary">Seleziona un meeting da Oggi.</p>
-        <Button className="mt-4" variant="secondary" onClick={() => navigateTo('home')}>Torna a Oggi</Button>
+        <p className="text-text-secondary">{t('meeting.selectMeetingFromToday')}</p>
+        <Button className="mt-4" variant="secondary" onClick={() => navigateTo('home')}>{t('meeting.backToToday')}</Button>
       </div>
     );
   }
@@ -124,7 +124,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-3">
         <Loader2 className="w-8 h-8 animate-spin text-accent" />
-        <span className="text-sm text-text-secondary">Caricamento meeting...</span>
+        <span className="text-sm text-text-secondary">{t('meeting.loadingMeeting')}</span>
       </div>
     );
   }
@@ -132,8 +132,8 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
   if (!meeting) {
     return (
       <div className="border border-border-subtle rounded-lg p-8 text-center">
-        <p className="text-danger">{error || 'Meeting non trovato.'}</p>
-        <Button className="mt-4" variant="secondary" onClick={() => navigateTo('home')}>Torna a Oggi</Button>
+        <p className="text-danger">{error || t('meeting.errorNotFound')}</p>
+        <Button className="mt-4" variant="secondary" onClick={() => navigateTo('home')}>{t('meeting.backToToday')}</Button>
       </div>
     );
   }
@@ -156,11 +156,11 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
             className="inline-flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
-            Oggi
+            {t('dashboard.title')}
           </button>
           <Button variant="ghost" size="sm" onClick={load}>
             <RefreshCw className="w-4 h-4" />
-            Aggiorna
+            {t('meeting.btnUpdate')}
           </Button>
         </div>
 
@@ -175,7 +175,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
             <h2 className="text-3xl font-semibold text-text-primary truncate">{title}</h2>
             <div className="mt-2 flex flex-wrap gap-3 text-xs text-text-muted">
               <span>{formatProjectDate(meeting.created_at, lang)}</span>
-              <span>{recordingDuration > 0 ? `${Math.round(recordingDuration / 60)} min` : 'Durata n/d'}</span>
+              <span>{recordingDuration > 0 ? `${Math.round(recordingDuration / 60)} min` : t('projects.durationNotAvailable')}</span>
               <span>{formatBytes(meeting.recording.bytes_written || 0)}</span>
             </div>
           </div>
@@ -183,7 +183,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
             {!meeting.transcription && (
               <Button onClick={startTranscription} isLoading={busyAction === 'transcription'}>
                 <FileText className="w-4 h-4" />
-                Trascrivi
+                {t('meeting.btnTranscribe')}
               </Button>
             )}
             <Button
@@ -193,7 +193,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
               isLoading={busyAction === 'meeting_default'}
             >
               <Sparkles className="w-4 h-4" />
-              Analizza
+              {t('meeting.btnAnalyze')}
             </Button>
             <Button
               variant="secondary"
@@ -202,7 +202,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
               isLoading={busyAction === 'meeting_deep'}
             >
               <ListChecks className="w-4 h-4" />
-              Deep
+              {t('meeting.btnDeep')}
             </Button>
           </div>
         </div>
@@ -218,7 +218,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
         <section className="border border-warning/30 bg-warning/5 rounded-lg px-4 py-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
             <Clock3 className="w-4 h-4 text-warning" />
-            Elaborazione in corso
+            {t('meeting.processingTitle')}
           </div>
           <div className="mt-2 flex flex-col gap-1 text-xs text-text-secondary">
             {activeJobs.map((job) => <span key={job.id}>{job.type}: {jobProgress(job)}</span>)}
@@ -234,7 +234,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
           <div className="border border-border-subtle rounded-lg overflow-hidden">
             <div className="px-4 py-3 border-b border-border-subtle bg-bg-elevated flex items-center gap-2">
               <PlayCircle className="w-4 h-4 text-text-muted" />
-              <h3 className="text-sm font-semibold text-text-primary">Audio</h3>
+              <h3 className="text-sm font-semibold text-text-primary">{t('meeting.audioTitle')}</h3>
             </div>
             <div className="p-4 bg-bg-surface">
               <audio controls src={`/v1/recordings/${meeting.id}/audio`} className="w-full" />
@@ -245,7 +245,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
             <div className="px-4 py-3 border-b border-border-subtle bg-bg-elevated flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-accent" />
-                <h3 className="text-sm font-semibold text-text-primary">Analisi</h3>
+                <h3 className="text-sm font-semibold text-text-primary">{t('meeting.analysisTitle')}</h3>
               </div>
               <span className="text-xs text-text-muted">{meeting.analysis_runs.length} run</span>
             </div>
@@ -276,7 +276,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
               ) : (
                 <div className="text-center py-10">
                   <Sparkles className="w-8 h-8 mx-auto text-text-muted mb-3" />
-                  <p className="text-sm text-text-secondary">Nessuna analisi “{analysisLabel(selectedAnalysisType)}” disponibile.</p>
+                  <p className="text-sm text-text-secondary">{t('meeting.noAnalysisAvailable', { type: analysisLabel(selectedAnalysisType) })}</p>
                 </div>
               )}
             </div>
@@ -285,7 +285,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
           <div className="border border-border-subtle rounded-lg overflow-hidden">
             <div className="px-4 py-3 border-b border-border-subtle bg-bg-elevated flex items-center gap-2">
               <FileText className="w-4 h-4 text-text-muted" />
-              <h3 className="text-sm font-semibold text-text-primary">Transcript</h3>
+              <h3 className="text-sm font-semibold text-text-primary">{t('meeting.transcriptTitle')}</h3>
             </div>
             <div className="p-5 bg-bg-elevated max-h-[520px] overflow-auto">
               {meeting.transcription?.text ? (
@@ -293,7 +293,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
                   {meeting.transcription.text}
                 </pre>
               ) : (
-                <p className="text-sm text-text-muted">La trascrizione non è ancora disponibile.</p>
+                <p className="text-sm text-text-muted">{t('meeting.transcriptNotAvailable')}</p>
               )}
             </div>
           </div>
@@ -301,18 +301,18 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
 
         <aside className="flex flex-col gap-5">
           <section className="border border-border-subtle rounded-lg p-4 bg-bg-elevated">
-            <h3 className="text-sm font-semibold text-text-primary mb-3">Stato meeting</h3>
+            <h3 className="text-sm font-semibold text-text-primary mb-3">{t('meeting.statusTitle')}</h3>
             <div className="flex flex-col gap-3 text-xs text-text-secondary">
               <div className="flex items-center justify-between gap-3">
-                <span>Audio</span>
-                <Badge variant="success">Salvato</Badge>
+                <span>{t('meeting.audioTitle')}</span>
+                <Badge variant="success">{t('meeting.statusSaved')}</Badge>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span>Trascrizione</span>
-                <Badge variant={meeting.transcription ? 'success' : 'warning'}>{meeting.transcription ? 'Pronta' : 'Manca'}</Badge>
+                <span>{t('meeting.transcriptionLabel')}</span>
+                <Badge variant={meeting.transcription ? 'success' : 'warning'}>{meeting.transcription ? t('meeting.statusReady') : t('meeting.statusMissing')}</Badge>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span>Analisi</span>
+                <span>{t('meeting.analysisLabel')}</span>
                 <Badge variant={Object.keys(meeting.latest_analysis || {}).length > 0 ? 'success' : 'idle'}>
                   {Object.keys(meeting.latest_analysis || {}).length}
                 </Badge>
@@ -323,11 +323,11 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
           <section className="border border-border-subtle rounded-lg p-4 bg-bg-elevated">
             <div className="flex items-center gap-2 mb-3">
               <History className="w-4 h-4 text-text-muted" />
-              <h3 className="text-sm font-semibold text-text-primary">Storico run</h3>
+              <h3 className="text-sm font-semibold text-text-primary">{t('meeting.runHistoryTitle')}</h3>
             </div>
             <div className="flex flex-col gap-2 max-h-[340px] overflow-auto">
               {selectedHistory.length === 0 ? (
-                <p className="text-xs text-text-muted">Nessuna run per questo tipo.</p>
+                <p className="text-xs text-text-muted">{t('meeting.noRunForType')}</p>
               ) : (
                 selectedHistory.map((run) => (
                   <div key={run.id} className="rounded-md border border-border-subtle bg-bg-surface px-3 py-2">
@@ -348,11 +348,11 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
           </section>
 
           <section className="border border-border-subtle rounded-lg p-4 bg-bg-elevated">
-            <h3 className="text-sm font-semibold text-text-primary mb-3">Dettagli tecnici</h3>
+            <h3 className="text-sm font-semibold text-text-primary mb-3">{t('meeting.techDetailsTitle')}</h3>
             <dl className="grid grid-cols-[110px_minmax(0,1fr)] gap-2 text-xs">
               <dt className="text-text-muted">Recording ID</dt>
               <dd className="text-text-secondary truncate">{meeting.id}</dd>
-              <dt className="text-text-muted">Trascrizione</dt>
+              <dt className="text-text-muted">{t('meeting.transcriptionLabel')}</dt>
               <dd className="text-text-secondary truncate">{meeting.transcription?.id || '-'}</dd>
               <dt className="text-text-muted">Backend</dt>
               <dd className="text-text-secondary">{meeting.recording.capture_backend || '-'}</dd>

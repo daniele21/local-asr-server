@@ -14,7 +14,8 @@ import RecordingOverlayPage from './pages/RecordingOverlayPage';
 import MeetingDetailPage from './pages/MeetingDetailPage';
 import { Badge } from './components/ui/Badge';
 import { Tooltip } from './components/ui/Tooltip';
-import { TourOverlay, TourStep } from './features/tour/TourOverlay';
+import { TourOverlay } from './features/tour/TourOverlay';
+import { TOUR_STEPS, TourStepId, tourStepIndex } from './features/tour/tourSteps';
 
 function MainApp() {
   const { t, lang, setLang } = useTranslation();
@@ -26,8 +27,9 @@ function MainApp() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [helpOpen, setHelpOpen] = useState(false);
   const [routeDetail, setRouteDetail] = useState<string | null>(null);
-  const [tourStep, setTourStep] = useState<TourStep | null>(null);
+  const [tourStep, setTourStep] = useState<TourStepId | null>(null);
   const [tourReturnHash, setTourReturnHash] = useState('');
+  const demoMode = Boolean(tourStep);
 
   // Sync hash with activePage
   useEffect(() => {
@@ -84,17 +86,17 @@ function MainApp() {
 
   const startTour = () => {
     setTourReturnHash(window.location.hash || '#home');
-    setTourStep('transcription');
-    navigateTo('transcription');
+    const firstStep = TOUR_STEPS[0];
+    setTourStep(firstStep.id);
+    navigateTo(firstStep.route);
   };
 
   const advanceTour = () => {
-    if (tourStep === 'transcription') {
-      setTourStep('analysis');
-      navigateTo('analysis');
-    } else if (tourStep === 'analysis') {
-      setTourStep('complete');
-    }
+    if (!tourStep) return;
+    const nextStep = TOUR_STEPS[tourStepIndex(tourStep) + 1];
+    if (!nextStep) return;
+    setTourStep(nextStep.id);
+    navigateTo(nextStep.route);
   };
 
   const closeTour = () => {
@@ -121,6 +123,11 @@ function MainApp() {
   // Server health polling
   useEffect(() => {
     const checkHealth = async () => {
+      if (demoMode) {
+        setServerOnline(false);
+        setDefaultModel('');
+        return;
+      }
       try {
         const data = await ApiClient.health();
         setServerOnline(true);
@@ -133,7 +140,7 @@ function MainApp() {
     checkHealth();
     const interval = setInterval(checkHealth, HEALTH_CHECK_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, []);
+  }, [demoMode]);
 
   // Close help panel on outside click
   useEffect(() => {
@@ -150,21 +157,21 @@ function MainApp() {
   const renderPage = () => {
     switch (activePage) {
       case 'home':
-        return <DashboardPage navigateTo={navigateTo} />;
+        return <DashboardPage navigateTo={navigateTo} demoMode={demoMode} />;
       case 'meeting':
         return <MeetingDetailPage recordingId={routeDetail} navigateTo={navigateTo} />;
       case 'recording':
         return <RecordingPage detailId={routeDetail} navigateTo={navigateTo} />;
       case 'transcription':
-        return <TranscriptionPage detailPath={routeDetail} navigateTo={navigateTo} demoMode={tourStep === 'transcription'} />;
+        return <TranscriptionPage detailPath={routeDetail} navigateTo={navigateTo} demoMode={demoMode && activePage === 'transcription'} />;
       case 'projects':
-        return <ProjectsPage navigateTo={navigateTo} />;
+        return <ProjectsPage navigateTo={navigateTo} demoMode={demoMode} />;
       case 'analysis':
-        return <AnalysisPage detailId={routeDetail} navigateTo={navigateTo} demoMode={tourStep === 'analysis' || tourStep === 'complete'} />;
+        return <AnalysisPage detailId={routeDetail} navigateTo={navigateTo} demoMode={demoMode && activePage === 'analysis'} />;
       case 'settings':
         return <SettingsPage />;
       default:
-        return <DashboardPage navigateTo={navigateTo} />;
+        return <DashboardPage navigateTo={navigateTo} demoMode={demoMode} />;
     }
   };
 
@@ -197,7 +204,7 @@ function MainApp() {
         {/* Navigation */}
         <nav className="flex bg-bg-elevated border border-border-subtle rounded-lg p-1 gap-1 mx-auto xl:mx-0 w-full xl:w-auto overflow-x-auto select-none shadow-[inset_0_1px_1px_rgba(255,255,255,0.03)]">
           {[
-            { id: 'home', label: 'Oggi', icon: BarChart3 },
+            { id: 'home', label: t('nav.home'), icon: BarChart3 },
             { id: 'projects', label: t('nav.projects'), icon: FolderKanban },
           ].map((item) => (
             <button
@@ -222,7 +229,7 @@ function MainApp() {
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white shadow-md shadow-accent/10 hover:bg-accent-hover transition-colors"
           >
             <Mic className="w-4 h-4" />
-            <span className="hidden sm:inline">Registra meeting</span>
+            <span className="hidden sm:inline">{t('dashboard.btnRecord')}</span>
           </button>
 
           {/* Server status */}
@@ -337,7 +344,7 @@ function MainApp() {
       <footer className="border-t border-border-subtle pt-4 text-center text-[11px] text-text-muted mt-8 leading-relaxed select-none">
         <span dangerouslySetInnerHTML={{ __html: t('common.powerBy') }} />
       </footer>
-      {tourStep && <TourOverlay step={tourStep} onNext={advanceTour} onClose={closeTour} />}
+      {tourStep && <TourOverlay step={TOUR_STEPS[tourStepIndex(tourStep)]} onNext={advanceTour} onClose={closeTour} />}
     </div>
   );
 }

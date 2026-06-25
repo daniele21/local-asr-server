@@ -25,25 +25,17 @@ import { Tooltip } from '../ui/Tooltip';
 import { formatProjectDate, getDurationSeconds } from '../../utils/formatters';
 import { DigestItem, InsightItem, meetingTitle } from '../../utils/meetingInsights';
 import { cn } from '../../utils/cn';
-
-const statusCopy: Record<string, { label: string; variant: 'idle' | 'success' | 'warning' | 'info' | 'danger' }> = {
-  recording: { label: 'In registrazione', variant: 'warning' },
-  recorded: { label: 'Audio pronto', variant: 'idle' },
-  transcribed: { label: 'Trascritto', variant: 'info' },
-  analyzing: { label: 'Analisi in corso', variant: 'warning' },
-  ready: { label: 'Insight pronti', variant: 'success' },
-  failed: { label: 'Errore', variant: 'danger' },
-};
+import { useTranslation } from '../../i18n/i18n';
 
 function limitText(value: string, max = 150): string {
   if (value.length <= max) return value;
   return `${value.slice(0, max - 1).trim()}...`;
 }
 
-function actionLabel(meeting: Meeting): string {
-  if (!meeting.transcription) return 'Trascrivi';
-  if (Object.keys(meeting.latest_analysis || {}).length === 0) return 'Analizza';
-  return 'Apri insight';
+function actionLabel(meeting: Meeting, t: (key: string) => string): string {
+  if (!meeting.transcription) return t('workspace.actionTranscribe');
+  if (Object.keys(meeting.latest_analysis || {}).length === 0) return t('workspace.actionAnalyze');
+  return t('workspace.actionOpenInsights');
 }
 
 export function ExplainTooltip({ content }: { content: string }) {
@@ -109,19 +101,22 @@ export function EmptyState({
 
 export function AdvancedDetailsAccordion({
   children,
-  title = 'Dettagli avanzati',
-  description = 'Stato tecnico, run e riferimenti usati per ricostruire questa vista.',
+  title,
+  description,
 }: {
   children: ReactNode;
   title?: string;
   description?: string;
 }) {
+  const { t } = useTranslation();
+  const displayTitle = title || t('workspace.advancedTitle');
+  const displayDesc = description || t('workspace.advancedDesc');
   return (
     <details className="group rounded-lg border border-border-subtle bg-bg-elevated">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-text-primary">
         <span>
-          {title}
-          <span className="block text-xs font-normal text-text-muted">{description}</span>
+          {displayTitle}
+          <span className="block text-xs font-normal text-text-muted">{displayDesc}</span>
         </span>
         <ChevronDown className="h-4 w-4 text-text-muted transition-transform group-open:rotate-180" />
       </summary>
@@ -139,7 +134,16 @@ export function MeetingCard({
   lang: string;
   onOpen: () => void;
 }) {
-  const status = statusCopy[meeting.status] || { label: meeting.status, variant: 'idle' as const };
+  const { t } = useTranslation();
+  const statusMeta = {
+    recording: { label: t('workspace.statusRecording'), variant: 'warning' as const },
+    recorded: { label: t('workspace.statusRecorded'), variant: 'idle' as const },
+    transcribed: { label: t('workspace.statusTranscribed'), variant: 'info' as const },
+    analyzing: { label: t('workspace.statusAnalyzing'), variant: 'warning' as const },
+    ready: { label: t('workspace.statusReady'), variant: 'success' as const },
+    failed: { label: t('workspace.statusFailed'), variant: 'danger' as const },
+  }[meeting.status] || { label: meeting.status, variant: 'idle' as const };
+
   const duration = getDurationSeconds(meeting.recording);
   const analysisTypes = Object.keys(meeting.latest_analysis || {});
   return (
@@ -148,7 +152,7 @@ export function MeetingCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="truncate text-sm font-semibold text-text-primary">{meetingTitle(meeting)}</h3>
-            <Badge variant={status.variant}>{status.label}</Badge>
+            <Badge variant={statusMeta.variant}>{statusMeta.label}</Badge>
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs text-text-muted">
             <span className="inline-flex items-center gap-1">
@@ -157,7 +161,7 @@ export function MeetingCard({
             </span>
             <span className="inline-flex items-center gap-1">
               <Clock3 className="h-3.5 w-3.5" />
-              {duration > 0 ? `${Math.round(duration / 60)} min` : 'Durata n/d'}
+              {duration > 0 ? `${Math.round(duration / 60)} min` : t('projects.durationNotAvailable')}
             </span>
             {meeting.project_name && (
               <span className="inline-flex items-center gap-1">
@@ -172,12 +176,12 @@ export function MeetingCard({
             {meeting.transcription ? (
               <span className="inline-flex items-center gap-1 rounded-md border border-success/25 bg-success/10 px-2 py-1 text-[11px] text-success">
                 <CheckCircle2 className="h-3 w-3" />
-                Trascrizione
+                {t('workspace.transcriptionBadge')}
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 rounded-md border border-warning/25 bg-warning/10 px-2 py-1 text-[11px] text-warning">
                 <AlertTriangle className="h-3 w-3" />
-                Da trascrivere
+                {t('workspace.toTranscribeBadge')}
               </span>
             )}
             {analysisTypes.slice(0, 3).map((type) => (
@@ -187,7 +191,7 @@ export function MeetingCard({
             ))}
           </div>
           <Button size="sm" className="w-full lg:w-auto lg:px-4" variant={meeting.transcription ? 'primary' : 'secondary'} onClick={onOpen}>
-            {actionLabel(meeting)}
+            {actionLabel(meeting, t)}
           </Button>
         </div>
       </div>
@@ -197,15 +201,19 @@ export function MeetingCard({
 
 export function ActionChecklist({
   items,
-  emptyTitle = 'Nessuna azione aperta',
-  emptyDescription = "Le azioni compariranno qui dopo un'analisi con output strutturato.",
+  emptyTitle,
+  emptyDescription,
 }: {
   items: InsightItem[];
   emptyTitle?: string;
   emptyDescription?: string;
 }) {
+  const { t } = useTranslation();
+  const displayEmptyTitle = emptyTitle || t('workspace.emptyActionsTitle');
+  const displayEmptyDesc = emptyDescription || t('workspace.emptyActionsDesc');
+
   if (items.length === 0) {
-    return <EmptyState icon={ListChecks} title={emptyTitle} description={emptyDescription} className="py-7" />;
+    return <EmptyState icon={ListChecks} title={displayEmptyTitle} description={displayEmptyDesc} className="py-7" />;
   }
   return (
     <div className="flex flex-col divide-y divide-border-subtle rounded-lg border border-border-subtle bg-bg-elevated/45">
@@ -225,7 +233,7 @@ export function ActionChecklist({
             <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-text-muted">
               {item.projectName && <span>{item.projectName}</span>}
               {item.owner && <span>Owner: {item.owner}</span>}
-              {item.dueDate && <span>Scadenza: {item.dueDate}</span>}
+              {item.dueDate && <span>{t('workspace.dueDateLabel')} {item.dueDate}</span>}
               <span>{item.sourceTitle}</span>
             </div>
           </div>
@@ -237,15 +245,19 @@ export function ActionChecklist({
 
 export function DecisionLog({
   items,
-  emptyTitle = 'Nessuna decisione recente',
-  emptyDescription = 'Le decisioni estratte dalle analisi del periodo compariranno in questo log.',
+  emptyTitle,
+  emptyDescription,
 }: {
   items: InsightItem[];
   emptyTitle?: string;
   emptyDescription?: string;
 }) {
+  const { t, lang } = useTranslation();
+  const displayEmptyTitle = emptyTitle || t('workspace.emptyDecisionsTitle');
+  const displayEmptyDesc = emptyDescription || t('workspace.emptyDecisionsDesc');
+
   if (items.length === 0) {
-    return <EmptyState icon={MessageSquare} title={emptyTitle} description={emptyDescription} className="py-7" />;
+    return <EmptyState icon={MessageSquare} title={displayEmptyTitle} description={displayEmptyDesc} className="py-7" />;
   }
   return (
     <div className="flex flex-col gap-2">
@@ -254,7 +266,7 @@ export function DecisionLog({
           <p className="text-sm leading-snug text-text-primary">{limitText(item.text, 190)}</p>
           <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-text-muted">
             {item.projectName && <span>{item.projectName}</span>}
-            <span>{formatProjectDate(item.sourceDate, 'it')}</span>
+            <span>{formatProjectDate(item.sourceDate, lang)}</span>
             <span>{item.sourceTitle}</span>
           </div>
         </div>
@@ -265,15 +277,19 @@ export function DecisionLog({
 
 export function RiskPanel({
   items,
-  emptyTitle = 'Nessun rischio evidenziato',
-  emptyDescription = 'Rischi e blocker arrivano dalle analisi dedicate, senza rileggere trascrizioni grezze.',
+  emptyTitle,
+  emptyDescription,
 }: {
   items: InsightItem[];
   emptyTitle?: string;
   emptyDescription?: string;
 }) {
+  const { t } = useTranslation();
+  const displayEmptyTitle = emptyTitle || t('workspace.emptyRisksTitle');
+  const displayEmptyDesc = emptyDescription || t('workspace.emptyRisksDesc');
+
   if (items.length === 0) {
-    return <EmptyState icon={ShieldAlert} title={emptyTitle} description={emptyDescription} className="py-7" />;
+    return <EmptyState icon={ShieldAlert} title={displayEmptyTitle} description={displayEmptyDesc} className="py-7" />;
   }
   return (
     <div className="flex flex-col gap-2">
@@ -295,27 +311,30 @@ export function RiskPanel({
 
 export function DigestPanel({
   items,
-  title = 'Digest del periodo',
+  title,
   generatedAt,
 }: {
   items: DigestItem[];
   title?: string;
   generatedAt?: string | null;
 }) {
+  const { t, lang } = useTranslation();
+  const displayTitle = title || t('workspace.digestTitle');
+
   return (
     <section className="rounded-xl border border-border-subtle bg-bg-surface/20 p-4 theme-digest">
       <SectionHeader
         icon={Sparkles}
-        title={title}
-        description="Sintesi composta dagli insight già generati per i meeting filtrati."
-        tooltip="Usa i brief e gli aggiornamenti progetto già disponibili. Non rilancia analisi sui transcript."
+        title={displayTitle}
+        description={t('workspace.digestSubtitle')}
+        tooltip={t('workspace.digestTooltip')}
       />
-      {generatedAt && <p className="mt-1.5 text-[11px] text-text-muted">Situazione aggiornata: {generatedAt}</p>}
+      {generatedAt && <p className="mt-1.5 text-[11px] text-text-muted">{lang === 'it' ? 'Situazione aggiornata' : 'Situation updated'}: {generatedAt}</p>}
       {items.length === 0 ? (
         <EmptyState
           icon={Sparkles}
-          title="Digest non ancora disponibile"
-          description="Genera o completa le analisi dei meeting per alimentare questa sintesi."
+          title={t('workspace.digestEmptyTitle')}
+          description={t('workspace.digestEmptyDesc')}
           className="mt-3 py-6"
         />
       ) : (
@@ -343,7 +362,8 @@ export function ProjectDigestPanel({
   items: DigestItem[];
   generatedAt?: string | null;
 }) {
-  return <DigestPanel items={items} title="Situazione progetto" generatedAt={generatedAt} />;
+  const { t } = useTranslation();
+  return <DigestPanel items={items} title={t('workspace.projectDigestTitle')} generatedAt={generatedAt} />;
 }
 
 export function ProjectSidebar({
@@ -359,17 +379,18 @@ export function ProjectSidebar({
   onQueryChange: (value: string) => void;
   onSelect: (name: string) => void;
 }) {
+  const { t } = useTranslation();
   const filtered = projects.filter((project) => project.name.toLowerCase().includes(query.trim().toLowerCase()));
   return (
     <aside className="rounded-lg border border-border-subtle bg-bg-elevated p-3 lg:sticky lg:top-5 lg:max-h-[calc(100vh-8rem)] lg:overflow-auto">
       <div className="px-1 pb-3">
-        <h2 className="text-sm font-semibold text-text-primary">Progetti</h2>
+        <h2 className="text-sm font-semibold text-text-primary">{t('workspace.projectsTitle')}</h2>
         <label className="mt-3 flex h-9 items-center gap-2 rounded-lg border border-border-subtle bg-bg-surface px-3">
           <Search className="h-4 w-4 text-text-muted" />
           <input
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="Search progetto"
+            placeholder={t('workspace.searchPlaceholder')}
             className="min-w-0 flex-1 border-0 bg-transparent text-xs text-text-primary outline-none placeholder:text-text-muted"
           />
         </label>
@@ -413,13 +434,14 @@ export function ProjectStatusPanel({
   decisionCount: number;
   riskCount: number;
 }) {
+  const { t } = useTranslation();
   const stats = [
-    { label: 'Meeting nel range', value: meetingCount, icon: FileAudio, color: 'text-accent', bgColor: 'bg-accent/10 border-accent/20' },
-    { label: 'Trascritti', value: transcribedCount, icon: CheckCircle2, color: 'text-info', bgColor: 'bg-info/10 border-info/20' },
-    { label: 'Con insight', value: readyCount, icon: Sparkles, color: 'text-accent', bgColor: 'bg-accent/10 border-accent/20' },
-    { label: 'Azioni aperte', value: actionCount, icon: ListChecks, color: 'text-success', bgColor: 'bg-success/10 border-success/20' },
-    { label: 'Decisioni', value: decisionCount, icon: Target, color: 'text-info', bgColor: 'bg-info/10 border-info/20' },
-    { label: 'Rischi', value: riskCount, icon: ShieldAlert, color: 'text-warning', bgColor: 'bg-warning/10 border-warning/20' },
+    { label: t('workspace.statMeetings'), value: meetingCount, icon: FileAudio, color: 'text-accent', bgColor: 'bg-accent/10 border-accent/20' },
+    { label: t('workspace.statTranscribed'), value: transcribedCount, icon: CheckCircle2, color: 'text-info', bgColor: 'bg-info/10 border-info/20' },
+    { label: t('workspace.statWithInsights'), value: readyCount, icon: Sparkles, color: 'text-accent', bgColor: 'bg-accent/10 border-accent/20' },
+    { label: t('workspace.statOpenActions'), value: actionCount, icon: ListChecks, color: 'text-success', bgColor: 'bg-success/10 border-success/20' },
+    { label: t('workspace.statDecisions'), value: decisionCount, icon: Target, color: 'text-info', bgColor: 'bg-info/10 border-info/20' },
+    { label: t('workspace.statRisks'), value: riskCount, icon: ShieldAlert, color: 'text-warning', bgColor: 'bg-warning/10 border-warning/20' },
   ];
   return (
     <section className="grid grid-cols-2 gap-3 lg:grid-cols-3">
@@ -450,12 +472,13 @@ export function AnalysisCTAButton({
   disabled?: boolean;
   isGenerated?: boolean;
 }) {
+  const { t } = useTranslation();
   return (
-    <Tooltip content="Compone una situazione progetto dagli insight già estratti dai meeting del range.">
+    <Tooltip content={t('workspace.digestCtaTooltip')}>
       <span>
         <Button size="sm" onClick={onClick} disabled={disabled}>
           <Sparkles className="h-4 w-4" />
-          {isGenerated ? 'Aggiorna situazione' : 'Genera situazione progetto'}
+          {isGenerated ? t('workspace.digestCtaUpdate') : t('workspace.digestCtaGenerate')}
         </Button>
       </span>
     </Tooltip>

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { ApiClient, Project, ProjectItem, Recording } from '../api/apiClient';
 import { NEW_RECORDING_PROJECT_STORAGE_KEY } from '../api/config';
+import { getDemoProjects } from '../features/demo/demoData';
 import { useTranslation } from '../i18n/i18n';
 import { useToast } from '../context/ToastContext';
 import { Badge } from '../components/ui/Badge';
@@ -54,14 +55,10 @@ import { cn } from '../utils/cn';
 
 interface ProjectsPageProps {
   navigateTo: (page: string, detail?: string | null) => void;
+  demoMode?: boolean;
 }
 
-const PROJECT_RANGE_OPTIONS = [
-  { mode: 'last7' as const, label: '7g' },
-  { mode: 'last30' as const, label: '30g' },
-  { mode: 'all' as const, label: 'Tutto' },
-  { mode: 'custom' as const, label: 'Custom' },
-];
+
 
 const ACTION_SCOPE_OPTIONS = [
   { value: 'week', label: 'Settimana' },
@@ -71,7 +68,7 @@ const ACTION_SCOPE_OPTIONS = [
 
 type ActionScope = typeof ACTION_SCOPE_OPTIONS[number]['value'];
 
-export default function ProjectsPage({ navigateTo }: ProjectsPageProps) {
+export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsPageProps) {
   const { t, lang } = useTranslation();
   const { showToast } = useToast();
 
@@ -88,13 +85,36 @@ export default function ProjectsPage({ navigateTo }: ProjectsPageProps) {
   const [activeRecordingForProject, setActiveRecordingForProject] = useState<Recording | null>(null);
   const [existingProjectsList, setExistingProjectsList] = useState<string[]>([]);
 
+  const projectRangeOptions = useMemo(() => [
+    { mode: 'last7' as const, label: '7g' },
+    { mode: 'last30' as const, label: '30g' },
+    { mode: 'all' as const, label: lang === 'it' ? 'Tutto' : 'All' },
+    { mode: 'custom' as const, label: lang === 'it' ? 'Custom' : 'Custom' },
+  ], [lang]);
+
+  const actionScopeOptions = useMemo(() => [
+    { value: 'week' as const, label: lang === 'it' ? 'Settimana' : 'Week' },
+    { value: 'month' as const, label: lang === 'it' ? 'Mese' : 'Month' },
+    { value: 'all' as const, label: lang === 'it' ? 'Tutte' : 'All' },
+  ], [lang]);
+
   const loadProjects = async () => {
     try {
       setLoading(true);
+      if (demoMode) {
+        setProjects(getDemoProjects(lang));
+        setSelectedProjectName('ClosedRoom Beta Launch');
+        return;
+      }
       const data = await ApiClient.listProjects();
       setProjects(data.items || []);
     } catch (err: any) {
-      showToast(err.message || 'Errore nel caricamento dei progetti', 'error');
+      if (demoMode) {
+        setProjects(getDemoProjects(lang));
+        setSelectedProjectName('ClosedRoom Beta Launch');
+        return;
+      }
+      showToast(err.message || t('projects.loading') || 'Errore', 'error');
     } finally {
       setLoading(false);
     }
@@ -102,7 +122,7 @@ export default function ProjectsPage({ navigateTo }: ProjectsPageProps) {
 
   useEffect(() => {
     loadProjects();
-  }, []);
+  }, [demoMode, lang]);
 
   useEffect(() => {
     if (projects.length === 0) {
@@ -164,11 +184,13 @@ export default function ProjectsPage({ navigateTo }: ProjectsPageProps) {
   );
 
   const handleRenameClick = (recording: Recording) => {
+    if (demoMode) return;
     setEditingRecordingId(recording.id);
     setEditTitleValue(recording.title);
   };
 
   const handleSaveRename = async (recording: Recording) => {
+    if (demoMode) return;
     const title = editTitleValue.trim();
     if (!title) {
       showToast(t('transcription.titleEmptyError'), 'error');
@@ -185,6 +207,10 @@ export default function ProjectsPage({ navigateTo }: ProjectsPageProps) {
   };
 
   const handleAssignProject = async (recording: Recording) => {
+    if (demoMode) {
+      showToast(t('dashboard.toastDemoNoModify'), 'info');
+      return;
+    }
     let list: string[] = [];
     try {
       const projsData = await ApiClient.listProjects();
@@ -199,6 +225,7 @@ export default function ProjectsPage({ navigateTo }: ProjectsPageProps) {
   };
 
   const handleConfirmProject = async (projectName: string) => {
+    if (demoMode) return;
     if (!activeRecordingForProject) return;
     try {
       await ApiClient.updateRecording(activeRecordingForProject.id, { project_name: projectName });
@@ -212,6 +239,10 @@ export default function ProjectsPage({ navigateTo }: ProjectsPageProps) {
   };
 
   const handleNewMeetingForProject = () => {
+    if (demoMode) {
+      showToast(t('dashboard.toastDemoNoRecord'), 'info');
+      return;
+    }
     if (selectedProject && !selectedProject.is_unassigned) {
       sessionStorage.setItem(NEW_RECORDING_PROJECT_STORAGE_KEY, selectedProject.name);
     }
@@ -227,8 +258,8 @@ export default function ProjectsPage({ navigateTo }: ProjectsPageProps) {
     const insightCount = digestItems.length + actionItemsAll.length + decisions.length + risks.length;
     showToast(
       insightCount > 0
-        ? 'Situazione progetto composta dagli insight disponibili.'
-        : 'Nessun insight strutturato disponibile nel range selezionato.',
+        ? t('projects.toastDigestSuccess')
+        : t('projects.toastDigestEmpty'),
       insightCount > 0 ? 'success' : 'info'
     );
   };
@@ -247,8 +278,8 @@ export default function ProjectsPage({ navigateTo }: ProjectsPageProps) {
       <EmptyState
         icon={FolderKanban}
         title={t('projects.empty')}
-        description="Assegna un progetto a un meeting o crea una nuova registrazione per iniziare."
-        action={<Button onClick={() => navigateTo('recording')}>Registra meeting</Button>}
+        description={lang === 'it' ? 'Assegna un progetto a un meeting o crea una nuova registrazione per iniziare.' : 'Assign a project to a meeting or create a new recording to start.'}
+        action={<Button onClick={() => navigateTo('recording')}>{lang === 'it' ? 'Registra meeting' : 'Record meeting'}</Button>}
       />
     );
   }
@@ -259,38 +290,44 @@ export default function ProjectsPage({ navigateTo }: ProjectsPageProps) {
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-      <ProjectSidebar
-        projects={projects}
-        selectedName={selectedProject.name}
-        query={sidebarQuery}
-        onQueryChange={setSidebarQuery}
-        onSelect={setSelectedProjectName}
-      />
+      <div data-tour="project-sidebar">
+        <ProjectSidebar
+          projects={projects}
+          selectedName={selectedProject.name}
+          query={sidebarQuery}
+          onQueryChange={setSidebarQuery}
+          onSelect={setSelectedProjectName}
+        />
+      </div>
 
       <main className="flex min-w-0 flex-col gap-6">
         <section className="flex flex-col gap-5 border-b border-border-subtle pb-5">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div className="min-w-0">
-              <span className="text-xs font-semibold uppercase tracking-widest text-accent">Progetto</span>
+              <span className="text-xs font-semibold uppercase tracking-widest text-accent">{t('projects.projectLabel')}</span>
               <h2 className="mt-1 truncate text-3xl font-semibold text-text-primary">{selectedProject.name}</h2>
               <p className="mt-2 max-w-2xl text-sm leading-relaxed text-text-secondary">
-                Stato, azioni, decisioni e rischi derivati dagli insight già generati sui meeting collegati.
+                {lang === 'it' 
+                  ? 'Stato, azioni, decisioni e rischi derivati dagli insight già generati sui meeting collegati.' 
+                  : 'Status, actions, decisions, and risks derived from already generated meeting insights.'}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" onClick={handleNewMeetingForProject}>
+              <Button variant="secondary" onClick={handleNewMeetingForProject} disabled={demoMode}>
                 <Mic className="h-4 w-4" />
-                Nuovo meeting in questo progetto
+                {t('projects.btnNewMeeting')}
               </Button>
-              <AnalysisCTAButton
-                onClick={handleGenerateProjectSituation}
-                disabled={periodItems.length === 0}
-                isGenerated={Boolean(projectDigestGeneratedAt)}
-              />
+              <span data-tour="project-situation">
+                <AnalysisCTAButton
+                  onClick={handleGenerateProjectSituation}
+                  disabled={periodItems.length === 0}
+                  isGenerated={Boolean(projectDigestGeneratedAt)}
+                />
+              </span>
             </div>
           </div>
           <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-            <TimeRangeFilter value={projectRange} options={PROJECT_RANGE_OPTIONS} onChange={setProjectRange} />
+            <TimeRangeFilter value={projectRange} options={projectRangeOptions} onChange={setProjectRange} />
             <div className="inline-flex items-center gap-2 rounded-lg border border-border-subtle bg-bg-elevated px-3 py-2 text-xs text-text-muted">
               <CalendarDays className="h-4 w-4" />
               {projectRangeLabel}
@@ -298,12 +335,12 @@ export default function ProjectsPage({ navigateTo }: ProjectsPageProps) {
           </div>
         </section>
 
-        <section className="flex flex-col gap-3">
+        <section className="flex flex-col gap-3" data-tour="project-status">
           <SectionHeader
             icon={Sparkles}
-            title="Stato progetto"
-            description={latestProjectUpdate || 'Sintesi basata sulle ultime analisi disponibili, non sulle trascrizioni grezze.'}
-            tooltip="L'MVP compone lo stato da latest_analysis e analysis_runs dei meeting nel range."
+            title={t('projects.statusTitle')}
+            description={latestProjectUpdate || t('projects.statusDesc')}
+            tooltip={t('projects.statusTooltip')}
           />
           <ProjectStatusPanel
             meetingCount={periodItems.length}
@@ -317,14 +354,14 @@ export default function ProjectsPage({ navigateTo }: ProjectsPageProps) {
 
         <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="flex min-w-0 flex-col gap-6">
-            <section className="flex flex-col gap-3">
+            <section className="flex flex-col gap-3" data-tour="project-actions">
               <SectionHeader
                 icon={ListChecks}
-                title="Ultime azioni"
-                description="Checklist operativa estratta dalle analisi action item del progetto."
+                title={t('projects.actionsTitle')}
+                description={t('projects.actionsDesc')}
                 action={
                   <div className="flex rounded-lg border border-border-subtle bg-bg-elevated p-1">
-                    {ACTION_SCOPE_OPTIONS.map((option) => (
+                    {actionScopeOptions.map((option) => (
                       <button
                         key={option.value}
                         type="button"
@@ -349,16 +386,16 @@ export default function ProjectsPage({ navigateTo }: ProjectsPageProps) {
               <div className="flex flex-col gap-3">
                 <SectionHeader
                   icon={Target}
-                  title="Decisioni recenti"
-                  description="Decision log ordinato per data dei meeting collegati."
+                  title={t('projects.decisionsTitle')}
+                  description={t('projects.decisionsDesc')}
                 />
                 <DecisionLog items={decisions.slice(0, 10)} />
               </div>
               <div className="flex flex-col gap-3">
                 <SectionHeader
                   icon={ShieldAlert}
-                  title="Rischi e blocchi"
-                  description="Rischi, dipendenze e prossimi passi emersi dalle analisi."
+                  title={t('projects.risksTitle')}
+                  description={t('projects.risksDesc')}
                 />
                 <RiskPanel items={risks.slice(0, 10)} />
               </div>
@@ -367,15 +404,15 @@ export default function ProjectsPage({ navigateTo }: ProjectsPageProps) {
             <section className="flex flex-col gap-3">
               <SectionHeader
                 icon={History}
-                title="Timeline meeting"
-                description="Meeting collegati al progetto nel range selezionato."
+                title={t('projects.timelineTitle')}
+                description={t('projects.timelineDesc')}
               />
               {periodItems.length === 0 ? (
                 <EmptyState
                   icon={FileAudio}
-                  title="Nessun meeting nel range"
-                  description="Allarga il periodo o registra un nuovo meeting collegato a questo progetto."
-                  action={<Button onClick={handleNewMeetingForProject}>Nuovo meeting</Button>}
+                  title={t('projects.emptyTimelineTitle')}
+                  description={t('projects.emptyTimelineDesc')}
+                  action={<Button onClick={handleNewMeetingForProject} disabled={demoMode}>{t('projects.btnNewMeetingShort')}</Button>}
                 />
               ) : (
                 <div className="overflow-hidden rounded-lg border border-border-subtle bg-bg-elevated">
@@ -393,6 +430,7 @@ export default function ProjectsPage({ navigateTo }: ProjectsPageProps) {
                       onAssignProject={() => handleAssignProject(item.recording)}
                       onOpen={() => navigateTo('meeting', item.recording.id)}
                       onTranscribe={() => navigateTo('transcription', `file-${item.recording.id}`)}
+                      demoMode={demoMode}
                     />
                   ))}
                 </div>
@@ -409,8 +447,8 @@ export default function ProjectsPage({ navigateTo }: ProjectsPageProps) {
             <section className="rounded-lg border border-border-subtle bg-bg-elevated p-4">
               <SectionHeader
                 icon={MoreHorizontal}
-                title="Analisi progetto"
-                description="Azioni disponibili sul progetto selezionato."
+                title={t('projects.analysisTitle')}
+                description={t('projects.analysisDesc')}
               />
               <div className="mt-4 flex flex-col gap-2">
                 <AnalysisCTAButton
@@ -420,22 +458,22 @@ export default function ProjectsPage({ navigateTo }: ProjectsPageProps) {
                 />
                 <Button variant="secondary" size="sm" onClick={() => navigateTo('analysis')}>
                   <Sparkles className="h-4 w-4" />
-                  Domanda custom sul progetto
+                  {t('projects.btnCustomQuestion')}
                 </Button>
               </div>
             </section>
 
             <AdvancedDetailsAccordion>
               <dl className="grid grid-cols-[120px_minmax(0,1fr)] gap-2 text-xs">
-                <dt className="text-text-muted">Meeting totali</dt>
+                <dt className="text-text-muted">{t('projects.techTotalMeetings')}</dt>
                 <dd className="text-text-secondary">{selectedProject.items.length}</dd>
-                <dt className="text-text-muted">Nel range</dt>
+                <dt className="text-text-muted">{t('projects.techInRange')}</dt>
                 <dd className="text-text-secondary">{periodItems.length}</dd>
-                <dt className="text-text-muted">Analysis run</dt>
+                <dt className="text-text-muted">{t('projects.techAnalysisRuns')}</dt>
                 <dd className="text-text-secondary">
                   {periodItems.reduce((count, item) => count + (item.analysis_runs?.length || 0), 0)}
                 </dd>
-                <dt className="text-text-muted">Range</dt>
+                <dt className="text-text-muted">{t('projects.techRange')}</dt>
                 <dd className="truncate text-text-secondary">{projectRangeLabel}</dd>
               </dl>
             </AdvancedDetailsAccordion>
@@ -469,6 +507,7 @@ function ProjectTimelineItem({
   onAssignProject,
   onOpen,
   onTranscribe,
+  demoMode,
 }: {
   item: ProjectItem;
   lang: string;
@@ -481,13 +520,14 @@ function ProjectTimelineItem({
   onAssignProject: () => void;
   onOpen: () => void;
   onTranscribe: () => void;
+  demoMode?: boolean;
 }) {
   const status = projectItemStatus(item);
   const duration = getDurationSeconds(item.recording);
   const statusMeta = {
-    recorded: { label: 'Da trascrivere', variant: 'warning' as const },
-    transcribed: { label: 'Da analizzare', variant: 'info' as const },
-    ready: { label: 'Insight pronti', variant: 'success' as const },
+    recorded: { label: lang === 'it' ? 'Da trascrivere' : 'To transcribe', variant: 'warning' as const },
+    transcribed: { label: lang === 'it' ? 'Da analizzare' : 'To analyze', variant: 'info' as const },
+    ready: { label: lang === 'it' ? 'Insight pronti' : 'Insights ready', variant: 'success' as const },
   }[status];
 
   return (
@@ -503,8 +543,8 @@ function ProjectTimelineItem({
               className="min-w-0 rounded-lg border border-border-focus bg-bg-surface px-3 py-2 text-sm text-text-primary outline-none"
             />
             <div className="flex gap-2">
-              <Button size="sm" onClick={onSaveRename}>Salva</Button>
-              <Button size="sm" variant="ghost" onClick={onCancelRename}>Annulla</Button>
+              <Button size="sm" onClick={onSaveRename}>{lang === 'it' ? 'Salva' : 'Save'}</Button>
+              <Button size="sm" variant="ghost" onClick={onCancelRename}>{lang === 'it' ? 'Annulla' : 'Cancel'}</Button>
             </div>
           </div>
         ) : (
@@ -513,8 +553,9 @@ function ProjectTimelineItem({
             <button
               type="button"
               onClick={onRename}
+              disabled={demoMode}
               className="text-text-muted transition-colors hover:text-text-primary"
-              aria-label="Rinomina meeting"
+              aria-label={lang === 'it' ? 'Rinomina meeting' : 'Rename meeting'}
             >
               <Edit3 className="h-3.5 w-3.5" />
             </button>
@@ -523,7 +564,7 @@ function ProjectTimelineItem({
         <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-text-muted">
           <span>{formatProjectDate(item.recording.created_at, lang)}</span>
           <span>{formatDuration(duration, (key, options) => {
-            if (key === 'recording.durationNotAvailable') return 'Durata n/d';
+            if (key === 'recording.durationNotAvailable') return lang === 'it' ? 'Durata n/d' : 'Duration n/a';
             if (key === 'recording.durationFormat') return `${options.mins}m ${options.secs}s`;
             return key;
           })}</span>
@@ -537,16 +578,18 @@ function ProjectTimelineItem({
       </div>
       <div className="flex flex-wrap gap-2 lg:justify-end">
         <Button size="sm" onClick={onOpen}>
-          Apri
+          {lang === 'it' ? 'Apri' : 'Open'}
         </Button>
-        {!item.transcription && (
+        {!item.transcription && !demoMode && (
           <Button size="sm" variant="secondary" onClick={onTranscribe}>
-            Trascrivi
+            {lang === 'it' ? 'Trascrivi' : 'Transcribe'}
           </Button>
         )}
-        <Button size="sm" variant="ghost" onClick={onAssignProject}>
-          Progetto
-        </Button>
+        {!demoMode && (
+          <Button size="sm" variant="ghost" onClick={onAssignProject}>
+            {lang === 'it' ? 'Progetto' : 'Project'}
+          </Button>
+        )}
       </div>
     </div>
   );
