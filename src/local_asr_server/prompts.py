@@ -32,11 +32,11 @@ DEFAULT_PROMPTS: dict[str, dict[str, str]] = {
 }
 
 
-def load_prompts() -> dict[str, dict[str, str]]:
+def load_prompts(prompts_file: Path | None = None) -> dict[str, dict[str, str]]:
     """
     Load prompt templates from disk, merging with defaults for missing keys.
     """
-    prompts_file = get_prompts_file()
+    prompts_file = prompts_file or get_prompts_file()
     if not prompts_file.exists():
         return DEFAULT_PROMPTS.copy()
     try:
@@ -54,11 +54,11 @@ def load_prompts() -> dict[str, dict[str, str]]:
         return DEFAULT_PROMPTS.copy()
 
 
-def save_prompts(prompts: dict[str, dict[str, str]]) -> None:
+def save_prompts(prompts: dict[str, dict[str, str]], prompts_file: Path | None = None) -> None:
     """
     Persist custom prompt templates to disk atomically.
     """
-    prompts_file = get_prompts_file()
+    prompts_file = prompts_file or get_prompts_file()
     prompts_file.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary_path = tempfile.mkstemp(prefix=f".{prompts_file.name}.", suffix=".tmp", dir=prompts_file.parent)
     try:

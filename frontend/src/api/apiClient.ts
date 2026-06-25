@@ -146,6 +146,28 @@ export interface AnalysisJobCreated {
   status: string;
 }
 
+export interface AnalysisPipelineCreated {
+  pipeline_run_id: string;
+  pipeline_id: string;
+  status: string;
+  jobs: AnalysisJobCreated[];
+}
+
+export interface AnalysisTemplate {
+  id: string;
+  analysis_type: string;
+  label: string;
+  description: string;
+  version: string;
+}
+
+export interface AnalysisPipeline {
+  id: string;
+  label: string;
+  description: string;
+  template_ids: string[];
+}
+
 export interface AnalysisRun {
   id: string;
   job_id?: string | null;
@@ -153,6 +175,10 @@ export interface AnalysisRun {
   scope_id: string;
   transcription_id?: string | null;
   recording_id?: string | null;
+  analysis_type: string;
+  template_id?: string | null;
+  template_version?: string | null;
+  pipeline_run_id?: string | null;
   provider: string;
   model?: string | null;
   temperature?: number | null;
@@ -166,9 +192,26 @@ export interface AnalysisRun {
   input_hash: string;
   status: string;
   result?: any;
+  result_markdown?: string | null;
+  source_ids?: string[];
+  period_start?: string | null;
+  period_end?: string | null;
   error?: string | null;
   created_at: number;
   completed_at?: number | null;
+}
+
+export interface Meeting {
+  id: string;
+  recording: Recording;
+  transcription?: Transcription | null;
+  analysis_runs: AnalysisRun[];
+  latest_analysis: Record<string, AnalysisRun>;
+  jobs: TranscriptionJob[];
+  status: 'recording' | 'recorded' | 'transcribed' | 'analyzing' | 'ready' | string;
+  project_name: string;
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface RuntimeService {
@@ -194,6 +237,7 @@ export interface ProjectItem {
   recording: Recording;
   transcription: any;
   analysis: any;
+  analysis_runs?: AnalysisRun[];
 }
 
 export interface Project {
@@ -312,6 +356,8 @@ export interface Settings {
   local_llm_ctx_size?: number | null;
   local_llm_startup_timeout?: number | null;
   local_llm_llama_server_bin?: string;
+  meeting_auto_analysis?: boolean;
+  meeting_default_pipeline?: string;
   default_model: string;
   default_language: string;
   default_task: string;
@@ -615,7 +661,7 @@ export const ApiClient = {
     })).json();
   },
 
-  async createAnalysisJob(payload: { transcription_id?: string; recording_id?: string; text?: string; gemini_api_key?: string; llm_provider?: string; audio_task?: string; question?: string; prompt?: string }): Promise<AnalysisJobCreated> {
+  async createAnalysisJob(payload: { transcription_id?: string; recording_id?: string; text?: string; gemini_api_key?: string; llm_provider?: string; audio_task?: string; question?: string; prompt?: string; analysis_type?: string; template_id?: string; pipeline_id?: string; pipeline_run_id?: string }): Promise<AnalysisJobCreated> {
     return (await request('/v1/analysis-jobs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -623,17 +669,41 @@ export const ApiClient = {
     })).json();
   },
 
+  async createAnalysisPipeline(payload: { transcription_id?: string; recording_id?: string; text?: string; gemini_api_key?: string; llm_provider?: string; pipeline_id?: string; analysis_types?: string[] }): Promise<AnalysisPipelineCreated> {
+    return (await request('/v1/analysis-pipelines', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })).json();
+  },
+
+  async listAnalysisTemplates(): Promise<{ items: AnalysisTemplate[] }> {
+    return (await request('/v1/analysis/templates')).json();
+  },
+
+  async listAnalysisPipelines(): Promise<{ items: AnalysisPipeline[] }> {
+    return (await request('/v1/analysis/pipelines')).json();
+  },
+
   async getAnalysisRun(analysisRunId: string): Promise<AnalysisRun> {
     return (await request(`/v1/analysis-runs/${analysisRunId}`)).json();
   },
 
-  async listAnalysisRuns(params: { scope_type?: string; scope_id?: string; transcription_id?: string; limit?: number } = {}): Promise<{ items: AnalysisRun[] }> {
+  async listAnalysisRuns(params: { scope_type?: string; scope_id?: string; transcription_id?: string; recording_id?: string; analysis_type?: string; pipeline_run_id?: string; limit?: number } = {}): Promise<{ items: AnalysisRun[] }> {
     const search = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') search.set(key, String(value));
     });
     const query = search.toString();
     return (await request(`/v1/analysis-runs${query ? `?${query}` : ''}`)).json();
+  },
+
+  async listMeetings(limit = 50): Promise<{ items: Meeting[] }> {
+    return (await request(`/v1/meetings?limit=${limit}`)).json();
+  },
+
+  async getMeeting(recordingId: string): Promise<Meeting> {
+    return (await request(`/v1/meetings/${recordingId}`)).json();
   },
 
   async selectDirectory(): Promise<{ path: string | null; error?: string }> {

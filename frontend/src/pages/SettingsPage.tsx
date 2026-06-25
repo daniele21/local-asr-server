@@ -37,6 +37,8 @@ export default function SettingsPage() {
   const [localLlmReasoning, setLocalLlmReasoning] = useState<'auto' | 'on' | 'off'>('auto');
   const [localLlmMaxOutputTokens, setLocalLlmMaxOutputTokens] = useState('');
   const [localLlmJsonMode, setLocalLlmJsonMode] = useState(true);
+  const [meetingAutoAnalysis, setMeetingAutoAnalysis] = useState(false);
+  const [meetingDefaultPipeline, setMeetingDefaultPipeline] = useState('meeting_default');
   const [showAdvancedLlm, setShowAdvancedLlm] = useState(false);
   const [llmService, setLlmService] = useState<any>(null);
   const [llmAction, setLlmAction] = useState('');
@@ -85,6 +87,8 @@ export default function SettingsPage() {
           : ''
       );
       setLocalLlmJsonMode(settings.local_llm_json_mode !== false);
+      setMeetingAutoAnalysis(settings.meeting_auto_analysis || false);
+      setMeetingDefaultPipeline(settings.meeting_default_pipeline || 'meeting_default');
       refreshLlmService();
 
       setSysInfo({
@@ -177,6 +181,8 @@ export default function SettingsPage() {
         local_llm_max_output_tokens: localLlmMaxOutputTokens === '' ? null : parseInt(localLlmMaxOutputTokens, 10),
         local_llm_json_mode: localLlmJsonMode,
         local_llm_model_path: localLlmModelPath.trim(),
+        meeting_auto_analysis: meetingAutoAnalysis,
+        meeting_default_pipeline: meetingDefaultPipeline,
       };
       if (geminiApiKey.trim()) payload.gemini_api_key = geminiApiKey.trim();
 
@@ -456,6 +462,29 @@ export default function SettingsPage() {
                 )}
               </div>
             )}
+          </div>
+        </Card>
+
+        <Card className="flex flex-col gap-4">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-text-secondary border-b border-border-subtle pb-2">
+            {t('settings.meetingWorkflowTitle')}
+          </h3>
+          <p className="text-xs text-text-muted">{t('settings.meetingWorkflowDesc')}</p>
+          <div className="flex flex-col gap-4">
+            <Checkbox
+              variant="toggle"
+              label={t('settings.meetingAutoAnalysis')}
+              checked={meetingAutoAnalysis}
+              onChange={(e) => setMeetingAutoAnalysis(e.target.checked)}
+            />
+            <Select
+              label={t('settings.meetingDefaultPipeline')}
+              value={meetingDefaultPipeline}
+              onChange={(e) => setMeetingDefaultPipeline(e.target.value)}
+            >
+              <option value="meeting_default">{t('settings.meetingPipelineDefault')}</option>
+              <option value="meeting_deep">{t('settings.meetingPipelineDeep')}</option>
+            </Select>
           </div>
         </Card>
 

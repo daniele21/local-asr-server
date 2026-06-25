@@ -88,13 +88,134 @@ def _build_projects(app: FastAPI) -> dict:
             "items": [],
         })
         transcription = app.state.transcription_store.find_for_recording(recording["id"])
+        runs = app.state.catalog_store.list_analysis_runs(recording_id=recording["id"], limit=50)
+        if transcription:
+            transcription_runs = app.state.catalog_store.list_analysis_runs(transcription_id=transcription["id"], limit=50)
+            existing = {run["id"] for run in runs}
+            runs.extend(run for run in transcription_runs if run["id"] not in existing)
+        latest_analysis = next((run for run in sorted(runs, key=lambda item: item.get("created_at") or 0, reverse=True) if run.get("status") == "completed"), None)
         bucket["items"].append({
             "recording": recording,
             "transcription": transcription,
-            "analysis": transcription.get("analysis") if transcription else None,
+            "analysis": latest_analysis or (transcription.get("analysis") if transcription else None),
+            "analysis_runs": sorted(runs, key=lambda item: item.get("created_at") or 0, reverse=True),
         })
     items = sorted(projects.values(), key=lambda item: (item["is_unassigned"], item["name"].lower()))
     return {"items": items}
+
+
+def _meeting_status(recording: dict[str, Any], transcription: dict[str, Any] | None, runs: list[dict[str, Any]]) -> str:
+    active_statuses = {"queued", "running", "waiting_for_service", "retrying"}
+    if any(run.get("status") in active_statuses for run in runs):
+        return "analyzing"
+    if any(run.get("status") == "completed" for run in runs):
+        return "ready"
+    if transcription:
+        return "transcribed"
+    if recording.get("status") in {"recording", "finalizing"}:
+        return "recording"
+    return "recorded"
+
+
+def _compact_recording(recording: dict[str, Any]) -> dict[str, Any]:
+    compact = {
+        key: value
+        for key, value in recording.items()
+        if key not in {"timeline", "quality_report", "warnings"}
+    }
+    tracks = []
+    for track in compact.get("audio_tracks") or []:
+        tracks.append({key: value for key, value in track.items() if key != "chunks"})
+    compact["audio_tracks"] = tracks
+    return compact
+
+
+def _compact_transcription(transcription: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not transcription:
+        return None
+    compact = {
+        key: value
+        for key, value in transcription.items()
+        if key not in {"segments", "source_tracks", "merged_sources"}
+    }
+    text = compact.get("text") or ""
+    compact["text"] = text[:1000]
+    compact["text_preview"] = text[:240]
+    compact["text_truncated"] = len(text) > 1000
+    return compact
+
+
+def _detail_transcription(transcription: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not transcription:
+        return None
+    return {
+        key: value
+        for key, value in transcription.items()
+        if key not in {"segments", "source_tracks", "merged_sources"}
+    }
+
+
+def _compact_job(job: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in job.items()
+        if key not in {"payload", "result"}
+    }
+
+
+def _compact_analysis_run(run: dict[str, Any]) -> dict[str, Any]:
+    compact = {
+        key: value
+        for key, value in run.items()
+        if key not in {"result", "llm_options"}
+    }
+    if compact.get("result_markdown"):
+        compact["result_markdown"] = compact["result_markdown"][:1000]
+        compact["result_truncated"] = True
+    return compact
+
+
+def _build_meeting(app: FastAPI, recording: dict[str, Any], *, compact: bool = False) -> dict[str, Any]:
+    transcription = app.state.transcription_store.find_for_recording(recording["id"])
+    runs = app.state.catalog_store.list_analysis_runs(recording_id=recording["id"], limit=200)
+    if transcription:
+        transcription_runs = app.state.catalog_store.list_analysis_runs(
+            transcription_id=transcription["id"],
+            limit=200,
+        )
+        existing = {run["id"] for run in runs}
+        runs.extend(run for run in transcription_runs if run["id"] not in existing)
+    jobs = [
+        _compact_job(job)
+        for job in app.state.transcription_jobs.list(scope_type="recording", scope_id=recording["id"], limit=50)
+    ]
+    latest_by_type: dict[str, dict[str, Any]] = {}
+    for run in sorted(runs, key=lambda item: item.get("created_at") or 0, reverse=True):
+        analysis_type = run.get("analysis_type") or "meeting_brief"
+        if analysis_type not in latest_by_type and run.get("status") == "completed":
+            latest_by_type[analysis_type] = run
+    public_runs = sorted(runs, key=lambda item: item.get("created_at") or 0, reverse=True)
+    public_latest = latest_by_type
+    if compact:
+        public_runs = [_compact_analysis_run(run) for run in public_runs]
+        public_latest = {analysis_type: _compact_analysis_run(run) for analysis_type, run in latest_by_type.items()}
+    return {
+        "id": recording["id"],
+        "recording": _compact_recording(recording),
+        "transcription": _compact_transcription(transcription) if compact else _detail_transcription(transcription),
+        "analysis_runs": public_runs,
+        "latest_analysis": public_latest,
+        "jobs": jobs,
+        "status": _meeting_status(recording, transcription, runs),
+        "project_name": recording.get("project_name") or "",
+        "created_at": recording.get("created_at"),
+        "updated_at": recording.get("completed_at") or recording.get("stopped_at") or recording.get("created_at"),
+    }
+
+
+def _build_meetings(app: FastAPI, limit: int = 50) -> dict[str, Any]:
+    recordings = app.state.recording_store.list(limit=max(1, min(limit, 200)))
+    return {"items": [_build_meeting(app, recording, compact=True) for recording in recordings]}
 
 
 FALSE_ENV_VALUES = {"0", "false", "no", "off"}

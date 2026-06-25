@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ApiClient, Transcription } from '../api/apiClient';
+import { ApiClient, AnalysisTemplate, Transcription } from '../api/apiClient';
 import { useTranslation } from '../i18n/i18n';
 import { useToast } from '../context/ToastContext';
 import { Card } from '../components/ui/Card';
@@ -45,36 +45,13 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMo
   const [apiKey, setApiKey] = useState('');
   const [audioTask, setAudioTask] = useState('analysis');
   const [question, setQuestion] = useState('');
-  const [promptType, setPromptType] = useState('summary');
+  const [promptType, setPromptType] = useState('meeting_brief');
   const [customPrompt, setCustomPrompt] = useState('');
   const [localLlmModel, setLocalLlmModel] = useState('nemotron-nano-4b-q8');
   const [localLlmModelPath, setLocalLlmModelPath] = useState('');
   const [llmService, setLlmService] = useState<any>(null);
 
-  const [prompts, setPrompts] = useState<Record<string, { it: string; en: string }>>({
-    summary: {
-      it: 'Analizza la seguente trascrizione identificando chiaramente i contributi di "Tu" (microfono locale) e "Computer" (audio di sistema/interlocutore remoto). Genera un titolo breve, un riassunto ben dettagliato che descriva la dinamica del colloquio, tutti i punti chiave evidenziando chi ha espresso cosa, e le azioni pratiche da intraprendere.',
-      en: 'Analyze the following transcription, clearly identifying the contributions of "You" (local microphone) and "Computer" (system audio/remote speaker). Generate a short title, a detailed summary describing the dynamics of the conversation, all key points highlighting who said what, and practical actions to be taken.'
-    },
-    minutes: {
-      it: 'Genera un verbale di riunione formale basato sulla trascrizione, strutturando i punti chiave e le decisioni in modo formale. Identifica chiaramente il ruolo di "Tu" (microfono locale) e "Computer" (audio di sistema/interlocutore remoto) e attribuisci correttamente a ciascuno i concetti espressi.',
-      en: 'Generate formal meeting minutes based on the transcription, structuring key points and decisions in a formal manner. Clearly identify the roles of "You" (local microphone) and "Computer" (system audio/remote speaker) and attribute the expressed points to the correct speaker.'
-    },
-    actions: {
-      it: 'Estrai tutti gli "action items" (le attività pratiche da svolgere, i responsabili e le scadenze se menzionate) in modo dettagliato. Specifica chiaramente se l\'azione è assegnata a "Tu" o a "Computer" basandoti su quanto discusso nella trascrizione.',
-      en: 'Extract all action items (practical tasks, assignees, and deadlines if mentioned) in a detailed manner. Clearly specify if the task is assigned to "Tu" or "Computer" based on the transcription discussion.'
-    },
-    custom: {
-      it: '',
-      en: ''
-    }
-  });
-
-  useEffect(() => {
-    if (promptType !== 'custom') {
-      setCustomPrompt(prompts[promptType]?.[lang === 'it' ? 'it' : 'en'] || '');
-    }
-  }, [promptType, lang, prompts]);
+  const [templates, setTemplates] = useState<AnalysisTemplate[]>([]);
 
   // Results & Progress State
   const [loading, setLoading] = useState(false);
@@ -89,13 +66,10 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMo
     } catch {}
   };
 
-  const loadPrompts = async () => {
+  const loadTemplates = async () => {
     try {
-      const backendPrompts = await ApiClient.getPrompts();
-      setPrompts(prev => ({
-        ...prev,
-        ...backendPrompts
-      }) as Record<string, { it: string; en: string }>);
+      const data = await ApiClient.listAnalysisTemplates();
+      setTemplates(data.items || []);
     } catch {}
   };
 
@@ -116,7 +90,7 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMo
   useEffect(() => {
     if (demoMode) return;
     loadTranscriptions();
-    loadPrompts();
+    loadTemplates();
     loadSettings();
   }, [demoMode]);
 
@@ -175,7 +149,15 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMo
           payload.question = question;
         }
       } else {
-        payload.prompt = customPrompt;
+        if (promptType === 'custom_question') {
+          payload.prompt = customPrompt;
+          payload.analysis_type = 'custom_question';
+          payload.template_id = 'custom_question';
+        } else {
+          const template = templates.find((item) => item.id === promptType);
+          payload.template_id = promptType;
+          payload.analysis_type = template?.analysis_type;
+        }
       }
 
       if (activeTab === 'history') {
@@ -546,10 +528,14 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMo
                     value={promptType}
                     onChange={(e) => setPromptType(e.target.value)}
                   >
-                    <option value="summary">{t('analysis.promptSummary')}</option>
-                    <option value="minutes">{t('analysis.promptMinutes')}</option>
-                    <option value="actions">{t('analysis.promptActions')}</option>
-                    <option value="custom">{t('analysis.promptCustom')}</option>
+                    {(templates.length > 0 ? templates : [
+                      { id: 'meeting_brief', label: t('analysis.promptSummary'), analysis_type: 'meeting_brief' },
+                      { id: 'meeting_minutes', label: t('analysis.promptMinutes'), analysis_type: 'meeting_minutes' },
+                      { id: 'action_items', label: t('analysis.promptActions'), analysis_type: 'action_items' },
+                      { id: 'custom_question', label: t('analysis.promptCustom'), analysis_type: 'custom_question' },
+                    ] as AnalysisTemplate[]).map((template) => (
+                      <option key={template.id} value={template.id}>{template.label}</option>
+                    ))}
                   </Select>
 
                   <div className="flex flex-col gap-1.5">
@@ -559,7 +545,7 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMo
                     <textarea
                       value={customPrompt}
                       onChange={(e) => {
-                        setPromptType('custom');
+                        setPromptType('custom_question');
                         setCustomPrompt(e.target.value);
                       }}
                       placeholder={t('analysis.customPromptPlaceholder')}

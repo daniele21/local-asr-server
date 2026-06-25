@@ -113,10 +113,18 @@ class AnalysisService:
                 text_to_analyze = trans.get("text", "")
             except Exception as exc:
                 raise HTTPException(status_code=404, detail="Trascrizione non trovata.") from exc
+        elif body.recording_id:
+            try:
+                trans = self.app_state.transcription_store.find_for_recording(body.recording_id)
+                if not trans:
+                    raise LookupError("Trascrizione non trovata.")
+                text_to_analyze = trans.get("text", "")
+            except Exception as exc:
+                raise HTTPException(status_code=404, detail="Trascrizione non trovata per questa registrazione.") from exc
         elif body.text:
             text_to_analyze = body.text
         else:
-            raise HTTPException(status_code=400, detail="Fornire transcription_id o text per l'analisi testuale.")
+            raise HTTPException(status_code=400, detail="Fornire transcription_id, recording_id o text per l'analisi testuale.")
 
         if not text_to_analyze.strip():
             raise HTTPException(status_code=400, detail="Il testo da analizzare è vuoto.")

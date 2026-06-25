@@ -1,339 +1,258 @@
-import { useState, useEffect } from 'react';
-import { ApiClient, Recording, Transcription, Project } from '../api/apiClient';
-import { useTranslation } from '../i18n/i18n';
-import { Card } from '../components/ui/Card';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  Clock3,
+  FileAudio,
+  FolderKanban,
+  ListChecks,
+  Mic,
+  Search,
+  Sparkles,
+} from 'lucide-react';
+import { ApiClient, Meeting } from '../api/apiClient';
+import { ANALYSIS_TYPE_LABELS } from '../api/config';
+import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
+import { formatProjectDate, getDurationSeconds } from '../utils/formatters';
+import { useTranslation } from '../i18n/i18n';
 
 interface DashboardPageProps {
   navigateTo: (page: string, detail?: string | null) => void;
 }
 
+const statusCopy: Record<string, { label: string; variant: 'idle' | 'success' | 'warning' | 'info' }> = {
+  recording: { label: 'In registrazione', variant: 'warning' },
+  recorded: { label: 'Audio pronto', variant: 'idle' },
+  transcribed: { label: 'Trascritto', variant: 'info' },
+  analyzing: { label: 'Analisi in corso', variant: 'warning' },
+  ready: { label: 'Pronto', variant: 'success' },
+};
+
+function meetingTitle(meeting: Meeting): string {
+  return meeting.recording.title || `Meeting ${meeting.id.slice(0, 8)}`;
+}
+
+function sameDay(value: string | undefined, date: Date): boolean {
+  if (!value) return false;
+  const parsed = new Date(value);
+  return parsed.getFullYear() === date.getFullYear()
+    && parsed.getMonth() === date.getMonth()
+    && parsed.getDate() === date.getDate();
+}
+
 export default function DashboardPage({ navigateTo }: DashboardPageProps) {
   const { t, lang } = useTranslation();
-
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ recordingsCount: 0, transcriptionsCount: 0, analysesCount: 0, projectsCount: 0 });
-  const [recentRecordings, setRecentRecordings] = useState<Recording[]>([]);
-  const [recentTranscriptions, setRecentTranscriptions] = useState<Transcription[]>([]);
-  const [recentProjects, setRecentProjects] = useState<Project[]>([]);
-  const [untranscribedCount, setUntranscribedCount] = useState(0);
-  const [firstUntranscribed, setFirstUntranscribed] = useState<Recording | null>(null);
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [query, setQuery] = useState('');
+
+  const locale = lang === 'it' ? 'it-IT' : 'en-US';
+
+  const load = async () => {
+    try {
+      setLoading(true);
+      const data = await ApiClient.listMeetings(80);
+      setMeetings(data.items || []);
+    } catch (error) {
+      console.error('Failed to load meetings:', error);
+      setMeetings([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        setLoading(true);
-        const [statsData, recordingsData, transcriptionsData, projectsData] = await Promise.all([
-          ApiClient.stats().catch(() => ({ recordings_count: 0, transcriptions_count: 0 })),
-          ApiClient.listRecordings().catch(() => ({ items: [] })),
-          ApiClient.listTranscriptions(1, 5).catch(() => ({ items: [], total: 0 })),
-          ApiClient.listProjects().catch(() => ({ items: [] }))
-        ]);
+    load();
+  }, []);
 
-        const recs = recordingsData.items || [];
-        const trans = transcriptionsData.items || [];
-        const projs = projectsData.items || [];
+  const today = useMemo(() => new Date(), []);
+  const filteredMeetings = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return meetings;
+    return meetings.filter((meeting) => {
+      const haystack = [
+        meetingTitle(meeting),
+        meeting.project_name,
+        meeting.transcription?.text?.slice(0, 800),
+      ].join(' ').toLowerCase();
+      return haystack.includes(needle);
+    });
+  }, [meetings, query]);
 
-        setRecentRecordings(recs);
-        setRecentTranscriptions(trans);
-
-        // Filter projects
-        const realProjects = projs.filter((p) => !p.is_unassigned);
-        
-        // Sort projects by latest recording date
-        const sortedProjects = [...realProjects].map((p) => {
-          let latestDate = 0;
-          p.items.forEach((item) => {
-            if (item.recording?.created_at) {
-              const d = new Date(item.recording.created_at).getTime();
-              if (d > latestDate) latestDate = d;
-            }
-          });
-          return { ...p, latestDate };
-        }).sort((a, b) => b.latestDate - a.latestDate);
-        setRecentProjects(sortedProjects.slice(0, 3));
-
-        // Count analyses (simulated from local storage counts or API)
-        let localAnalyses = 0;
-        try {
-          localAnalyses = parseInt(localStorage.getItem('analyses_count') || '0', 10);
-        } catch {}
-
-        setStats({
-          recordingsCount: statsData.recordings_count || recs.length,
-          transcriptionsCount: statsData.transcriptions_count || transcriptionsData.total || trans.length,
-          analysesCount: localAnalyses,
-          projectsCount: realProjects.length,
-        });
-
-        // Untranscribed calculation
-        const transcribedFilenames = new Set(trans.map((t) => t.audio_filename));
-        const untranscribed = recs.filter((r) => {
-          const expectedName = r.audio_file ? r.audio_file.split('/').pop() : '';
-          return expectedName && !transcribedFilenames.has(expectedName);
-        });
-        setUntranscribedCount(untranscribed.length);
-        if (untranscribed.length > 0) {
-          setFirstUntranscribed(untranscribed[0]);
-        }
-      } catch (err) {
-        console.error('Error fetching dashboard data:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDashboardData();
-  }, [t]);
-
-  const hasActivity = recentRecordings.length > 0 || recentTranscriptions.length > 0;
+  const todayMeetings = filteredMeetings.filter((meeting) => sameDay(meeting.created_at, today));
+  const backlogMeetings = filteredMeetings.filter((meeting) => meeting.status !== 'ready');
+  const readyCount = meetings.filter((meeting) => meeting.status === 'ready').length;
+  const actionCount = meetings.reduce((count, meeting) => {
+    const run = meeting.latest_analysis?.action_items;
+    const items = run?.result?.action_items;
+    return count + (Array.isArray(items) ? items.length : 0);
+  }, 0);
 
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4">
-        <div className="w-10 h-10 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
+        <div className="w-10 h-10 border-4 border-accent border-t-transparent rounded-full animate-spin" />
         <span className="text-text-secondary text-sm">{t('common.loading')}</span>
       </div>
     );
   }
 
-  // 1. EMPTY STATE
-  if (!hasActivity) {
-    return (
-      <div className="flex flex-col gap-6 max-w-4xl mx-auto w-full py-6">
-        <div className="text-center py-12 px-6 bg-bg-elevated/40 border border-border-subtle rounded-2xl backdrop-blur-[20px] flex flex-col gap-4">
-          <span className="text-xs font-semibold text-accent tracking-widest uppercase">{t('dashboard.eyebrow')}</span>
-          <h2 className="text-3xl md:text-4xl font-bold">ClosedRoom</h2>
-          <p className="text-text-secondary text-sm md:text-base max-w-xl mx-auto leading-relaxed">
-            {t('dashboard.emptyBody')}
-          </p>
-        </div>
-
-        <Card className="flex flex-col gap-5">
-          <h3 className="text-lg font-semibold border-b border-border-subtle pb-3">{t('dashboard.firstStepsTitle')}</h3>
-          <ul className="flex flex-col gap-3.5 text-sm text-text-secondary leading-relaxed">
-            <li className="flex items-start gap-2.5">
-              <span>🎙️</span>
-              <span dangerouslySetInnerHTML={{ __html: t('dashboard.step1') }} />
-            </li>
-            <li className="flex items-start gap-2.5">
-              <span>📝</span>
-              <span dangerouslySetInnerHTML={{ __html: t('dashboard.step2') }} />
-            </li>
-            <li className="flex items-start gap-2.5">
-              <span>📊</span>
-              <span dangerouslySetInnerHTML={{ __html: t('dashboard.step3') }} />
-            </li>
-          </ul>
-        </Card>
-
-        <div className="flex flex-wrap items-center justify-center gap-4 mt-4">
-          <Button size="lg" onClick={() => navigateTo('recording')}>
-            {t('dashboard.quickActionRecord')}
-          </Button>
-          <Button size="lg" variant="secondary" onClick={() => navigateTo('transcription')}>
-            {t('dashboard.quickActionTranscribe')}
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  // 2. DASHBOARD ACTIVE STATE
   return (
     <div className="flex flex-col gap-6">
-      {/* Hero Banner */}
-      <div className="py-8 px-6 bg-bg-elevated/50 border border-border-subtle rounded-2xl backdrop-blur-[20px] flex flex-col gap-4 relative overflow-hidden">
-        <span className="text-xs font-bold text-accent tracking-widest uppercase">{t('dashboard.eyebrow')}</span>
-        <h2 className="text-3xl font-bold bg-gradient-to-r from-text-primary to-accent bg-clip-text text-transparent">
-          ClosedRoom
-        </h2>
-        <p className="text-text-secondary text-sm max-w-2xl leading-relaxed">{t('dashboard.productBody')}</p>
-        <div className="flex flex-wrap gap-3 mt-2 z-10">
-          <Button onClick={() => navigateTo('recording')}>{t('dashboard.quickActionRecord')}</Button>
+      <section className="flex flex-col lg:flex-row lg:items-end justify-between gap-5 border-b border-border-subtle pb-5">
+        <div className="min-w-0">
+          <span className="text-xs font-semibold text-accent uppercase tracking-widest">Oggi</span>
+          <h2 className="text-3xl font-semibold text-text-primary mt-1">Meeting workspace</h2>
+          <p className="text-sm text-text-secondary mt-2 max-w-2xl">
+            Registrazioni, trascrizioni e analisi sono raccolte per meeting. Parti da una nuova registrazione o riprendi una pipeline incompleta.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => navigateTo('recording')}>
+            <Mic className="w-4 h-4" />
+            Registra meeting
+          </Button>
           <Button variant="secondary" onClick={() => navigateTo('transcription')}>
-            {t('dashboard.quickActionTranscribe')}
+            <FileAudio className="w-4 h-4" />
+            Importa audio
           </Button>
         </div>
-      </div>
+      </section>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <section className="grid grid-cols-2 lg:grid-cols-4 gap-px border border-border-subtle rounded-lg overflow-hidden bg-border-subtle">
         {[
-          { label: t('dashboard.statsRecordings'), value: stats.recordingsCount, icon: '🎙️' },
-          { label: t('dashboard.statsTranscriptions'), value: stats.transcriptionsCount, icon: '📝' },
-          { label: t('dashboard.statsAnalyses'), value: stats.analysesCount, icon: '📊' },
-          { label: t('dashboard.statsProjects'), value: stats.projectsCount, icon: '🗂️' },
-        ].map((item, idx) => (
-          <Card key={idx} className="flex items-center gap-4">
-            <span className="text-3xl" role="img" aria-hidden="true">
-              {item.icon}
-            </span>
-            <div className="flex flex-col">
-              <span className="text-2xl font-bold text-text-primary">{item.value}</span>
-              <span className="text-xs text-text-muted font-medium uppercase tracking-wider">{item.label}</span>
+          { label: 'Meeting', value: meetings.length, icon: FileAudio },
+          { label: 'Pronti', value: readyCount, icon: CheckCircle2 },
+          { label: 'Da completare', value: backlogMeetings.length, icon: Clock3 },
+          { label: 'Azioni estratte', value: actionCount, icon: ListChecks },
+        ].map((item) => (
+          <div key={item.label} className="bg-bg-elevated px-4 py-3 flex items-center gap-3">
+            <item.icon className="w-4 h-4 text-text-muted" />
+            <div>
+              <div className="text-xl font-semibold text-text-primary">{item.value}</div>
+              <div className="text-[11px] uppercase tracking-wider text-text-muted">{item.label}</div>
             </div>
-          </Card>
-        ))}
-      </div>
-
-      {/* Suggestions Banner */}
-      {untranscribedCount > 0 && firstUntranscribed && (
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 border border-warning/20 bg-warning/5 rounded-xl">
-          <div className="flex items-center gap-3">
-            <span className="text-xl">⚠️</span>
-            <span className="text-sm font-medium text-text-secondary">
-              {t('dashboard.untranscribedWarning', { count: untranscribedCount })}
-            </span>
           </div>
-          <Button
-            size="sm"
-            variant="secondary"
-            className="border-warning/30 hover:border-warning/70 hover:bg-warning/10 text-warning"
-            onClick={() => {
-              // Preselect the file and navigate
-              navigateTo('transcription', `file-${firstUntranscribed.id}`);
-            }}
-          >
-            {t('dashboard.transcribeNow')}
-          </Button>
-        </div>
-      )}
+        ))}
+      </section>
 
-      {/* Main Grid Columns */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left column: Quick Actions & Recent Projects */}
-        <div className="lg:col-span-2 flex flex-col gap-6">
-          {/* Quick Actions */}
-          <Card className="flex flex-col gap-4">
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-text-secondary border-b border-border-subtle pb-2">
-              {t('dashboard.quickActionsTitle')}
-            </h3>
-            <div className="flex flex-wrap gap-3">
-              <Button variant="secondary" className="flex-1" onClick={() => navigateTo('recording')}>
-                🎙️ {t('dashboard.quickActionRecord').replace('🎙️ ', '')}
-              </Button>
-              <Button variant="secondary" className="flex-1" onClick={() => navigateTo('transcription')}>
-                📝 {t('dashboard.quickActionTranscribe').replace('📝 ', '')}
-              </Button>
-              <Button variant="ghost" className="flex-1" onClick={() => navigateTo('settings')}>
-                ⚙️ {t('dashboard.quickActionSettings').replace('⚙️ ', '')}
-              </Button>
+      <section className="flex flex-col xl:flex-row gap-6">
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
+            <div>
+              <h3 className="text-base font-semibold text-text-primary">Meeting recenti</h3>
+              <p className="text-xs text-text-muted">Stato, output disponibili e prossima azione.</p>
             </div>
-          </Card>
+            <label className="flex items-center gap-2 bg-bg-elevated border border-border-subtle rounded-lg px-3 py-2 min-w-[240px]">
+              <Search className="w-4 h-4 text-text-muted" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Cerca meeting"
+                className="bg-transparent border-0 outline-none text-sm text-text-primary placeholder:text-text-muted w-full"
+              />
+            </label>
+          </div>
 
-          {/* Recent Projects */}
-          <Card className="flex flex-col gap-4">
-            <div className="flex items-center justify-between border-b border-border-subtle pb-2">
-              <h3 className="text-sm font-semibold uppercase tracking-wider text-text-secondary">
-                {t('dashboard.projectsTitle')}
-              </h3>
-              <button
-                onClick={() => navigateTo('projects')}
-                className="text-xs text-accent hover:text-accent-hover font-semibold cursor-pointer"
-              >
-                {lang === 'it' ? 'Vedi tutti →' : 'View all →'}
-              </button>
+          {filteredMeetings.length === 0 ? (
+            <div className="border border-dashed border-border-subtle rounded-lg px-5 py-10 text-center">
+              <Mic className="w-8 h-8 mx-auto text-text-muted mb-3" />
+              <h3 className="text-base font-semibold text-text-primary">Nessun meeting ancora</h3>
+              <p className="text-sm text-text-secondary mt-1">Registra o importa un audio per creare il primo workspace.</p>
+              <div className="mt-4 flex justify-center gap-2">
+                <Button onClick={() => navigateTo('recording')}>Registra meeting</Button>
+                <Button variant="secondary" onClick={() => navigateTo('transcription')}>Importa audio</Button>
+              </div>
             </div>
-
-            <div className="flex flex-col gap-3.5">
-              {recentProjects.length === 0 ? (
-                <p className="text-xs text-text-muted py-4">{t('dashboard.noProjects')}</p>
-              ) : (
-                recentProjects.map((project, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-3.5 bg-bg-surface/50 border border-border-subtle/50 rounded-xl hover:border-border-focus/40 transition-colors duration-150">
-                    <div className="flex items-center gap-3.5 min-width-0">
-                      <span className="text-xl p-2 bg-warning-yellow/10 rounded-lg">📁</span>
-                      <div className="flex flex-col">
-                        <strong className="text-sm text-text-primary">{project.name}</strong>
-                        <span className="text-xs text-text-muted mt-0.5">
-                          {lang === 'it'
-                            ? `${project.items.length} audio · ${project.items.filter((i) => i.transcription).length} trascrizioni`
-                            : `${project.items.length} audio · ${project.items.filter((i) => i.transcription).length} transcriptions`}
-                        </span>
+          ) : (
+            <div className="border border-border-subtle rounded-lg overflow-hidden">
+              {filteredMeetings.slice(0, 20).map((meeting) => {
+                const status = statusCopy[meeting.status] || { label: meeting.status, variant: 'idle' as const };
+                const analysisTypes = Object.keys(meeting.latest_analysis || {});
+                return (
+                  <button
+                    key={meeting.id}
+                    onClick={() => navigateTo('meeting', meeting.id)}
+                    className="w-full text-left grid grid-cols-1 lg:grid-cols-[minmax(0,1.5fr)_180px_220px] gap-3 px-4 py-3 bg-bg-elevated hover:bg-bg-hover border-b border-border-subtle last:border-b-0 transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <strong className="text-sm text-text-primary truncate">{meetingTitle(meeting)}</strong>
+                        <Badge variant={status.variant}>{status.label}</Badge>
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-text-muted">
+                        <span>{formatProjectDate(meeting.created_at, lang)}</span>
+                        <span>{getDurationSeconds(meeting.recording) > 0 ? `${Math.round(getDurationSeconds(meeting.recording) / 60)} min` : 'Durata n/d'}</span>
+                        {meeting.project_name && (
+                          <span className="inline-flex items-center gap-1">
+                            <FolderKanban className="w-3 h-3" />
+                            {meeting.project_name}
+                          </span>
+                        )}
                       </div>
                     </div>
-                    <Button size="sm" variant="secondary" onClick={() => navigateTo('projects')}>
-                      {t('projects.btnView')}
-                    </Button>
-                  </div>
-                ))
+                    <div className="flex items-center gap-2 text-xs text-text-secondary">
+                      {meeting.transcription ? <CheckCircle2 className="w-4 h-4 text-success" /> : <AlertCircle className="w-4 h-4 text-warning" />}
+                      {meeting.transcription ? 'Trascrizione pronta' : 'Da trascrivere'}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {analysisTypes.length === 0 ? (
+                        <span className="text-xs text-text-muted">Nessuna analisi</span>
+                      ) : (
+                        analysisTypes.slice(0, 4).map((type) => (
+                          <span key={type} className="text-[11px] px-2 py-1 rounded-md bg-bg-surface border border-border-subtle text-text-secondary">
+                            {ANALYSIS_TYPE_LABELS[type] || type}
+                          </span>
+                        ))
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <aside className="xl:w-[320px] flex flex-col gap-5">
+          <section className="border border-border-subtle rounded-lg p-4 bg-bg-elevated">
+            <div className="flex items-center gap-2 mb-3">
+              <Clock3 className="w-4 h-4 text-text-muted" />
+              <h3 className="text-sm font-semibold text-text-primary">In corso</h3>
+            </div>
+            <div className="flex flex-col gap-2">
+              {backlogMeetings.slice(0, 5).map((meeting) => (
+                <button
+                  key={meeting.id}
+                  onClick={() => navigateTo('meeting', meeting.id)}
+                  className="text-left rounded-md px-3 py-2 hover:bg-bg-hover transition-colors"
+                >
+                  <div className="text-xs font-semibold text-text-primary truncate">{meetingTitle(meeting)}</div>
+                  <div className="text-[11px] text-text-muted mt-0.5">{statusCopy[meeting.status]?.label || meeting.status}</div>
+                </button>
+              ))}
+              {backlogMeetings.length === 0 && (
+                <p className="text-xs text-text-muted">Nessuna pipeline aperta.</p>
               )}
             </div>
-          </Card>
-        </div>
+          </section>
 
-        {/* Right column: Recent Activity Feed */}
-        <Card className="flex flex-col gap-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-text-secondary border-b border-border-subtle pb-2">
-            {t('dashboard.activityTitle')}
-          </h3>
-
-          <div className="flex flex-col gap-4">
-            {recentRecordings.length === 0 && recentTranscriptions.length === 0 ? (
-              <p className="text-xs text-text-muted py-8 text-center">{t('dashboard.noActivity')}</p>
+          <section className="border border-border-subtle rounded-lg p-4 bg-bg-elevated">
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles className="w-4 h-4 text-accent" />
+              <h3 className="text-sm font-semibold text-text-primary">Digest giornaliero</h3>
+            </div>
+            {todayMeetings.length === 0 ? (
+              <p className="text-xs text-text-muted">Nessun meeting registrato oggi.</p>
             ) : (
-              // Build chronological feed
-              [
-                ...recentRecordings.map((r) => ({
-                  type: 'recording' as const,
-                  id: r.id,
-                  title: r.title || `Recording ${r.id.substring(0, 8)}`,
-                  date: new Date(r.created_at),
-                  projectName: r.project_name,
-                })),
-                ...recentTranscriptions.map((t) => ({
-                  type: 'transcription' as const,
-                  id: t.id,
-                  title: t.audio_filename,
-                  date: new Date(t.timestamp),
-                  projectName: t.recording_id ? 'Recording' : '',
-                })),
-              ]
-                .sort((a, b) => b.date.getTime() - a.date.getTime())
-                .slice(0, 5)
-                .map((item, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => {
-                      if (item.type === 'recording') {
-                        navigateTo('transcription', `file-${item.id}`);
-                      } else {
-                        navigateTo('analysis', item.id);
-                      }
-                    }}
-                    className="flex items-start gap-3 p-3 bg-bg-surface/30 border border-border-subtle/40 rounded-xl hover:border-border-focus/30 hover:bg-bg-surface/60 transition-all duration-150 cursor-pointer"
-                  >
-                    <span className="text-xl p-2 bg-bg-hover rounded-lg">
-                      {item.type === 'recording' ? '🎙️' : '📝'}
-                    </span>
-                    <div className="flex flex-col min-w-0 flex-1">
-                      <strong className="text-xs text-text-primary font-semibold truncate leading-tight">
-                        {item.title}
-                      </strong>
-                      <span className="text-[10px] text-text-muted mt-1">
-                        {item.date.toLocaleString(lang === 'it' ? 'it-IT' : 'en-US', {
-                          dateStyle: 'short',
-                          timeStyle: 'short',
-                        })}
-                      </span>
-                    </div>
-                  </div>
-                ))
+              <div className="flex flex-col gap-2 text-xs text-text-secondary">
+                <p>{todayMeetings.length} meeting nel giorno corrente ({today.toLocaleDateString(locale)}).</p>
+                <p>{todayMeetings.filter((meeting) => meeting.status === 'ready').length} già pronti per review.</p>
+              </div>
             )}
-          </div>
-        </Card>
-      </div>
-
-      {/* macOS Tip banner */}
-      <div className="relative p-5 bg-bg-elevated/70 border border-border-subtle rounded-2xl backdrop-blur-md flex gap-4 pr-10 items-start">
-        <div className="text-2xl mt-0.5">🎙️</div>
-        <div className="flex flex-col gap-1.5 min-w-0">
-          <strong className="text-sm font-semibold">{t('dashboard.macOSBarAlertTitle')}</strong>
-          <p className="text-xs text-text-secondary leading-relaxed">{t('dashboard.macOSBarAlertBody')}</p>
-          <span className="text-[10px] text-text-muted">{t('dashboard.macOSBarAlertTroubleshoot')}</span>
-        </div>
-      </div>
+          </section>
+        </aside>
+      </section>
     </div>
   );
 }

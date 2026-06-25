@@ -128,6 +128,10 @@ class CatalogStore:
                 scope_id TEXT NOT NULL,
                 transcription_id TEXT,
                 recording_id TEXT,
+                analysis_type TEXT NOT NULL DEFAULT 'meeting_brief',
+                template_id TEXT,
+                template_version TEXT,
+                pipeline_run_id TEXT,
                 provider TEXT NOT NULL,
                 model TEXT,
                 temperature REAL,
@@ -141,6 +145,10 @@ class CatalogStore:
                 input_hash TEXT NOT NULL,
                 status TEXT NOT NULL,
                 result_json TEXT,
+                result_markdown TEXT,
+                source_ids_json TEXT,
+                period_start TEXT,
+                period_end TEXT,
                 error TEXT,
                 created_at REAL NOT NULL,
                 completed_at REAL
@@ -173,6 +181,16 @@ class CatalogStore:
         self._ensure_column(conn, "recordings", "quality_report", "TEXT")
         self._ensure_column(conn, "recordings", "warnings", "TEXT")
         self._ensure_column(conn, "transcriptions", "source_tracks", "TEXT")
+        self._ensure_column(conn, "analysis_runs", "analysis_type", "TEXT NOT NULL DEFAULT 'meeting_brief'")
+        self._ensure_column(conn, "analysis_runs", "template_id", "TEXT")
+        self._ensure_column(conn, "analysis_runs", "template_version", "TEXT")
+        self._ensure_column(conn, "analysis_runs", "pipeline_run_id", "TEXT")
+        self._ensure_column(conn, "analysis_runs", "result_markdown", "TEXT")
+        self._ensure_column(conn, "analysis_runs", "source_ids_json", "TEXT")
+        self._ensure_column(conn, "analysis_runs", "period_start", "TEXT")
+        self._ensure_column(conn, "analysis_runs", "period_end", "TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_analysis_runs_type ON analysis_runs(analysis_type, created_at DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_analysis_runs_pipeline ON analysis_runs(pipeline_run_id)")
 
     def _ensure_column(self, conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
         rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
@@ -345,11 +363,13 @@ class CatalogStore:
                 """
                 INSERT INTO analysis_runs (
                     id, job_id, scope_type, scope_id, transcription_id, recording_id,
+                    analysis_type, template_id, template_version, pipeline_run_id,
                     provider, model, temperature, reasoning, effective_reasoning,
                     show_thinking, max_output_tokens, json_mode, llm_options_json,
-                    prompt_version, input_hash, status, result_json, error,
+                    prompt_version, input_hash, status, result_json, result_markdown,
+                    source_ids_json, period_start, period_end, error,
                     created_at, completed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run["id"],
@@ -358,6 +378,10 @@ class CatalogStore:
                     run["scope_id"],
                     run.get("transcription_id"),
                     run.get("recording_id"),
+                    run.get("analysis_type") or "meeting_brief",
+                    run.get("template_id"),
+                    run.get("template_version"),
+                    run.get("pipeline_run_id"),
                     run["provider"],
                     run.get("model"),
                     run.get("temperature"),
@@ -371,6 +395,10 @@ class CatalogStore:
                     run["input_hash"],
                     run.get("status") or "queued",
                     _json_dump(run.get("result")) if run.get("result") is not None else None,
+                    run.get("result_markdown"),
+                    _json_dump(run.get("source_ids")) if run.get("source_ids") is not None else None,
+                    run.get("period_start"),
+                    run.get("period_end"),
                     run.get("error"),
                     run["created_at"],
                     run.get("completed_at"),
@@ -395,12 +423,13 @@ class CatalogStore:
             conn.execute(
                 """
                 UPDATE analysis_runs
-                SET status = ?, result_json = ?, error = ?, completed_at = ?
+                SET status = ?, result_json = ?, result_markdown = ?, error = ?, completed_at = ?
                 WHERE id = ?
                 """,
                 (
                     status,
                     _json_dump(result) if result is not None else existing["result_json"],
+                    result.get("markdown") if isinstance(result, dict) and result.get("markdown") is not None else existing["result_markdown"],
                     error if error is not None else existing["error"],
                     completed_at if completed_at is not None else existing["completed_at"],
                     run_id,
@@ -433,6 +462,9 @@ class CatalogStore:
         scope_type: str | None = None,
         scope_id: str | None = None,
         transcription_id: str | None = None,
+        recording_id: str | None = None,
+        analysis_type: str | None = None,
+        pipeline_run_id: str | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         clauses: list[str] = []
@@ -446,6 +478,15 @@ class CatalogStore:
         if transcription_id:
             clauses.append("transcription_id = ?")
             params.append(transcription_id)
+        if recording_id:
+            clauses.append("recording_id = ?")
+            params.append(recording_id)
+        if analysis_type:
+            clauses.append("analysis_type = ?")
+            params.append(analysis_type)
+        if pipeline_run_id:
+            clauses.append("pipeline_run_id = ?")
+            params.append(pipeline_run_id)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(max(1, min(limit, 500)))
         with self.connection() as conn:
@@ -463,6 +504,10 @@ class CatalogStore:
             "scope_id": row["scope_id"],
             "transcription_id": row["transcription_id"],
             "recording_id": row["recording_id"],
+            "analysis_type": row["analysis_type"],
+            "template_id": row["template_id"],
+            "template_version": row["template_version"],
+            "pipeline_run_id": row["pipeline_run_id"],
             "provider": row["provider"],
             "model": row["model"],
             "temperature": row["temperature"],
@@ -476,6 +521,10 @@ class CatalogStore:
             "input_hash": row["input_hash"],
             "status": row["status"],
             "result": _json_load(row["result_json"], None),
+            "result_markdown": row["result_markdown"],
+            "source_ids": _json_load(row["source_ids_json"], []),
+            "period_start": row["period_start"],
+            "period_end": row["period_end"],
             "error": row["error"],
             "created_at": row["created_at"],
             "completed_at": row["completed_at"],

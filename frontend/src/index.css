@@ -27,47 +27,47 @@
   --color-info: var(--info);
 }
 
-/* Base custom properties (Space-Violet Dark Theme - Default) */
+/* Base custom properties (Operational Dark Theme - Default) */
 :root {
-  --bg-base: #09051f;
-  --bg-surface: #13102d;
-  --bg-elevated: rgba(25, 20, 58, 0.7);
-  --bg-hover: rgba(255, 255, 255, 0.06);
-  --border-subtle: rgba(255, 255, 255, 0.11);
-  --border-focus: rgba(159, 116, 255, 0.6);
+  --bg-base: #0b0d10;
+  --bg-surface: #11151b;
+  --bg-elevated: #151a21;
+  --bg-hover: rgba(255, 255, 255, 0.055);
+  --border-subtle: rgba(184, 196, 210, 0.14);
+  --border-focus: rgba(56, 189, 248, 0.55);
 
-  --text-primary: #f3f1fd;
-  --text-secondary: #c0b8e5;
-  --text-muted: #78729c;
+  --text-primary: #f4f7fb;
+  --text-secondary: #b7c1cf;
+  --text-muted: #748090;
 
-  --accent: #9f74ff;
-  --accent-hover: #b89aff;
-  --accent-glow: rgba(159, 116, 255, 0.15);
-  --accent-glow-lg: rgba(159, 116, 255, 0.09);
+  --accent: #0ea5e9;
+  --accent-hover: #38bdf8;
+  --accent-glow: rgba(14, 165, 233, 0.12);
+  --accent-glow-lg: rgba(14, 165, 233, 0.07);
 
-  --success: #66f0e3;
-  --warning: #ffd366;
-  --danger: #ff6685;
-  --info: #58c8ff;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #fb7185;
+  --info: #60a5fa;
 }
 
-/* Space-Violet Light Theme */
+/* Operational Light Theme */
 [data-theme="light"] {
-  --bg-base: #f4f1fa;
-  --bg-surface: #e8e4f5;
-  --bg-elevated: rgba(255, 255, 255, 0.85);
-  --bg-hover: rgba(159, 116, 255, 0.08);
-  --border-subtle: rgba(159, 116, 255, 0.15);
-  --border-focus: rgba(159, 116, 255, 0.6);
+  --bg-base: #f6f8fb;
+  --bg-surface: #eef2f6;
+  --bg-elevated: #ffffff;
+  --bg-hover: rgba(15, 23, 42, 0.055);
+  --border-subtle: rgba(15, 23, 42, 0.12);
+  --border-focus: rgba(2, 132, 199, 0.55);
 
-  --text-primary: #1b133b;
-  --text-secondary: #5a4f80;
-  --text-muted: #9186b5;
+  --text-primary: #111827;
+  --text-secondary: #475569;
+  --text-muted: #7c8797;
 
-  --accent: #7355ff;
-  --accent-hover: #5b3eff;
-  --accent-glow: rgba(115, 85, 255, 0.1);
-  --accent-glow-lg: rgba(115, 85, 255, 0.06);
+  --accent: #0284c7;
+  --accent-hover: #0369a1;
+  --accent-glow: rgba(2, 132, 199, 0.1);
+  --accent-glow-lg: rgba(2, 132, 199, 0.06);
 }
 
 /* Custom background glows styling */
@@ -112,4 +112,3 @@ html.overlay-active #root {
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(12px);
 }
-

@@ -8,8 +8,15 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from local_asr_server.analysis_templates import (
+    DEFAULT_ANALYSIS_TYPE,
+    DEFAULT_TEMPLATE_VERSION,
+    get_pipeline,
+    get_template,
+    template_for_analysis_type,
+)
 from local_asr_server.jobs import JobStore
-from local_asr_server.schemas import AnalysisRequest
+from local_asr_server.schemas import AnalysisPipelineRequest, AnalysisRequest
 from local_asr_server.services.analysis_service import AnalysisService
 from local_asr_server.settings import load_settings
 
@@ -24,6 +31,8 @@ class AnalysisJobManager:
         self._store = store
 
     def create(self, body: AnalysisRequest) -> dict[str, Any]:
+        body = self._with_recording_transcription(body)
+        body = self._with_template_defaults(body)
         job_id = str(uuid.uuid4())
         run_id = str(uuid.uuid4())
         scope_type, scope_id = self._resolve_scope(body, run_id)
@@ -53,6 +62,10 @@ class AnalysisJobManager:
                 "scope_id": scope_id,
                 "transcription_id": body.transcription_id,
                 "recording_id": body.recording_id,
+                "analysis_type": body.analysis_type or DEFAULT_ANALYSIS_TYPE,
+                "template_id": body.template_id,
+                "template_version": body.template_version,
+                "pipeline_run_id": body.pipeline_run_id,
                 "provider": provider,
                 "model": settings.get("local_llm_model") or "",
                 "temperature": llm_options.get("temperature"),
@@ -64,6 +77,9 @@ class AnalysisJobManager:
                 "llm_options": llm_options,
                 "prompt_version": self._prompt_version(body, provider),
                 "input_hash": input_hash,
+                "source_ids": body.source_ids,
+                "period_start": body.period_start,
+                "period_end": body.period_end,
                 "status": "queued",
                 "created_at": time.time(),
             }
@@ -74,6 +90,38 @@ class AnalysisJobManager:
             "job_id": job_id,
             "analysis_run_id": run_id,
             "status": "queued",
+        }
+
+    def create_pipeline(self, body: AnalysisPipelineRequest) -> dict[str, Any]:
+        pipeline = get_pipeline(body.pipeline_id)
+        pipeline_run_id = str(uuid.uuid4())
+        if body.analysis_types:
+            templates = [template_for_analysis_type(analysis_type) for analysis_type in body.analysis_types]
+        else:
+            templates = [get_template(template_id) for template_id in pipeline.template_ids]
+        jobs = []
+        for template in templates:
+            request_body = AnalysisRequest(
+                transcription_id=body.transcription_id,
+                recording_id=body.recording_id,
+                text=body.text,
+                llm_provider=body.llm_provider,
+                gemini_api_key=body.gemini_api_key,
+                analysis_type=template.analysis_type,
+                template_id=template.id,
+                template_version=template.version,
+                pipeline_id=pipeline.id,
+                pipeline_run_id=pipeline_run_id,
+                source_ids=body.source_ids,
+                period_start=body.period_start,
+                period_end=body.period_end,
+            )
+            jobs.append(self.create(request_body))
+        return {
+            "pipeline_run_id": pipeline_run_id,
+            "pipeline_id": pipeline.id,
+            "status": "queued",
+            "jobs": jobs,
         }
 
     def _run(self, job_id: str, run_id: str, body: AnalysisRequest) -> None:
@@ -135,6 +183,42 @@ class AnalysisJobManager:
             return body.model_dump()
         return body.dict()
 
+    def _replace_request(self, body: AnalysisRequest, **updates: Any) -> AnalysisRequest:
+        if hasattr(body, "model_copy"):
+            return body.model_copy(update=updates)
+        return body.copy(update=updates)
+
+    def _with_template_defaults(self, body: AnalysisRequest) -> AnalysisRequest:
+        if body.prompt:
+            return self._replace_request(
+                body,
+                analysis_type=body.analysis_type or "custom_question",
+                template_id=body.template_id or "custom_question",
+                template_version=body.template_version or DEFAULT_TEMPLATE_VERSION,
+            )
+        template = get_template(body.template_id) if body.template_id else template_for_analysis_type(body.analysis_type)
+        prompt = template.prompt
+        if body.question:
+            prompt = f"{prompt}\n\nDomanda dell'utente: {body.question}"
+        return self._replace_request(
+            body,
+            prompt=prompt,
+            analysis_type=template.analysis_type,
+            template_id=template.id,
+            template_version=template.version,
+        )
+
+    def _with_recording_transcription(self, body: AnalysisRequest) -> AnalysisRequest:
+        if body.transcription_id or not body.recording_id:
+            return body
+        try:
+            transcription = self._app_state.transcription_store.find_for_recording(body.recording_id)
+        except Exception:
+            transcription = None
+        if not transcription:
+            return body
+        return self._replace_request(body, transcription_id=transcription.get("id"))
+
     def _input_hash(self, body: AnalysisRequest, payload: dict[str, Any]) -> str:
         if body.transcription_id:
             try:
@@ -161,7 +245,7 @@ class AnalysisJobManager:
 
     def _prompt_version(self, body: AnalysisRequest, provider: str) -> str:
         if body.prompt:
-            return "custom"
+            return f"{body.template_id or 'custom'}_{body.template_version or DEFAULT_TEMPLATE_VERSION}"
         if body.recording_id and provider == "voxtral_local":
             return "voxtral_audio_analysis_v1"
         return "summary_v1"

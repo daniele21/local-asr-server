@@ -14,6 +14,27 @@ class AnalysisRequest(BaseModel):
     audio_task: Optional[str] = "analysis"
     question: Optional[str] = None
     prompt: Optional[str] = None
+    analysis_type: Optional[str] = None
+    template_id: Optional[str] = None
+    template_version: Optional[str] = None
+    pipeline_id: Optional[str] = None
+    pipeline_run_id: Optional[str] = None
+    source_ids: Optional[list[str]] = None
+    period_start: Optional[str] = None
+    period_end: Optional[str] = None
+
+
+class AnalysisPipelineRequest(BaseModel):
+    transcription_id: Optional[str] = None
+    recording_id: Optional[str] = None
+    text: Optional[str] = None
+    llm_provider: Optional[str] = None
+    gemini_api_key: Optional[str] = None
+    pipeline_id: Optional[str] = None
+    analysis_types: Optional[list[str]] = None
+    source_ids: Optional[list[str]] = None
+    period_start: Optional[str] = None
+    period_end: Optional[str] = None
 
 class TranscribePathRequest(BaseModel):
     file: str
@@ -70,6 +91,8 @@ class SettingsRequest(BaseModel):
     local_llm_ctx_size: Optional[int] = None
     local_llm_startup_timeout: Optional[int] = None
     local_llm_llama_server_bin: Optional[str] = None
+    meeting_auto_analysis: Optional[bool] = None
+    meeting_default_pipeline: Optional[str] = None
 
 class MergeTranscriptionsRequest(BaseModel):
     transcription_ids: list[str]

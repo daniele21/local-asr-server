@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { BarChart3, CircleHelp, FolderKanban, Mic, Moon, Settings, Sparkles, Sun, Upload } from 'lucide-react';
 import { I18nProvider, useTranslation } from './i18n/i18n';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { ApiClient } from './api/apiClient';
@@ -10,6 +11,7 @@ import ProjectsPage from './pages/ProjectsPage';
 import AnalysisPage from './pages/AnalysisPage';
 import SettingsPage from './pages/SettingsPage';
 import RecordingOverlayPage from './pages/RecordingOverlayPage';
+import MeetingDetailPage from './pages/MeetingDetailPage';
 import { Badge } from './components/ui/Badge';
 import { Tooltip } from './components/ui/Tooltip';
 import { TourOverlay, TourStep } from './features/tour/TourOverlay';
@@ -45,6 +47,7 @@ function MainApp() {
         analysis: 'analysis',
         settings: 'settings',
         overlay: 'overlay',
+        meeting: 'meeting',
       };
 
       const targetPage = pageMap[pageName] || 'home';
@@ -73,6 +76,7 @@ function MainApp() {
       projects: 'projects',
       analysis: 'analysis',
       settings: 'settings',
+      meeting: 'meeting',
     };
     const route = pageRouteMap[page] || page;
     window.location.hash = detail ? `${route}/${detail}` : route;
@@ -147,6 +151,8 @@ function MainApp() {
     switch (activePage) {
       case 'home':
         return <DashboardPage navigateTo={navigateTo} />;
+      case 'meeting':
+        return <MeetingDetailPage recordingId={routeDetail} navigateTo={navigateTo} />;
       case 'recording':
         return <RecordingPage detailId={routeDetail} navigateTo={navigateTo} />;
       case 'transcription':
@@ -167,24 +173,20 @@ function MainApp() {
   }
 
   return (
-    <div className="relative min-h-screen z-10 w-full max-w-[1440px] px-4 md:px-10 py-6 mx-auto flex flex-col gap-6">
-      {/* Background glow decorations */}
-      <div className="glow-bg glow-bg--1 -top-[200px] -right-[150px] bg-accent-glow-lg"></div>
-      <div className="glow-bg glow-bg--2 -bottom-[250px] -left-[150px] bg-[rgba(16,185,129,0.04)]"></div>
-
+    <div className="relative min-h-screen z-10 w-full max-w-[1440px] px-4 md:px-10 py-5 mx-auto flex flex-col gap-6">
       {/* Header */}
-      <header className="flex flex-col lg:flex-row items-start lg:items-center justify-between border-b border-border-subtle pb-5 gap-4">
+      <header className="flex flex-col xl:flex-row items-start xl:items-center justify-between border-b border-border-subtle pb-4 gap-4">
         {/* Brand */}
         <button
           onClick={() => navigateTo('home')}
           className="flex items-center gap-4.5 bg-transparent border-0 text-inherit text-left cursor-pointer p-0 select-none group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-8 focus-visible:outline-border-focus focus-visible:rounded-lg"
         >
-          <div className="w-14 h-14 bg-bg-elevated border border-border-subtle rounded-xl p-2 shadow-md shadow-accent/5 hover:scale-105 hover:border-accent-hover transition-all duration-200 flex items-center justify-center relative overflow-hidden">
+          <div className="w-11 h-11 bg-bg-elevated border border-border-subtle rounded-lg p-2 shadow-sm hover:border-accent-hover transition-all duration-200 flex items-center justify-center relative overflow-hidden">
             <img src="/logo-dark.svg" alt="Logo" className="w-full h-full object-contain dark:block hidden" />
             <img src="/logo-light.svg" alt="Logo" className="w-full h-full object-contain dark:hidden block" />
           </div>
           <div>
-            <h1 className="text-xl font-bold bg-gradient-to-r from-text-primary to-accent-hover bg-clip-text text-transparent">
+            <h1 className="text-xl font-bold text-text-primary">
               ClosedRoom
             </h1>
             <p className="text-xs text-text-secondary mt-0.5">{t('header.subtitle')}</p>
@@ -192,30 +194,38 @@ function MainApp() {
         </button>
 
         {/* Navigation */}
-        <nav className="flex bg-bg-elevated border border-border-subtle rounded-full p-1 gap-1 mx-auto lg:mx-0 w-full lg:w-auto overflow-x-auto select-none">
+        <nav className="flex bg-bg-elevated border border-border-subtle rounded-lg p-1 gap-1 mx-auto xl:mx-0 w-full xl:w-auto overflow-x-auto select-none">
           {[
-            { id: 'projects', label: t('nav.projects'), icon: '🗂️' },
-            { id: 'recording', label: t('nav.recording'), icon: '🎙️' },
-            { id: 'transcription', label: t('nav.transcription'), icon: '📝' },
-            { id: 'analysis', label: t('nav.analysis'), icon: '🧠' },
+            { id: 'home', label: 'Oggi', icon: BarChart3 },
+            { id: 'projects', label: t('nav.projects'), icon: FolderKanban },
+            { id: 'transcription', label: 'Importa', icon: Upload },
+            { id: 'analysis', label: 'Analisi avanzata', icon: Sparkles },
           ].map((item) => (
             <button
               key={item.id}
               onClick={() => navigateTo(item.id)}
-              className={`flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-medium transition-all duration-150 cursor-pointer ${
-                activePage === item.id
+              className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150 cursor-pointer whitespace-nowrap ${
+                activePage === item.id || (item.id === 'home' && activePage === 'meeting')
                   ? 'bg-accent text-white shadow-md shadow-accent/15'
                   : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover'
               }`}
             >
-              <span>{item.icon}</span>
+              <item.icon className="w-4 h-4" />
               <span className="hidden md:inline">{item.label}</span>
             </button>
           ))}
         </nav>
 
         {/* Actions */}
-        <div className="flex items-center gap-3 self-stretch lg:self-auto justify-end lg:justify-start">
+        <div className="flex items-center gap-2 self-stretch xl:self-auto justify-end xl:justify-start">
+          <button
+            onClick={() => navigateTo('recording')}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white shadow-md shadow-accent/10 hover:bg-accent-hover transition-colors"
+          >
+            <Mic className="w-4 h-4" />
+            <span className="hidden sm:inline">Registra meeting</span>
+          </button>
+
           {/* Server status */}
           <Badge
             variant={serverOnline ? 'online' : 'offline'}
@@ -234,11 +244,7 @@ function MainApp() {
                 className="w-9 h-9 border border-border-subtle hover:border-border-focus text-text-secondary hover:text-text-primary rounded-lg flex items-center justify-center transition-all bg-transparent cursor-pointer"
                 aria-expanded={helpOpen}
               >
-                <svg className="w-[18px] h-[18px]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10" />
-                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                  <line x1="12" y1="17" x2="12.01" y2="17" />
-                </svg>
+                <CircleHelp className="w-[18px] h-[18px]" />
               </button>
             </Tooltip>
 
@@ -255,7 +261,7 @@ function MainApp() {
                   }}
                   className="w-full py-1.5 px-3 bg-bg-hover hover:bg-bg-elevated text-xs font-medium rounded-lg text-left transition-colors cursor-pointer"
                 >
-                  🚀 {t('help.tour')}
+                  {t('help.tour')}
                 </button>
                 <hr className="border-border-subtle my-1" />
                 <strong className="text-xs text-text-secondary uppercase tracking-wider">{t('help.menuBarTitle')}</strong>
@@ -307,10 +313,7 @@ function MainApp() {
                   : 'border-border-subtle hover:border-border-focus text-text-secondary hover:text-text-primary'
               }`}
             >
-              <svg className="w-[18px] h-[18px]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.39a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
+              <Settings className="w-[18px] h-[18px]" />
             </button>
           </Tooltip>
 
@@ -320,16 +323,7 @@ function MainApp() {
               onClick={toggleTheme}
               className="w-9 h-9 border border-border-subtle hover:border-border-focus text-text-secondary hover:text-text-primary rounded-lg flex items-center justify-center transition-all bg-transparent cursor-pointer"
             >
-              {theme === 'dark' ? (
-                <svg className="w-[18px] h-[18px]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="4" />
-                  <path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.42 1.42M2 12h2M20 12h2M6.34 17.66l-1.42 1.42M19.07 4.93l-1.42 1.42" />
-                </svg>
-              ) : (
-                <svg className="w-[18px] h-[18px]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                </svg>
-              )}
+              {theme === 'dark' ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
             </button>
           </Tooltip>
         </div>

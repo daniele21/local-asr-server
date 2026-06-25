@@ -41,6 +41,28 @@ export const DEFAULTS = {
   theme: 'dark' as 'dark' | 'light',
 };
 
+export const ANALYSIS_TYPE_ORDER = [
+  'meeting_brief',
+  'action_items',
+  'decisions',
+  'risks_blockers',
+  'meeting_minutes',
+  'open_questions',
+  'project_update',
+  'custom_question',
+];
+
+export const ANALYSIS_TYPE_LABELS: Record<string, string> = {
+  meeting_brief: 'Brief',
+  action_items: 'Azioni',
+  decisions: 'Decisioni',
+  risks_blockers: 'Rischi',
+  meeting_minutes: 'Verbale',
+  open_questions: 'Domande',
+  project_update: 'Progetto',
+  custom_question: 'Custom',
+};
+
 export const ACCEPTED_EXTENSIONS = /\.(mp3|wav|m4a|webm|flac|ogg|aac|oga)$/i;
 export const ACCEPTED_MIME_PREFIX = 'audio/';
 export const MAX_FILE_SIZE_MB = 25;

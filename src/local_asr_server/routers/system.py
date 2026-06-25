@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from local_asr_server.audio_router import AudioRouter
+from local_asr_server.analysis_templates import list_pipelines, list_templates
 from local_asr_server.settings import load_settings, save_settings
 from local_asr_server.prompts import load_prompts, save_prompts
 from local_asr_server.recordings import RecordingConflict, RecordingNotFound
@@ -21,8 +22,9 @@ from local_asr_server.schemas import (
     CaptureStartRequest,
     SettingsRequest,
     AnalysisRequest,
+    AnalysisPipelineRequest,
 )
-from local_asr_server.routers.helpers import _build_projects
+from local_asr_server.routers.helpers import _build_meeting, _build_meetings, _build_projects
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -72,9 +74,14 @@ def health(request: Request) -> dict:
             "POST /v1/recordings/{id}/capture/cancel",
             "POST /v1/recordings/{id}/transcription-jobs",
             "POST /v1/analysis-jobs",
+            "POST /v1/analysis-pipelines",
+            "GET /v1/analysis/templates",
+            "GET /v1/analysis/pipelines",
             "GET /v1/jobs/{job_id}",
             "GET /v1/analysis-runs/{analysis_run_id}",
             "GET /v1/analysis-runs",
+            "GET /v1/meetings",
+            "GET /v1/meetings/{recording_id}",
             "GET /v1/recordings/{id}",
             "GET /v1/recordings/{id}/audio",
             "GET /v1/recordings/{id}/project",
@@ -272,14 +279,14 @@ def get_settings():
 
 
 @router.get("/v1/prompts")
-def get_prompts():
-    return load_prompts()
+def get_prompts(request: Request):
+    return load_prompts(getattr(request.app.state, "prompts_file", None))
 
 
 @router.post("/v1/prompts")
-def update_prompts(body: dict[str, dict[str, str]]):
+def update_prompts(request: Request, body: dict[str, dict[str, str]]):
     try:
-        save_prompts(body)
+        save_prompts(body, getattr(request.app.state, "prompts_file", None))
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore nel salvataggio dei prompt: {e}")
@@ -404,6 +411,10 @@ def update_settings(body: SettingsRequest):
         current["local_llm_startup_timeout"] = body.local_llm_startup_timeout
     if body.local_llm_llama_server_bin is not None:
         current["local_llm_llama_server_bin"] = body.local_llm_llama_server_bin
+    if body.meeting_auto_analysis is not None:
+        current["meeting_auto_analysis"] = body.meeting_auto_analysis
+    if body.meeting_default_pipeline is not None:
+        current["meeting_default_pipeline"] = body.meeting_default_pipeline
 
     try:
         save_settings(current)
@@ -484,6 +495,21 @@ def create_analysis_job(request: Request, body: AnalysisRequest):
     return request.app.state.analysis_jobs.create(body)
 
 
+@router.post("/v1/analysis-pipelines", status_code=202)
+def create_analysis_pipeline(request: Request, body: AnalysisPipelineRequest):
+    return request.app.state.analysis_jobs.create_pipeline(body)
+
+
+@router.get("/v1/analysis/templates")
+def get_analysis_templates():
+    return {"items": list_templates()}
+
+
+@router.get("/v1/analysis/pipelines")
+def get_analysis_pipelines():
+    return {"items": list_pipelines()}
+
+
 @router.get("/v1/analysis-runs/{analysis_run_id}")
 def get_analysis_run(analysis_run_id: str, request: Request):
     run = request.app.state.catalog_store.get_analysis_run(analysis_run_id)
@@ -498,6 +524,9 @@ def list_analysis_runs(
     scope_type: str | None = Query(default=None),
     scope_id: str | None = Query(default=None),
     transcription_id: str | None = Query(default=None),
+    recording_id: str | None = Query(default=None),
+    analysis_type: str | None = Query(default=None),
+    pipeline_run_id: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
 ):
     return {
@@ -505,6 +534,9 @@ def list_analysis_runs(
             scope_type=scope_type,
             scope_id=scope_id,
             transcription_id=transcription_id,
+            recording_id=recording_id,
+            analysis_type=analysis_type,
+            pipeline_run_id=pipeline_run_id,
             limit=limit,
         )
     }
@@ -513,3 +545,17 @@ def list_analysis_runs(
 @router.get("/v1/projects")
 def list_projects(request: Request):
     return _build_projects(request.app)
+
+
+@router.get("/v1/meetings")
+def list_meetings(request: Request, limit: int = Query(default=50, ge=1, le=200)):
+    return _build_meetings(request.app, limit=limit)
+
+
+@router.get("/v1/meetings/{recording_id}")
+def get_meeting(recording_id: str, request: Request):
+    try:
+        recording = request.app.state.recording_store.get(recording_id)
+    except RecordingNotFound as exc:
+        raise HTTPException(status_code=404, detail="Meeting not found") from exc
+    return _build_meeting(request.app, recording)

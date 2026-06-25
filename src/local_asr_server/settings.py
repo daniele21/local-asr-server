@@ -48,6 +48,8 @@ DEFAULT_SETTINGS: dict[str, any] = {
     "local_llm_ctx_size": None,
     "local_llm_startup_timeout": None,
     "local_llm_llama_server_bin": "",
+    "meeting_auto_analysis": False,
+    "meeting_default_pipeline": "meeting_default",
 }
 
 

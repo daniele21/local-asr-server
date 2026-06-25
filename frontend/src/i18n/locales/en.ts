@@ -482,7 +482,7 @@ const en = {
     themeLabel: 'Theme',
     themeDark: 'Dark',
     themeLight: 'Light',
-    btnSave: '💾 Save settings',
+    btnSave: 'Save settings',
     systemInfoTitle: 'System info',
     sysServer: 'Server:',
     sysActiveModel: 'Active model:',
@@ -522,7 +522,13 @@ const en = {
     localLlmJsonMode: 'JSON mode',
     localLlmActiveModel: 'Active model',
     localLlmWebUi: 'Access Web UI',
-    localLlmChangeModelNote: 'To change or configure models, use the local-llm-server Web UI.'
+    localLlmChangeModelNote: 'To change or configure models, use the local-llm-server Web UI.',
+    meetingWorkflowTitle: 'Meeting workflow',
+    meetingWorkflowDesc: 'Configure what happens after a transcription linked to a recording.',
+    meetingAutoAnalysis: 'Automatically start the analysis pipeline after transcription',
+    meetingDefaultPipeline: 'Default pipeline',
+    meetingPipelineDefault: 'Meeting default',
+    meetingPipelineDeep: 'Full meeting'
   },
   common: {
     loading: 'Loading...',

@@ -84,6 +84,7 @@ def create_app(
         catalog_path = CatalogStore.default_db_path()
         
     app.state.catalog_store = CatalogStore(catalog_path)
+    app.state.prompts_file = catalog_path.parent / "prompts.json" if temp_root in catalog_path.resolve().parents else None
     app.state.job_store = JobStore(catalog_path)
     interrupted_jobs = app.state.job_store.interrupt_incomplete()
     app.state.catalog_store.interrupt_analysis_runs_for_jobs(

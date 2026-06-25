@@ -33,6 +33,7 @@ from local_asr_server.schemas import (
     TranscribeRecordingRequest,
     TranscriptionJobRequest,
     MergeTranscriptionsRequest,
+    AnalysisPipelineRequest,
 )
 from local_asr_server.routers.helpers import _build_projects, _merge_track_transcriptions
 from local_asr_server.transcription_quality import audio_stats, is_near_silent_track
@@ -211,6 +212,25 @@ def _attach_audio_intelligence(
             "error": str(exc)[:500],
         }
     return payload
+
+
+def _maybe_start_meeting_pipeline(app: Any, recording_id: str, transcription_id: str | None) -> dict[str, Any] | None:
+    settings = load_settings()
+    if not settings.get("meeting_auto_analysis"):
+        return None
+    pipeline_id = settings.get("meeting_default_pipeline") or "meeting_default"
+    try:
+        return app.state.analysis_jobs.create_pipeline(
+            AnalysisPipelineRequest(
+                recording_id=recording_id,
+                transcription_id=transcription_id,
+                pipeline_id=pipeline_id,
+                source_ids=[item for item in [recording_id, transcription_id] if item],
+            )
+        )
+    except Exception as exc:
+        logger.warning("Failed to start meeting analysis pipeline for %s: %s", recording_id, exc)
+        return {"status": "failed", "error": str(exc)[:500], "pipeline_id": pipeline_id}
 
 
 @router.get("/v1/transcription/source-data")
@@ -494,6 +514,9 @@ def transcribe_path(request: Request, body: TranscribePathRequest):
 def transcribe_recording(recording_id: str, request: Request, body: TranscribeRecordingRequest):
     try:
         payload = run_recording_transcription(request.app, recording_id, body)
+        pipeline = _maybe_start_meeting_pipeline(request.app, recording_id, payload.get("saved_id"))
+        if pipeline:
+            payload["analysis_pipeline"] = pipeline
         if body.response_format == "text":
             return PlainTextResponse(payload["text"])
         return JSONResponse(payload)
@@ -517,7 +540,11 @@ def create_transcription_job(recording_id: str, request: Request, body: Transcri
 
     def runner(job: TranscriptionJob) -> dict[str, Any]:
         try:
-            return run_recording_transcription(request.app, recording_id, body, job)
+            payload = run_recording_transcription(request.app, recording_id, body, job)
+            pipeline = _maybe_start_meeting_pipeline(request.app, recording_id, payload.get("saved_id"))
+            if pipeline:
+                payload["analysis_pipeline"] = pipeline
+            return payload
         finally:
             pass
 

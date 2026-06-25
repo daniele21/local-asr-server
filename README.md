@@ -68,9 +68,12 @@ Pass `--port` explicitly when you need a specific port.
 ## Post-call recording
 
 The browser sends audio chunks to the configured recordings directory while
-the call is in progress. Clicking **Termina e salva** only finalizes the audio.
-To run Whisper, open the **Trascrizione** screen and select the saved recording
-or upload a different audio file.
+the call is in progress. Clicking **Termina e salva** finalizes the audio and
+creates a meeting workspace in **Oggi**. Whisper is still started explicitly
+from **Oggi**, **Importa** or the meeting detail screen, so stopping audio does
+not block on transcription. If `meeting_auto_analysis` is enabled in Settings,
+ClosedRoom starts the selected analysis pipeline asynchronously after the
+recording transcription job completes.
 
 Chunk uploads are recorded with monotonic sequence numbers and SHA-256 metadata,
 so retrying the same committed chunk is idempotent while conflicting duplicate
@@ -98,8 +101,8 @@ macOS version and the required Screen Recording/Microphone permissions are
 ready. When it is available, it becomes the default and the UI shows native
 capture status instead of BlackHole setup controls. For **voice + computer
 audio** sessions, ClosedRoom stores the source tracks plus a mixed playback
-track under one recording item. Whisper is started later from the
-**Trascrizione** screen: it transcribes the source tracks sequentially and
+track under one recording item. Whisper is started later from the meeting
+workspace or import screen: it transcribes the source tracks sequentially and
 merges the resulting segments by timestamp, labeling them as local microphone
 or computer audio.
 
@@ -216,6 +219,26 @@ curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/jobs/<job-id>/events
 Long-running local work writes job snapshots and events to the local SQLite
 catalog database so status survives process restarts. Transcription jobs remain
 compatible with the existing polling and event-stream endpoints.
+
+### Meeting workspace and analysis pipelines
+```bash
+curl -c /tmp/closedroom.cookies http://127.0.0.1:1236/v1/session
+curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/meetings
+curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/meetings/<recording-id>
+curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/analysis/templates
+curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/analysis/pipelines
+curl -b /tmp/closedroom.cookies -X POST http://127.0.0.1:1236/v1/analysis-pipelines \
+  -H "Content-Type: application/json" \
+  -d '{"recording_id":"<recording-id>","pipeline_id":"meeting_default"}'
+```
+
+`/v1/meetings` is an aggregate view: `recording_id` is the meeting identifier
+and the response derives status from the recording, latest transcription,
+analysis runs and jobs. Analysis templates and pipelines are owned by
+`analysis_templates.py`; the frontend only renders labels and status. Completed
+runs are stored in `analysis_runs` with `analysis_type`, template metadata,
+optional `pipeline_run_id` and `result_markdown`, so a meeting can keep history
+for brief, actions, decisions, risks, minutes and project updates.
 
 ## Result caching
 
