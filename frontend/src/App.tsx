@@ -180,29 +180,30 @@ function MainApp() {
   }
 
   return (
-    <div className="relative min-h-screen z-10 w-full max-w-[1440px] px-4 md:px-10 py-5 mx-auto flex flex-col gap-6">
+    <div className="app-chrome min-h-screen">
+      <div className="app-shell relative z-10 mx-auto flex min-h-screen w-full max-w-[1480px] flex-col gap-6 px-4 py-5 sm:px-6 lg:px-10">
       {/* Header */}
-      <header className="flex flex-col xl:flex-row items-start xl:items-center justify-between border-b border-border-subtle pb-4 gap-4">
+      <header className="app-header grid grid-cols-1 items-start gap-4 border-b border-border-subtle pb-5 xl:grid-cols-[minmax(300px,1fr)_auto_minmax(420px,1fr)] xl:items-center">
         {/* Brand */}
         <button
           onClick={() => navigateTo('home')}
-          className="flex items-center gap-4.5 bg-transparent border-0 text-inherit text-left cursor-pointer p-0 select-none group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-8 focus-visible:outline-border-focus focus-visible:rounded-lg"
+          className="group flex min-w-0 cursor-pointer select-none items-center gap-4 border-0 bg-transparent p-0 text-left text-inherit focus-visible:rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-8 focus-visible:outline-border-focus"
         >
-          <div className="w-11 h-11 bg-bg-elevated border border-border-subtle rounded-xl p-2 shadow-[0_4px_12px_rgba(0,0,0,0.15),inset_0_1px_0px_rgba(255,255,255,0.1)] hover:border-accent-hover/60 hover:scale-105 transition-all duration-300 ease-spring flex items-center justify-center relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-tr from-accent/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
-            <img src="/logo-dark.svg" alt="Logo" className="w-full h-full object-contain dark:block hidden relative z-10" />
-            <img src="/logo-light.svg" alt="Logo" className="w-full h-full object-contain dark:hidden block relative z-10" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-text-primary transition-colors duration-200 group-hover:text-accent-hover">
+          <span className="brand-mark" aria-hidden="true">
+            <span className="brand-mark-halo" />
+            <img src="/logo-dark.svg" alt="" className="brand-logo brand-logo-dark" />
+            <img src="/logo-light.svg" alt="" className="brand-logo brand-logo-light" />
+          </span>
+          <span className="min-w-0">
+            <h1 className="text-[1.55rem] font-bold leading-none text-text-primary transition-colors duration-200 group-hover:text-accent-hover">
               ClosedRoom
             </h1>
-            <p className="text-xs text-text-secondary mt-0.5">{t('header.subtitle')}</p>
-          </div>
+            <p className="mt-1 text-xs text-text-secondary">{t('header.subtitle')}</p>
+          </span>
         </button>
 
         {/* Navigation */}
-        <nav className="flex bg-bg-elevated border border-border-subtle rounded-lg p-1 gap-1 mx-auto xl:mx-0 w-full xl:w-auto overflow-x-auto select-none shadow-[inset_0_1px_1px_rgba(255,255,255,0.03)]">
+        <nav className="app-nav flex w-full gap-1 overflow-x-auto rounded-lg border border-border-subtle bg-bg-elevated/85 p-1 shadow-[inset_0_1px_1px_rgba(255,255,255,0.04)] select-none xl:mx-0 xl:w-auto xl:justify-self-center">
           {[
             { id: 'home', label: t('nav.home'), icon: BarChart3 },
             { id: 'projects', label: t('nav.projects'), icon: FolderKanban },
@@ -210,7 +211,7 @@ function MainApp() {
             <button
               key={item.id}
               onClick={() => navigateTo(item.id)}
-              className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 active:scale-95 ease-spring cursor-pointer whitespace-nowrap ${
+              className={`flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3.5 py-2 text-xs font-semibold transition-all duration-200 ease-spring active:scale-95 cursor-pointer ${
                 activePage === item.id || (item.id === 'home' && activePage === 'meeting')
                   ? 'bg-gradient-to-b from-accent to-accent/95 text-white shadow-md shadow-accent/15'
                   : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover'
@@ -223,7 +224,7 @@ function MainApp() {
         </nav>
 
         {/* Actions */}
-        <div className="flex items-center gap-2 self-stretch xl:self-auto justify-end xl:justify-start">
+        <div className="flex items-center justify-end gap-2 self-stretch xl:self-auto xl:justify-self-end">
           <button
             onClick={() => navigateTo('recording')}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white shadow-md shadow-accent/10 hover:bg-accent-hover transition-colors"
@@ -345,6 +346,7 @@ function MainApp() {
         <span dangerouslySetInnerHTML={{ __html: t('common.powerBy') }} />
       </footer>
       {tourStep && <TourOverlay step={TOUR_STEPS[tourStepIndex(tourStep)]} onNext={advanceTour} onClose={closeTour} />}
+      </div>
     </div>
   );
 }

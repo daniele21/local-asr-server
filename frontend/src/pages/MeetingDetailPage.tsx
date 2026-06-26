@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { type ComponentType, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -37,6 +37,62 @@ function analysisLabel(type: string): string {
 function jobProgress(job: TranscriptionJob): string {
   const step = job.current_step || job.status;
   return `${step} · ${job.progress || 0}%`;
+}
+
+interface MeetingActionTileProps {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  description: string;
+  detail?: string;
+  variant?: 'primary' | 'secondary';
+  disabled?: boolean;
+  isLoading?: boolean;
+  onClick: () => void;
+}
+
+function MeetingActionTile({
+  icon: Icon,
+  label,
+  description,
+  detail,
+  variant = 'secondary',
+  disabled = false,
+  isLoading = false,
+  onClick,
+}: MeetingActionTileProps) {
+  const primary = variant === 'primary';
+  return (
+    <button
+      type="button"
+      disabled={disabled || isLoading}
+      onClick={onClick}
+      title={description}
+      aria-label={`${label}. ${description}`}
+      className={`group flex min-h-[112px] flex-col items-start justify-between rounded-lg border p-4 text-left transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-55 ${
+        primary
+          ? 'border-accent/55 bg-accent text-white shadow-[0_16px_36px_rgba(14,165,233,0.22)] hover:bg-accent-hover focus-visible:outline-accent'
+          : 'border-border-subtle bg-bg-elevated/78 text-text-primary hover:border-border-focus hover:bg-bg-hover focus-visible:outline-border-focus'
+      }`}
+    >
+      <span className="flex w-full items-start justify-between gap-3">
+        <span className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+          <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-md ${primary ? 'bg-white/16 text-white' : 'bg-accent/10 text-accent'}`}>
+            <Icon className="h-4 w-4" />
+          </span>
+          <span className="truncate">{label}</span>
+        </span>
+        {isLoading && <Loader2 className="h-4 w-4 shrink-0 animate-spin" />}
+      </span>
+      <span className={`mt-3 text-xs leading-relaxed ${primary ? 'text-white/84' : 'text-text-secondary'}`}>
+        {description}
+      </span>
+      {detail && (
+        <span className={`mt-3 text-[11px] font-semibold uppercase ${primary ? 'text-white/70' : 'text-text-muted'}`}>
+          {detail}
+        </span>
+      )}
+    </button>
+  );
 }
 
 export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDetailPageProps) {
@@ -164,7 +220,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
           </Button>
         </div>
 
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5">
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,460px)] xl:items-end">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-2">
               <Badge variant={meeting.status === 'ready' ? 'success' : meeting.status === 'analyzing' ? 'warning' : 'idle'}>
@@ -179,31 +235,15 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
               <span>{formatBytes(meeting.recording.bytes_written || 0)}</span>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {!meeting.transcription && (
-              <Button onClick={startTranscription} isLoading={busyAction === 'transcription'}>
-                <FileText className="w-4 h-4" />
-                {t('meeting.btnTranscribe')}
-              </Button>
-            )}
-            <Button
-              variant={meeting.transcription ? 'primary' : 'secondary'}
-              disabled={!meeting.transcription}
-              onClick={() => startPipeline('meeting_default')}
-              isLoading={busyAction === 'meeting_default'}
-            >
-              <Sparkles className="w-4 h-4" />
-              {t('meeting.btnAnalyze')}
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={!meeting.transcription}
-              onClick={() => startPipeline('meeting_deep')}
-              isLoading={busyAction === 'meeting_deep'}
-            >
-              <ListChecks className="w-4 h-4" />
-              {t('meeting.btnDeep')}
-            </Button>
+          <div className="workspace-panel rounded-lg border border-border-subtle p-3">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <PlayCircle className="h-4 w-4 shrink-0 text-text-muted" />
+                <span className="truncate text-sm font-semibold text-text-primary">{t('meeting.audioTitle')}</span>
+              </div>
+              <Badge variant="success" className="py-0.5 text-[11px]">{t('meeting.statusSaved')}</Badge>
+            </div>
+            <audio controls src={`/v1/recordings/${meeting.id}/audio`} className="h-9 w-full" />
           </div>
         </div>
 
@@ -212,6 +252,42 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
             {error}
           </div>
         )}
+      </section>
+
+      <section
+        className={`mx-auto grid w-full gap-3 ${meeting.transcription ? 'max-w-3xl sm:grid-cols-2' : 'max-w-5xl lg:grid-cols-3'}`}
+        aria-label={t('meeting.primaryActionsLabel')}
+      >
+        {!meeting.transcription && (
+          <MeetingActionTile
+            icon={FileText}
+            label={t('meeting.btnTranscribe')}
+            description={t('meeting.transcribeDescription')}
+            detail={t('meeting.actionRequiredBeforeAnalysis')}
+            variant="primary"
+            onClick={startTranscription}
+            isLoading={busyAction === 'transcription'}
+          />
+        )}
+        <MeetingActionTile
+          icon={Sparkles}
+          label={t('meeting.btnAnalyze')}
+          description={t('meeting.analyzeDescription')}
+          detail={!meeting.transcription ? t('meeting.actionRequiresTranscription') : t('meeting.analyzeDetail')}
+          variant={meeting.transcription ? 'primary' : 'secondary'}
+          disabled={!meeting.transcription}
+          onClick={() => startPipeline('meeting_default')}
+          isLoading={busyAction === 'meeting_default'}
+        />
+        <MeetingActionTile
+          icon={ListChecks}
+          label={t('meeting.btnDeep')}
+          description={t('meeting.deepDescription')}
+          detail={!meeting.transcription ? t('meeting.actionRequiresTranscription') : t('meeting.deepDetail')}
+          disabled={!meeting.transcription}
+          onClick={() => startPipeline('meeting_deep')}
+          isLoading={busyAction === 'meeting_deep'}
+        />
       </section>
 
       {(activeJobs.length > 0 || meeting.analysis_runs.some((run) => activeJobStatuses.has(run.status))) && (
@@ -231,16 +307,6 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
 
       <section className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-6">
         <main className="flex flex-col gap-6 min-w-0">
-          <div className="border border-border-subtle rounded-lg overflow-hidden">
-            <div className="px-4 py-3 border-b border-border-subtle bg-bg-elevated flex items-center gap-2">
-              <PlayCircle className="w-4 h-4 text-text-muted" />
-              <h3 className="text-sm font-semibold text-text-primary">{t('meeting.audioTitle')}</h3>
-            </div>
-            <div className="p-4 bg-bg-surface">
-              <audio controls src={`/v1/recordings/${meeting.id}/audio`} className="w-full" />
-            </div>
-          </div>
-
           <div className="border border-border-subtle rounded-lg overflow-hidden">
             <div className="px-4 py-3 border-b border-border-subtle bg-bg-elevated flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">

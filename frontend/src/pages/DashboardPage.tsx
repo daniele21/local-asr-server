@@ -183,7 +183,7 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
           { label: t('dashboard.statAnalyzing'), value: analyzingCount, icon: Activity, color: 'text-info', bgColor: 'bg-info/10 border-info/20' },
           { label: t('dashboard.statOpenActions'), value: actionItems.length, icon: ListChecks, color: 'text-success', bgColor: 'bg-success/10 border-success/20' },
         ].map((item) => (
-          <div key={item.label} className="group relative overflow-hidden rounded-xl border border-border-subtle bg-bg-surface/50 p-4 transition-all duration-300 hover:border-border-focus hover:bg-bg-hover hover:shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
+          <div key={item.label} className="metric-card group relative overflow-hidden rounded-lg border border-border-subtle p-4 transition-all duration-300 hover:border-border-focus hover:bg-bg-hover hover:shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
             <div className="absolute -right-6 -top-6 h-16 w-16 rounded-full bg-accent/5 blur-xl transition-all duration-500 group-hover:scale-150" />
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted transition-colors group-hover:text-text-secondary">{item.label}</span>
@@ -200,7 +200,7 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
 
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
         <main className="flex min-w-0 flex-col gap-5">
-          <section className="flex flex-col gap-3 rounded-xl border border-border-subtle bg-bg-surface/20 p-4 theme-audio">
+          <section className="workspace-panel flex flex-col gap-3 rounded-lg border border-border-subtle p-4 theme-audio">
             <SectionHeader
               icon={FileAudio}
               title={t('dashboard.statPeriodMeetings')}
@@ -234,7 +234,7 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
           </section>
 
           <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-            <div className="flex flex-col gap-3 rounded-xl border border-border-subtle bg-bg-surface/20 p-4 theme-tasks" data-tour="open-actions">
+            <div className="workspace-panel flex flex-col gap-3 rounded-lg border border-border-subtle p-4 theme-tasks" data-tour="open-actions">
               <SectionHeader
                 icon={ListChecks}
                 title={t('dashboard.statOpenActions')}
@@ -243,7 +243,7 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
               />
               <ActionChecklist items={actionItems.slice(0, 8)} />
             </div>
-            <div className="flex flex-col gap-3 rounded-xl border border-border-subtle bg-bg-surface/20 p-4 theme-decisions" data-tour="decision-log">
+            <div className="workspace-panel flex flex-col gap-3 rounded-lg border border-border-subtle p-4 theme-decisions" data-tour="decision-log">
               <SectionHeader
                 icon={Target}
                 title={lang === 'it' ? 'Decisioni recenti' : 'Recent decisions'}
@@ -258,7 +258,7 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
         <aside className="flex flex-col gap-4">
           <DigestPanel items={digestItems} title={t('dashboard.digestTitle')} />
 
-          <section className="rounded-xl border border-border-subtle bg-bg-surface/20 p-4 theme-pipeline">
+          <section className="workspace-panel rounded-lg border border-border-subtle p-4 theme-pipeline">
             <SectionHeader
               icon={AlertTriangle}
               title={t('dashboard.toCompleteTitle')}
@@ -283,7 +283,7 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
             </div>
           </section>
 
-          <section className="flex flex-col gap-3 rounded-xl border border-border-subtle bg-bg-surface/20 p-4 theme-risks" data-tour="risk-panel">
+          <section className="workspace-panel flex flex-col gap-3 rounded-lg border border-border-subtle p-4 theme-risks" data-tour="risk-panel">
             <SectionHeader
               icon={Sparkles}
               title={lang === 'it' ? 'Rischi e blocker' : 'Risks and blockers'}

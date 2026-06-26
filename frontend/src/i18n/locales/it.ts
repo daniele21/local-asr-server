@@ -632,6 +632,14 @@ const it = {
     btnTranscribe: 'Trascrivi',
     btnAnalyze: 'Analizza',
     btnDeep: 'Deep',
+    primaryActionsLabel: 'Azioni principali del meeting',
+    transcribeDescription: 'Crea il testo ricercabile dall’audio salvato. Serve prima di lanciare le analisi.',
+    analyzeDescription: 'Genera il brief operativo del meeting con sintesi, azioni, decisioni e rischi principali.',
+    deepDescription: 'Esegue la pipeline completa: brief, verbale, domande aperte e aggiornamento progetto.',
+    analyzeDetail: 'Pipeline rapida',
+    deepDetail: 'Pipeline completa',
+    actionRequiresTranscription: 'Richiede trascrizione',
+    actionRequiredBeforeAnalysis: 'Primo passo',
   },
   workspace: {
     advancedTitle: 'Dettagli avanzati',
@@ -688,4 +696,3 @@ const it = {
 };
 
 export default it;
-

@@ -415,7 +415,7 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
                   action={<Button onClick={handleNewMeetingForProject} disabled={demoMode}>{t('projects.btnNewMeetingShort')}</Button>}
                 />
               ) : (
-                <div className="overflow-hidden rounded-lg border border-border-subtle bg-bg-elevated">
+                <div className="workspace-panel overflow-hidden rounded-lg border border-border-subtle">
                   {periodItems.map((item) => (
                     <ProjectTimelineItem
                       key={item.recording.id}
@@ -444,7 +444,7 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
               generatedAt={projectDigestGeneratedAt}
             />
 
-            <section className="rounded-lg border border-border-subtle bg-bg-elevated p-4">
+            <section className="workspace-panel rounded-lg border border-border-subtle p-4">
               <SectionHeader
                 icon={MoreHorizontal}
                 title={t('projects.analysisTitle')}
