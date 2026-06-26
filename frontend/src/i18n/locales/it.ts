@@ -18,6 +18,8 @@ const it = {
     tour: 'Tour guidato',
     showcase: 'Showcase automatico',
     recordDemo: 'Registra demo',
+    populateMock: 'Popola con dati mock',
+    mockDataSuccess: 'Dati mock popolati con successo!',
     menuBarTitle: 'ClosedRoom vive nella barra dei menu superiore (icona 🎙️).',
     notVisible: 'Se non la vedi:',
     notchTitle: 'Notch / Spazio ridotto:',
@@ -745,7 +747,27 @@ const it = {
     settings: 'Impostazioni',
     theme: 'Cambia tema',
     refresh: 'Aggiorna',
+    exitDemo: 'Esci da Demo',
+    exitDemoSuccess: 'Modalità demo disattivata',
+    demoNotAvailable: 'Non disponibile in modalità demo',
     powerBy: 'Powered by <strong>MLX Whisper</strong> & <strong>FastAPI</strong>. Eseguito in locale su Apple Silicon.'
+  },
+  demo: {
+    bannerTitle: 'Modalità demo attiva',
+    bannerDesc: 'I dati mostrati sono fittizi. Registra un meeting reale per iniziare.',
+    bannerExit: 'Esci dalla demo',
+    bannerTour: 'Avvia tour →',
+    emptyTitle: 'Benvenuto in ClosedRoom',
+    emptyDesc: 'Registra il tuo primo meeting o esplora le funzionalità con dati di esempio.',
+    emptyCta: 'Registra meeting',
+    emptyCtaDemo: 'Esplora con dati demo',
+    viewAll: 'Vedi tutti',
+    viewAllActions: 'Vedi tutte le azioni →',
+    viewAllDecisions: 'Vedi tutte le decisioni →',
+    viewAllRisks: 'Vedi tutti i rischi →',
+    viewAllMeetings: 'Vedi tutti i meeting →',
+    viewFullSituation: 'Situazione completa →',
+    viewTimeline: 'Timeline completa →'
   }
 };
 

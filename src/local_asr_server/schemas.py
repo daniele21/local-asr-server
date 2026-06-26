@@ -128,3 +128,8 @@ class CaptureEnsurePermissionsRequest(BaseModel):
 
 class TranscriptionJobRequest(TranscribeRecordingRequest):
     pass
+
+
+class MockDataRequest(BaseModel):
+    lang: str = "it"
+

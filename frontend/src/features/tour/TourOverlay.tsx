@@ -31,15 +31,46 @@ function measureTarget(selector?: string): SpotlightRect | null {
   };
 }
 
-function popoverPosition(rect: SpotlightRect | null): { top?: number; left?: number; right?: number; bottom?: number } {
-  if (!rect) return { right: 16, bottom: 16 };
+function popoverPosition(rect: SpotlightRect | null): {
+  top: string;
+  left: string;
+  right: string;
+  bottom: string;
+} {
+  if (!rect) {
+    return {
+      top: 'auto',
+      left: 'auto',
+      right: '16px',
+      bottom: '16px',
+    };
+  }
   const width = Math.min(384, window.innerWidth - 32);
   const leftCandidate = Math.min(Math.max(16, rect.left), window.innerWidth - width - 16);
   const below = rect.top + rect.height + 14;
-  if (below + 220 < window.innerHeight) return { top: below, left: leftCandidate };
+  if (below + 220 < window.innerHeight) {
+    return {
+      top: `${below}px`,
+      left: `${leftCandidate}px`,
+      right: 'auto',
+      bottom: 'auto',
+    };
+  }
   const above = rect.top - 234;
-  if (above > 16) return { top: above, left: leftCandidate };
-  return { right: 16, bottom: 16 };
+  if (above > 16) {
+    return {
+      top: `${above}px`,
+      left: `${leftCandidate}px`,
+      right: 'auto',
+      bottom: 'auto',
+    };
+  }
+  return {
+    top: 'auto',
+    left: 'auto',
+    right: '16px',
+    bottom: '16px',
+  };
 }
 
 export function TourOverlay({ step, onNext, onBack, onClose }: TourOverlayProps) {
@@ -90,11 +121,11 @@ export function TourOverlay({ step, onNext, onBack, onClose }: TourOverlayProps)
       {!isComplete && rect && (
         <div
           className="fixed z-[56] rounded-2xl border border-accent/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.58),0_0_0_8px_var(--accent-glow),0_20px_70px_rgba(0,0,0,0.35)] pointer-events-none transition-all duration-300"
-          style={rect}
+          style={rect as React.CSSProperties}
         />
       )}
       <aside
-        className="fixed z-[60] w-[min(24rem,calc(100vw-2rem))] premium-hero rounded-2xl p-5 animate-scale-in"
+        className="fixed z-[60] w-[min(24rem,calc(100vw-2rem))] bg-bg-surface border border-border-subtle rounded-2xl p-5 shadow-premium"
         style={position}
         aria-live="polite"
       >

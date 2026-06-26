@@ -118,7 +118,7 @@ export function PageHero({
   className,
 }: {
   eyebrow?: string;
-  title: string;
+  title: ReactNode;
   description: string;
   metadata?: ReactNode;
   primaryAction?: ReactNode;
@@ -136,18 +136,26 @@ export function PageHero({
             {eyebrow && <span className="text-xs font-semibold uppercase text-accent">{eyebrow}</span>}
             {metadata}
           </div>
-          <h2 className="mt-3 break-words text-3xl font-bold text-text-primary sm:text-4xl">{title}</h2>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            {typeof title === 'string' ? (
+              <h2 className="break-words text-3xl font-bold text-text-primary sm:text-4xl">{title}</h2>
+            ) : (
+              title
+            )}
+          </div>
           <p className="mt-3 max-w-3xl text-sm leading-relaxed text-text-secondary">{description}</p>
         </div>
-        {(primaryAction || secondaryAction || guidance) && (
-          <div className="page-hero-side">
-            {(primaryAction || secondaryAction) && (
-              <div className="page-hero-actions">
-                {primaryAction}
-                {secondaryAction}
-              </div>
-            )}
+        {guidance && (
+          <div className="page-hero-center w-full">
             {guidance}
+          </div>
+        )}
+        {(primaryAction || secondaryAction) && (
+          <div className="page-hero-side">
+            <div className="page-hero-actions">
+              {primaryAction}
+              {secondaryAction}
+            </div>
           </div>
         )}
         {controls && <div className="page-hero-controls">{controls}</div>}

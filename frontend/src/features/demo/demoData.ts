@@ -251,12 +251,47 @@ export function getDemoMeetings(lang = 'it'): Meeting[] {
       duration_seconds: spec.duration,
       bytes_written: Math.round(spec.duration * 18_500),
     });
-    const tx = transcription(`tx-${spec.id}`, spec.id, spec.title, spec.createdAt, spec.text, lang);
+    const tx = transcription(`tx-${spec.id}`, spec.id, spec.title, spec.createdAt, spec.text || '', lang);
     const runs = [
-      run(`brief-${spec.id}`, spec.id, tx.id, 'meeting_brief', spec.createdAt, { summary: spec.brief }),
-      run(`actions-${spec.id}`, spec.id, tx.id, 'action_items', spec.createdAt, { action_items: spec.actions }),
-      run(`decisions-${spec.id}`, spec.id, tx.id, 'decisions', spec.createdAt, { decisions: spec.decisions }),
-      run(`risks-${spec.id}`, spec.id, tx.id, 'risks_blockers', spec.createdAt, { risks: spec.risks }),
+      run(
+        `brief-${spec.id}`,
+        spec.id,
+        tx.id,
+        'meeting_brief',
+        spec.createdAt,
+        { summary: spec.brief },
+        lang === 'it' ? `# Brief del meeting\n\n**Sintesi**: ${spec.brief}` : `# Meeting brief\n\n**Summary**: ${spec.brief}`
+      ),
+      run(
+        `actions-${spec.id}`,
+        spec.id,
+        tx.id,
+        'action_items',
+        spec.createdAt,
+        { action_items: spec.actions },
+        (lang === 'it' ? '# Azioni operative\n\n' : '# Action Items\n\n') +
+          spec.actions.map(act => `- **${act.owner}**: ${act.task} (${lang === 'it' ? 'Scadenza' : 'Due'}: ${act.due_date}, ${lang === 'it' ? 'Priorità' : 'Priority'}: ${act.priority})`).join('\n')
+      ),
+      run(
+        `decisions-${spec.id}`,
+        spec.id,
+        tx.id,
+        'decisions',
+        spec.createdAt,
+        { decisions: spec.decisions },
+        (lang === 'it' ? '# Decisioni recenti\n\n' : '# Recent Decisions\n\n') +
+          spec.decisions.map(dec => `- **${dec.decision}**\n  *${lang === 'it' ? 'Razionale' : 'Rationale'}*: ${dec.rationale || (lang === 'it' ? 'N/D' : 'N/A')}`).join('\n')
+      ),
+      run(
+        `risks-${spec.id}`,
+        spec.id,
+        tx.id,
+        'risks_blockers',
+        spec.createdAt,
+        { risks: spec.risks },
+        (lang === 'it' ? '# Rischi e blocchi\n\n' : '# Risks and Blockers\n\n') +
+          spec.risks.map(rsk => `- **${rsk.risk}** (${lang === 'it' ? 'Severità' : 'Severity'}: ${rsk.severity})\n  *${lang === 'it' ? 'Prossimo passo' : 'Next step'}*: ${rsk.next_step}`).join('\n')
+      ),
     ];
     return {
       id: spec.id,

@@ -15,6 +15,7 @@ import MeetingDetailPage from './pages/MeetingDetailPage';
 import { Badge } from './components/ui/Badge';
 import { Button } from './components/ui/Button';
 import { Tooltip } from './components/ui/Tooltip';
+import { DemoBanner } from './components/ui/DemoBanner';
 import { TourOverlay } from './features/tour/TourOverlay';
 import { TOUR_STEPS, TourStepId, tourStepIndex } from './features/tour/tourSteps';
 
@@ -30,7 +31,25 @@ function MainApp() {
   const [routeDetail, setRouteDetail] = useState<string | null>(null);
   const [tourStep, setTourStep] = useState<TourStepId | null>(null);
   const [tourReturnHash, setTourReturnHash] = useState('');
-  const demoMode = Boolean(tourStep);
+  const [demoMode, setDemoMode] = useState(() => {
+    // Support ?demo=true URL param in addition to localStorage
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('demo') === 'true' || localStorage.getItem('demoMode') === 'true';
+  });
+  const isDemoActive = demoMode || Boolean(tourStep);
+
+  // Activate demo mode handler — shared between DemoBanner, EmptyState CTA, etc.
+  const activateDemo = async () => {
+    try {
+      await ApiClient.populateMockData(lang);
+      setDemoMode(true);
+      localStorage.setItem('demoMode', 'true');
+      showToast(t('help.mockDataSuccess'), 'success');
+      window.location.reload();
+    } catch (err: any) {
+      showToast(err.message || 'Error populating mock data', 'error');
+    }
+  };
 
   // Sync hash with activePage
   useEffect(() => {
@@ -132,7 +151,7 @@ function MainApp() {
   // Server health polling
   useEffect(() => {
     const checkHealth = async () => {
-      if (demoMode) {
+      if (Boolean(tourStep)) {
         setServerOnline(false);
         setDefaultModel('');
         return;
@@ -149,7 +168,7 @@ function MainApp() {
     checkHealth();
     const interval = setInterval(checkHealth, HEALTH_CHECK_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [demoMode]);
+  }, [tourStep]);
 
   // Close help panel on outside click
   useEffect(() => {
@@ -164,23 +183,36 @@ function MainApp() {
   }, []);
 
   const renderPage = () => {
+    const isTourActive = Boolean(tourStep);
     switch (activePage) {
       case 'home':
-        return <DashboardPage navigateTo={navigateTo} demoMode={demoMode} />;
+        return (
+          <DashboardPage
+            navigateTo={navigateTo}
+            demoMode={isTourActive}
+            onActivateDemo={!isTourActive && !demoMode ? activateDemo : undefined}
+          />
+        );
       case 'meeting':
-        return <MeetingDetailPage recordingId={routeDetail} navigateTo={navigateTo} />;
+        return <MeetingDetailPage recordingId={routeDetail} navigateTo={navigateTo} demoMode={isTourActive} />;
       case 'recording':
         return <RecordingPage detailId={routeDetail} navigateTo={navigateTo} />;
       case 'transcription':
-        return <TranscriptionPage detailPath={routeDetail} navigateTo={navigateTo} demoMode={demoMode && activePage === 'transcription'} />;
+        return <TranscriptionPage detailPath={routeDetail} navigateTo={navigateTo} demoMode={isTourActive} />;
       case 'projects':
-        return <ProjectsPage navigateTo={navigateTo} demoMode={demoMode} />;
+        return <ProjectsPage navigateTo={navigateTo} demoMode={isTourActive} />;
       case 'analysis':
-        return <AnalysisPage detailId={routeDetail} navigateTo={navigateTo} demoMode={demoMode && activePage === 'analysis'} />;
+        return <AnalysisPage detailId={routeDetail} navigateTo={navigateTo} demoMode={isTourActive} />;
       case 'settings':
         return <SettingsPage />;
       default:
-        return <DashboardPage navigateTo={navigateTo} demoMode={demoMode} />;
+        return (
+          <DashboardPage
+            navigateTo={navigateTo}
+            demoMode={isTourActive}
+            onActivateDemo={!isTourActive && !demoMode ? activateDemo : undefined}
+          />
+        );
     }
   };
 
@@ -234,6 +266,38 @@ function MainApp() {
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-2 self-stretch xl:self-auto xl:justify-self-end">
+          {isDemoActive && (
+            <Badge
+              variant="offline"
+              pulse={false}
+              className="bg-amber-500/10 text-amber-500 border border-amber-500/20 font-bold shrink-0"
+              title="Demo Mode active"
+            >
+              Demo Mode
+            </Badge>
+          )}
+
+          {isDemoActive && !tourStep && (
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={async () => {
+                try {
+                  await ApiClient.clearMockData();
+                  setDemoMode(false);
+                  localStorage.setItem('demoMode', 'false');
+                  showToast(t('common.exitDemoSuccess'), 'info');
+                  window.location.reload();
+                } catch (err: any) {
+                  showToast(err.message || 'Error clearing mock data', 'error');
+                }
+              }}
+              className="text-xs font-semibold shrink-0"
+            >
+              {t('common.exitDemo')}
+            </Button>
+          )}
+
           <Button
             onClick={() => navigateTo('recording')}
             size="md"
@@ -253,7 +317,7 @@ function MainApp() {
           </Badge>
 
           {/* Help menu */}
-          <div className="relative help-menu-container">
+          <div className="relative z-20 help-menu-container">
             <Tooltip content={t('common.help')}>
               <button
                 onClick={() => setHelpOpen(!helpOpen)}
@@ -278,6 +342,23 @@ function MainApp() {
                   className="w-full py-1.5 px-3 bg-bg-hover hover:bg-bg-elevated text-xs font-medium rounded-lg text-left transition-colors cursor-pointer"
                 >
                   {t('help.tour')}
+                </button>
+                <button
+                  onClick={async () => {
+                    setHelpOpen(false);
+                    try {
+                      await ApiClient.populateMockData(lang);
+                      setDemoMode(true);
+                      localStorage.setItem('demoMode', 'true');
+                      showToast(t('help.mockDataSuccess'), 'success');
+                      window.location.reload();
+                    } catch (err: any) {
+                      showToast(err.message || 'Error populating mock data', 'error');
+                    }
+                  }}
+                  className="w-full py-1.5 px-3 bg-bg-hover hover:bg-bg-elevated text-xs font-medium rounded-lg text-left transition-colors cursor-pointer mt-1"
+                >
+                  {t('help.populateMock')}
                 </button>
                 <hr className="border-border-subtle my-1" />
                 <strong className="text-xs text-text-secondary uppercase tracking-wider">{t('help.menuBarTitle')}</strong>
@@ -344,6 +425,27 @@ function MainApp() {
           </Tooltip>
         </div>
       </header>
+
+      {/* Demo mode banner — shown below header when demo is active */}
+      {isDemoActive && !tourStep && (
+        <DemoBanner
+          onExitDemo={async () => {
+            try {
+              await ApiClient.clearMockData();
+              setDemoMode(false);
+              localStorage.setItem('demoMode', 'false');
+              showToast(t('common.exitDemoSuccess'), 'info');
+              window.location.reload();
+            } catch (err: any) {
+              showToast(err.message || 'Error clearing mock data', 'error');
+            }
+          }}
+          onStartTour={() => {
+            startTour();
+            showToast(t('tour.started'), 'info');
+          }}
+        />
+      )}
 
       {/* Main page content area */}
       <main className="flex-1 flex flex-col gap-5">

@@ -9,7 +9,6 @@ import {
   ListChecks,
   Mic,
   MoreHorizontal,
-  ShieldCheck,
   ShieldAlert,
   Sparkles,
   Target,
@@ -24,14 +23,14 @@ import { Button } from '../components/ui/Button';
 import { ProjectPromptModal } from '../components/ui/ProjectPromptModal';
 import { TimeRangeFilter } from '../components/workspace/TimeRangeFilter';
 import { TaskProcessingLoader } from '../components/workspace/TaskProcessingLoader';
+import { InsightDetailDialog } from '../components/workspace/InsightDetailDialog';
+import type { InsightTab } from '../components/workspace/InsightDetailDialog';
 import {
   ActionChecklist,
   AdvancedDetailsAccordion,
   AnalysisCTAButton,
   DecisionLog,
   EmptyState,
-  GuidanceCallout,
-  PageHero,
   ProjectDigestPanel,
   ProjectSidebar,
   ProjectStatusPanel,
@@ -89,6 +88,15 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [activeRecordingForProject, setActiveRecordingForProject] = useState<Recording | null>(null);
   const [existingProjectsList, setExistingProjectsList] = useState<string[]>([]);
+
+  // Insight dialog state
+  const [insightDialogOpen, setInsightDialogOpen] = useState(false);
+  const [insightDialogTab, setInsightDialogTab] = useState<InsightTab>('actions');
+
+  const openInsightDialog = (tab: InsightTab) => {
+    setInsightDialogTab(tab);
+    setInsightDialogOpen(true);
+  };
 
   const projectRangeOptions = useMemo(() => [
     { mode: 'last7' as const, label: '7g' },
@@ -318,47 +326,46 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
       </div>
 
       <main className="flex min-w-0 flex-col gap-6">
-        <PageHero
-          eyebrow={t('projects.projectLabel')}
-          title={selectedProject.name}
-          description={t('projects.heroDesc')}
-          metadata={<Badge variant={readyCount > 0 ? 'success' : 'info'}>{projectRangeLabel}</Badge>}
-          primaryAction={(
-            <span data-tour="project-situation" className="w-full sm:w-auto">
+        {/* Hero — compact: title + actions + period filter inline */}
+        <section className="premium-hero page-hero rounded-2xl p-5 sm:p-6" data-tour="project-situation">
+          <span className="hero-orbital-line" aria-hidden="true" />
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold uppercase text-accent">{t('projects.projectLabel')}</span>
+                <Badge variant={readyCount > 0 ? 'success' : 'info'}>{projectRangeLabel}</Badge>
+              </div>
+              <h2 className="mt-2 break-words text-3xl font-bold text-text-primary sm:text-4xl">
+                {selectedProject.name}
+              </h2>
+              <p className="mt-2 max-w-xl text-sm leading-relaxed text-text-secondary">{t('projects.heroDesc')}</p>
+
+              {/* Inline period filter — no more floating controls */}
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <div className="surface-supporting rounded-xl p-2">
+                  <TimeRangeFilter value={projectRange} options={projectRangeOptions} onChange={setProjectRange} />
+                </div>
+                <div className="inline-flex h-9 items-center gap-2 rounded-xl border border-border-subtle bg-bg-elevated px-3 text-xs text-text-muted">
+                  <CalendarDays className="h-4 w-4" />
+                  {projectRangeLabel}
+                </div>
+              </div>
+            </div>
+
+            {/* CTA actions */}
+            <div className="flex flex-col gap-2">
               <AnalysisCTAButton
                 onClick={handleGenerateProjectSituation}
                 disabled={periodItems.length === 0 || isProjectGenerating}
                 isGenerated={Boolean(projectDigestGeneratedAt)}
               />
-            </span>
-          )}
-          secondaryAction={(
-            <Button size="lg" variant="secondary" onClick={handleNewMeetingForProject} disabled={demoMode}>
-              <Mic className="h-5 w-5" />
-              {t('projects.btnNewMeeting')}
-            </Button>
-          )}
-          guidance={(
-            <GuidanceCallout
-              icon={ShieldCheck}
-              title={t('projects.situationGuidanceTitle')}
-              description={t('projects.situationGuidanceDesc')}
-              className="w-full"
-            />
-          )}
-          controls={(
-            <>
-              <div className="surface-supporting rounded-xl p-3">
-                <p className="mb-2 text-xs text-text-muted">{t('projects.rangeHelper')}</p>
-                <TimeRangeFilter value={projectRange} options={projectRangeOptions} onChange={setProjectRange} />
-              </div>
-              <div className="inline-flex h-11 items-center gap-2 rounded-xl border border-border-subtle bg-bg-elevated px-3 text-xs text-text-muted shadow-[inset_0_1px_0_var(--surface-highlight)]">
-                <CalendarDays className="h-4 w-4" />
-                {projectRangeLabel}
-              </div>
-            </>
-          )}
-        />
+              <Button size="lg" variant="secondary" onClick={handleNewMeetingForProject} disabled={demoMode}>
+                <Mic className="h-5 w-5" />
+                {t('projects.btnNewMeeting')}
+              </Button>
+            </div>
+          </div>
+        </section>
 
         <section className="surface-primary flex flex-col gap-3 rounded-2xl p-4" data-tour="project-status">
           <SectionHeader
@@ -385,26 +392,33 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
                 title={t('projects.actionsTitle')}
                 description={t('projects.actionsDesc')}
                 action={
-                  <div className="flex rounded-lg border border-border-subtle bg-bg-elevated p-1">
-                    {actionScopeOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => setActionScope(option.value)}
-                        className={cn(
-                          'rounded-md px-2.5 py-1 text-xs font-semibold transition-colors',
-                          actionScope === option.value
-                            ? 'bg-accent text-white'
-                            : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
-                        )}
-                      >
-                        {option.label}
+                  <div className="flex items-center gap-2">
+                    <div className="flex rounded-lg border border-border-subtle bg-bg-elevated p-1">
+                      {actionScopeOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setActionScope(option.value)}
+                          className={cn(
+                            'rounded-md px-2.5 py-1 text-xs font-semibold transition-colors',
+                            actionScope === option.value
+                              ? 'bg-accent text-white'
+                              : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+                          )}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                    {actionItems.length > 5 && (
+                      <button type="button" onClick={() => openInsightDialog('actions')} className="view-all-link">
+                        {t('demo.viewAll')} ({actionItems.length})
                       </button>
-                    ))}
+                    )}
                   </div>
                 }
               />
-              <ActionChecklist items={actionItems.slice(0, 12)} />
+              <ActionChecklist items={actionItems.slice(0, 5)} />
             </section>
 
             <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -413,16 +427,30 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
                   icon={Target}
                   title={t('projects.decisionsTitle')}
                   description={t('projects.decisionsDesc')}
+                  action={
+                    decisions.length > 4 ? (
+                      <button type="button" onClick={() => openInsightDialog('decisions')} className="view-all-link">
+                        {t('demo.viewAll')} ({decisions.length})
+                      </button>
+                    ) : undefined
+                  }
                 />
-                <DecisionLog items={decisions.slice(0, 10)} />
+                <DecisionLog items={decisions.slice(0, 4)} />
               </div>
               <div className="surface-primary flex flex-col gap-3 rounded-2xl p-4">
                 <SectionHeader
                   icon={ShieldAlert}
                   title={t('projects.risksTitle')}
                   description={t('projects.risksDesc')}
+                  action={
+                    risks.length > 4 ? (
+                      <button type="button" onClick={() => openInsightDialog('risks')} className="view-all-link">
+                        {t('demo.viewAll')} ({risks.length})
+                      </button>
+                    ) : undefined
+                  }
                 />
-                <RiskPanel items={risks.slice(0, 10)} />
+                <RiskPanel items={risks.slice(0, 4)} />
               </div>
             </section>
 
@@ -533,6 +561,16 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
           setActiveRecordingForProject(null);
         }}
         existingProjects={existingProjectsList}
+      />
+
+      {/* Insight detail dialog — progressive disclosure */}
+      <InsightDetailDialog
+        open={insightDialogOpen}
+        onOpenChange={setInsightDialogOpen}
+        initialTab={insightDialogTab}
+        actions={actionItemsAll}
+        decisions={decisions}
+        risks={risks}
       />
     </div>
   );

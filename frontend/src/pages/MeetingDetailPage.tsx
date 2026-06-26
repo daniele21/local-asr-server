@@ -18,10 +18,12 @@ import { Button } from '../components/ui/Button';
 import { renderMarkdown } from '../utils/markdown';
 import { formatBytes, formatProjectDate, getDurationSeconds } from '../utils/formatters';
 import { useTranslation } from '../i18n/i18n';
+import { getDemoMeetings } from '../features/demo/demoData';
 
 interface MeetingDetailPageProps {
   recordingId: string | null;
   navigateTo: (page: string, detail?: string | null) => void;
+  demoMode?: boolean;
 }
 
 const activeJobStatuses = new Set(['queued', 'running', 'waiting_for_service', 'retrying', 'cancelling']);
@@ -95,7 +97,7 @@ function MeetingActionTile({
   );
 }
 
-export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDetailPageProps) {
+export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = false }: MeetingDetailPageProps) {
   const { t, lang } = useTranslation();
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [loading, setLoading] = useState(true);
@@ -107,7 +109,17 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
     if (!recordingId) return;
     try {
       setError(null);
-      const data = await ApiClient.getMeeting(recordingId);
+      let data: Meeting;
+      if (demoMode) {
+        const demoMeetings = getDemoMeetings(lang);
+        const matched = demoMeetings.find((m) => m.id === recordingId);
+        if (!matched) {
+          throw new Error(t('meeting.errorNotFound'));
+        }
+        data = matched;
+      } else {
+        data = await ApiClient.getMeeting(recordingId);
+      }
       setMeeting(data);
       const availableTypes = Object.keys(data.latest_analysis || {});
       if (availableTypes.length > 0 && !data.latest_analysis[selectedAnalysisType]) {
@@ -265,6 +277,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
             description={t('meeting.transcribeDescription')}
             detail={t('meeting.actionRequiredBeforeAnalysis')}
             variant="primary"
+            disabled={demoMode}
             onClick={startTranscription}
             isLoading={busyAction === 'transcription'}
           />
@@ -275,7 +288,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
           description={t('meeting.analyzeDescription')}
           detail={!meeting.transcription ? t('meeting.actionRequiresTranscription') : t('meeting.analyzeDetail')}
           variant={meeting.transcription ? 'primary' : 'secondary'}
-          disabled={!meeting.transcription}
+          disabled={!meeting.transcription || demoMode}
           onClick={() => startPipeline('meeting_default')}
           isLoading={busyAction === 'meeting_default'}
         />
@@ -284,7 +297,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo }: MeetingDe
           label={t('meeting.btnDeep')}
           description={t('meeting.deepDescription')}
           detail={!meeting.transcription ? t('meeting.actionRequiresTranscription') : t('meeting.deepDetail')}
-          disabled={!meeting.transcription}
+          disabled={!meeting.transcription || demoMode}
           onClick={() => startPipeline('meeting_deep')}
           isLoading={busyAction === 'meeting_deep'}
         />

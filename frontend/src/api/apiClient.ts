@@ -795,5 +795,19 @@ export const ApiClient = {
 
   async getCaptureDiagnostics(): Promise<CaptureDiagnostics> {
     return (await request('/v1/capture/diagnostics')).json();
+  },
+
+  async populateMockData(lang: string = 'it'): Promise<{ success: boolean }> {
+    return (await request('/v1/system/mock-data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lang })
+    })).json();
+  },
+
+  async clearMockData(): Promise<{ success: boolean }> {
+    return (await request('/v1/system/clear-mock-data', {
+      method: 'POST'
+    })).json();
   }
 };
