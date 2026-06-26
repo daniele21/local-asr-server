@@ -34,18 +34,18 @@ export function TaskProcessingLoader({
   return (
     <section
       className={cn(
-        'workspace-panel relative overflow-hidden rounded-2xl border border-border-subtle animate-slide-up',
+        'task-loader relative overflow-hidden rounded-2xl animate-page-in',
         compact ? 'p-4' : 'p-6 sm:p-8'
       )}
       aria-live="polite"
       aria-busy="true"
     >
       <div className="absolute -right-12 -top-16 h-44 w-44 rounded-full bg-accent/15 blur-3xl" />
-      <div className="absolute -left-16 bottom-0 h-36 w-36 rounded-full bg-info/10 blur-3xl" />
+      <div className="absolute -left-16 bottom-0 h-36 w-36 rounded-full bg-teal/10 blur-3xl" />
       <div className={cn('relative z-10 flex gap-4', compact ? 'items-start' : 'flex-col sm:flex-row sm:items-start')}>
         <div className="relative grid h-14 w-14 shrink-0 place-items-center rounded-2xl border border-border-subtle bg-bg-glass shadow-[inset_0_1px_0_var(--surface-highlight)]">
           <span className={cn('absolute inset-1 rounded-[1rem] bg-gradient-to-br opacity-30 blur-md animate-soft-pulse', variantTone[variant])} />
-          <Loader2 className="relative h-6 w-6 animate-spin text-accent" />
+          <span className="loader-orb relative h-8 w-8 rounded-full" />
           <Sparkles className="absolute right-3 top-3 h-3 w-3 text-white/80" />
         </div>
 
@@ -69,7 +69,7 @@ export function TaskProcessingLoader({
             </div>
           )}
 
-          <ol className={cn('mt-5 grid gap-2', compact ? 'grid-cols-1' : 'sm:grid-cols-2')}>
+          <ol className={cn('stagger-list mt-5 grid gap-2', compact ? 'grid-cols-1' : 'sm:grid-cols-2')}>
             {steps.map((step, index) => {
               const completed = index < safeActiveStep;
               const active = index === safeActiveStep;
@@ -97,7 +97,7 @@ export function TaskProcessingLoader({
           </ol>
 
           {helperText && (
-            <p className="mt-4 rounded-xl border border-border-subtle bg-bg-glass px-3 py-2 text-xs leading-relaxed text-text-muted">
+            <p className="guidance-callout mt-4 rounded-xl px-3 py-2 text-xs leading-relaxed text-text-secondary">
               {helperText}
             </p>
           )}

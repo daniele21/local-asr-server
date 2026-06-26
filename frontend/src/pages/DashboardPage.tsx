@@ -7,6 +7,7 @@ import {
   ListChecks,
   Mic,
   Search,
+  ShieldCheck,
   Sparkles,
   Target,
 } from 'lucide-react';
@@ -22,7 +23,9 @@ import {
   DecisionLog,
   DigestPanel,
   EmptyState,
+  GuidanceCallout,
   MeetingCard,
+  PageHero,
   RiskPanel,
   SectionHeader,
 } from '../components/workspace/MeetingWorkspace';
@@ -153,47 +156,54 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
   }
 
   return (
-    <div className="flex flex-col gap-5">
-      <section className="premium-hero rounded-2xl p-5 sm:p-6" data-tour="today-summary">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-semibold uppercase tracking-widest text-accent">{rangeLabel}</span>
-              <Badge variant="success">{t('dashboard.localBadge')}</Badge>
-            </div>
-            <h2 className="mt-2 text-3xl font-bold tracking-tight text-text-primary sm:text-4xl">{t('dashboard.title')}</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-text-secondary">{t('dashboard.subtitle')}</p>
-          </div>
-          <div className="flex flex-wrap gap-2 lg:justify-end">
-            <Button onClick={() => navigateTo('recording')} disabled={demoMode}>
-              <Mic className="h-4 w-4" />
+    <div className="flex flex-col gap-5 animate-page-in">
+      <div data-tour="today-summary">
+        <PageHero
+          eyebrow={rangeLabel}
+          title={t('dashboard.title')}
+          description={t('dashboard.subtitle')}
+          metadata={<Badge variant="success">{t('dashboard.localBadge')}</Badge>}
+          primaryAction={(
+            <Button size="lg" onClick={() => navigateTo('recording')} disabled={demoMode}>
+              <Mic className="h-5 w-5" />
               {t('dashboard.btnRecord')}
             </Button>
-            <Button variant="secondary" onClick={() => navigateTo('transcription')} disabled={demoMode}>
-              <FileAudio className="h-4 w-4" />
+          )}
+          secondaryAction={(
+            <Button size="lg" variant="secondary" onClick={() => navigateTo('transcription')} disabled={demoMode}>
+              <FileAudio className="h-5 w-5" />
               {t('dashboard.btnImport')}
             </Button>
-            {demoMode && <p className="basis-full text-xs text-text-muted lg:text-right">{t('dashboard.demoReadonlyHint')}</p>}
-          </div>
-        </div>
-        <div className="mt-5 grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(260px,360px)] xl:items-start">
-          <div data-tour="time-range-filter" className="rounded-xl border border-border-subtle bg-bg-glass p-3">
-            <p className="mb-2 text-xs text-text-muted">{t('dashboard.rangeHelper')}</p>
-            <TimeRangeFilter value={timeRange} options={rangeOptions} onChange={setTimeRange} />
-          </div>
-          <label className="flex h-10 min-w-[260px] items-center gap-2 rounded-lg border border-border-subtle bg-bg-elevated px-3">
-            <Search className="h-4 w-4 text-text-muted" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t('dashboard.searchPlaceholder')}
-              className="min-w-0 flex-1 border-0 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
-            />
-          </label>
-        </div>
-      </section>
+          )}
+          guidance={(
+            <div className="flex w-full flex-col gap-3">
+              <GuidanceCallout
+                icon={ShieldCheck}
+                title={t('dashboard.heroGuidanceTitle')}
+                description={demoMode ? t('dashboard.demoReadonlyHint') : t('dashboard.heroGuidanceDesc')}
+                className="w-full"
+              />
+              <label className="hero-search-control flex h-11 items-center gap-2 rounded-xl border border-border-subtle bg-bg-elevated px-3 shadow-[inset_0_1px_0_var(--surface-highlight)]">
+                <Search className="h-4 w-4 shrink-0 text-text-muted" />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder={t('dashboard.searchPlaceholder')}
+                  className="min-w-0 flex-1 border-0 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
+                />
+              </label>
+            </div>
+          )}
+          controls={(
+            <div data-tour="time-range-filter" className="surface-supporting w-full rounded-xl p-3 sm:w-auto sm:max-w-[44rem]">
+              <p className="mb-2 text-xs text-text-muted">{t('dashboard.rangeHelper')}</p>
+              <TimeRangeFilter value={timeRange} options={rangeOptions} onChange={setTimeRange} />
+            </div>
+          )}
+        />
+      </div>
 
-      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4 animate-slide-up">
+      <section className="stagger-list grid grid-cols-2 gap-4 lg:grid-cols-4">
         {[
           { label: t('dashboard.statPeriodMeetings'), value: periodMeetings.length, icon: FileAudio, color: 'text-accent', bgColor: 'bg-accent/10 border-accent/20' },
           { label: t('dashboard.statToTranscribe'), value: periodMeetings.length - transcribedCount, icon: Clock3, color: 'text-warning', bgColor: 'bg-warning/10 border-warning/20' },
@@ -203,13 +213,13 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
           <div key={item.label} className="metric-card group relative overflow-hidden rounded-xl border border-border-subtle p-4 transition-premium hover-lift hover:border-border-focus hover:bg-bg-hover hover:shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
             <div className="absolute -right-6 -top-6 h-16 w-16 rounded-full bg-accent/5 blur-xl transition-all duration-500 group-hover:scale-150" />
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted transition-colors group-hover:text-text-secondary">{item.label}</span>
+              <span className="text-[11px] font-medium uppercase text-text-muted transition-colors group-hover:text-text-secondary">{item.label}</span>
               <span className={`inline-flex items-center justify-center rounded-lg border p-1.5 ${item.bgColor}`}>
                 <item.icon className={`h-4 w-4 ${item.color}`} />
               </span>
             </div>
             <div className="mt-2.5 flex items-baseline gap-1.5">
-              <span className="text-3xl font-bold tracking-tight text-text-primary">{item.value}</span>
+              <span className="text-3xl font-bold text-text-primary">{item.value}</span>
             </div>
           </div>
         ))}
@@ -217,7 +227,7 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
 
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
         <main className="flex min-w-0 flex-col gap-5">
-          <section className="workspace-panel flex flex-col gap-3 rounded-2xl border border-border-subtle p-4 theme-audio">
+          <section className="surface-primary flex flex-col gap-3 rounded-2xl p-4 theme-audio">
             <SectionHeader
               icon={FileAudio}
               title={t('dashboard.meetingsTitle')}
@@ -251,7 +261,7 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
           </section>
 
           <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-            <div className="workspace-panel flex flex-col gap-3 rounded-2xl border border-border-subtle p-4 theme-tasks" data-tour="open-actions">
+            <div className="surface-primary flex flex-col gap-3 rounded-2xl p-4 theme-tasks" data-tour="open-actions">
               <SectionHeader
                 icon={ListChecks}
                 title={t('dashboard.statOpenActions')}
@@ -260,7 +270,7 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
               />
               <ActionChecklist items={actionItems.slice(0, 8)} />
             </div>
-            <div className="workspace-panel flex flex-col gap-3 rounded-2xl border border-border-subtle p-4 theme-decisions" data-tour="decision-log">
+            <div className="surface-primary flex flex-col gap-3 rounded-2xl p-4 theme-decisions" data-tour="decision-log">
               <SectionHeader
                 icon={Target}
                 title={t('dashboard.decisionsTitle')}
@@ -275,7 +285,7 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
         <aside className="flex flex-col gap-4">
           <DigestPanel items={digestItems} title={t('dashboard.digestTitle')} />
 
-          <section className="workspace-panel rounded-2xl border border-border-subtle p-4 theme-pipeline">
+          <section className="surface-supporting rounded-2xl p-4 theme-pipeline">
             <SectionHeader
               icon={AlertTriangle}
               title={t('dashboard.toCompleteTitle')}
@@ -300,7 +310,7 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
             </div>
           </section>
 
-          <section className="workspace-panel flex flex-col gap-3 rounded-2xl border border-border-subtle p-4 theme-risks" data-tour="risk-panel">
+          <section className="surface-primary flex flex-col gap-3 rounded-2xl p-4 theme-risks" data-tour="risk-panel">
             <SectionHeader
               icon={Sparkles}
               title={t('dashboard.risksTitle')}

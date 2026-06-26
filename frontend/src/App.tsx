@@ -192,7 +192,7 @@ function MainApp() {
     <div className="app-chrome min-h-screen">
       <div className="app-shell relative z-10 mx-auto flex min-h-screen w-full max-w-[1480px] flex-col gap-6 px-4 py-5 sm:px-6 lg:px-10">
       {/* Header */}
-      <header className="app-header grid grid-cols-1 items-start gap-4 border-b border-border-subtle pb-5 xl:grid-cols-[minmax(300px,1fr)_auto_minmax(420px,1fr)] xl:items-center">
+      <header className="app-header surface-supporting grid grid-cols-1 items-start gap-4 rounded-2xl px-4 py-3 xl:grid-cols-[minmax(300px,1fr)_auto_minmax(420px,1fr)] xl:items-center">
         {/* Brand */}
         <button
           onClick={() => navigateTo('home')}

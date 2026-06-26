@@ -9,6 +9,7 @@ import {
   ListChecks,
   Mic,
   MoreHorizontal,
+  ShieldCheck,
   ShieldAlert,
   Sparkles,
   Target,
@@ -29,6 +30,8 @@ import {
   AnalysisCTAButton,
   DecisionLog,
   EmptyState,
+  GuidanceCallout,
+  PageHero,
   ProjectDigestPanel,
   ProjectSidebar,
   ProjectStatusPanel,
@@ -303,7 +306,7 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
   const latestProjectUpdate = digestItems[0]?.text;
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_minmax(0,1fr)] animate-page-in">
       <div data-tour="project-sidebar">
         <ProjectSidebar
           projects={projects}
@@ -315,46 +318,49 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
       </div>
 
       <main className="flex min-w-0 flex-col gap-6">
-        <section className="premium-hero rounded-2xl p-5 sm:p-6">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-semibold uppercase tracking-widest text-accent">{t('projects.projectLabel')}</span>
-                <Badge variant={readyCount > 0 ? 'success' : 'info'}>{projectRangeLabel}</Badge>
+        <PageHero
+          eyebrow={t('projects.projectLabel')}
+          title={selectedProject.name}
+          description={t('projects.heroDesc')}
+          metadata={<Badge variant={readyCount > 0 ? 'success' : 'info'}>{projectRangeLabel}</Badge>}
+          primaryAction={(
+            <span data-tour="project-situation" className="w-full sm:w-auto">
+              <AnalysisCTAButton
+                onClick={handleGenerateProjectSituation}
+                disabled={periodItems.length === 0 || isProjectGenerating}
+                isGenerated={Boolean(projectDigestGeneratedAt)}
+              />
+            </span>
+          )}
+          secondaryAction={(
+            <Button size="lg" variant="secondary" onClick={handleNewMeetingForProject} disabled={demoMode}>
+              <Mic className="h-5 w-5" />
+              {t('projects.btnNewMeeting')}
+            </Button>
+          )}
+          guidance={(
+            <GuidanceCallout
+              icon={ShieldCheck}
+              title={t('projects.situationGuidanceTitle')}
+              description={t('projects.situationGuidanceDesc')}
+              className="w-full"
+            />
+          )}
+          controls={(
+            <>
+              <div className="surface-supporting rounded-xl p-3">
+                <p className="mb-2 text-xs text-text-muted">{t('projects.rangeHelper')}</p>
+                <TimeRangeFilter value={projectRange} options={projectRangeOptions} onChange={setProjectRange} />
               </div>
-              <h2 className="mt-2 truncate text-3xl font-semibold text-text-primary sm:text-4xl">{selectedProject.name}</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-text-secondary">
-                {t('projects.heroDesc')}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" onClick={handleNewMeetingForProject} disabled={demoMode}>
-                <Mic className="h-4 w-4" />
-                {t('projects.btnNewMeeting')}
-              </Button>
-              <span data-tour="project-situation">
-                <AnalysisCTAButton
-                  onClick={handleGenerateProjectSituation}
-                  disabled={periodItems.length === 0 || isProjectGenerating}
-                  isGenerated={Boolean(projectDigestGeneratedAt)}
-                />
-              </span>
-              <p className="basis-full text-xs leading-relaxed text-text-muted xl:text-right">{t('projects.situationHelper')}</p>
-            </div>
-          </div>
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-            <div className="rounded-xl border border-border-subtle bg-bg-glass p-3">
-              <p className="mb-2 text-xs text-text-muted">{t('projects.rangeHelper')}</p>
-              <TimeRangeFilter value={projectRange} options={projectRangeOptions} onChange={setProjectRange} />
-            </div>
-            <div className="inline-flex items-center gap-2 rounded-lg border border-border-subtle bg-bg-elevated px-3 py-2 text-xs text-text-muted">
-              <CalendarDays className="h-4 w-4" />
-              {projectRangeLabel}
-            </div>
-          </div>
-        </section>
+              <div className="inline-flex h-11 items-center gap-2 rounded-xl border border-border-subtle bg-bg-elevated px-3 text-xs text-text-muted shadow-[inset_0_1px_0_var(--surface-highlight)]">
+                <CalendarDays className="h-4 w-4" />
+                {projectRangeLabel}
+              </div>
+            </>
+          )}
+        />
 
-        <section className="flex flex-col gap-3" data-tour="project-status">
+        <section className="surface-primary flex flex-col gap-3 rounded-2xl p-4" data-tour="project-status">
           <SectionHeader
             icon={Sparkles}
             title={t('projects.statusTitle')}
@@ -373,7 +379,7 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
 
         <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="flex min-w-0 flex-col gap-6">
-            <section className="flex flex-col gap-3" data-tour="project-actions">
+            <section className="surface-primary flex flex-col gap-3 rounded-2xl p-4" data-tour="project-actions">
               <SectionHeader
                 icon={ListChecks}
                 title={t('projects.actionsTitle')}
@@ -402,7 +408,7 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
             </section>
 
             <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-              <div className="flex flex-col gap-3">
+              <div className="surface-primary flex flex-col gap-3 rounded-2xl p-4">
                 <SectionHeader
                   icon={Target}
                   title={t('projects.decisionsTitle')}
@@ -410,7 +416,7 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
                 />
                 <DecisionLog items={decisions.slice(0, 10)} />
               </div>
-              <div className="flex flex-col gap-3">
+              <div className="surface-primary flex flex-col gap-3 rounded-2xl p-4">
                 <SectionHeader
                   icon={ShieldAlert}
                   title={t('projects.risksTitle')}
@@ -420,7 +426,7 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
               </div>
             </section>
 
-            <section className="flex flex-col gap-3">
+            <section className="surface-supporting flex flex-col gap-3 rounded-2xl p-4">
               <SectionHeader
                 icon={History}
                 title={t('projects.timelineTitle')}
@@ -434,7 +440,7 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
                   action={<Button onClick={handleNewMeetingForProject} disabled={demoMode}>{t('projects.btnNewMeetingShort')}</Button>}
                 />
               ) : (
-                <div className="workspace-panel overflow-hidden rounded-lg border border-border-subtle">
+                <div className="overflow-hidden rounded-xl border border-border-subtle bg-bg-glass shadow-[var(--shadow-soft)]">
                   {periodItems.map((item) => (
                     <ProjectTimelineItem
                       key={item.recording.id}
@@ -481,7 +487,7 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
               />
             )}
 
-            <section className="workspace-panel rounded-2xl border border-border-subtle p-4">
+            <section className="surface-supporting rounded-2xl p-4">
               <SectionHeader
                 icon={MoreHorizontal}
                 title={t('projects.analysisTitle')}

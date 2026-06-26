@@ -11,6 +11,7 @@ import {
   ListChecks,
   MessageSquare,
   Search,
+  ShieldCheck,
   ShieldAlert,
   Sparkles,
   Target,
@@ -66,7 +67,9 @@ export function SectionHeader({
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <Icon className="h-4 w-4 text-accent" />
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border-subtle bg-bg-glass shadow-[inset_0_1px_0_var(--surface-highlight)]">
+            <Icon className="h-4 w-4 text-accent" />
+          </span>
           <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
           {tooltip && <ExplainTooltip content={tooltip} />}
         </div>
@@ -74,6 +77,82 @@ export function SectionHeader({
       </div>
       {action}
     </div>
+  );
+}
+
+export function GuidanceCallout({
+  title,
+  description,
+  icon: Icon = ShieldCheck,
+  className,
+}: {
+  title: string;
+  description: string;
+  icon?: LucideIcon;
+  className?: string;
+}) {
+  return (
+    <div className={cn('guidance-callout rounded-xl p-3 text-left', className)}>
+      <div className="flex items-start gap-3">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-accent/20 bg-accent/10 text-accent">
+          <Icon className="h-4 w-4" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-text-primary">{title}</p>
+          <p className="mt-1 text-xs leading-relaxed text-text-secondary">{description}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function PageHero({
+  eyebrow,
+  title,
+  description,
+  metadata,
+  primaryAction,
+  secondaryAction,
+  controls,
+  guidance,
+  className,
+}: {
+  eyebrow?: string;
+  title: string;
+  description: string;
+  metadata?: ReactNode;
+  primaryAction?: ReactNode;
+  secondaryAction?: ReactNode;
+  controls?: ReactNode;
+  guidance?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={cn('premium-hero page-hero rounded-2xl p-5 sm:p-6 animate-page-in', className)}>
+      <span className="hero-orbital-line" aria-hidden="true" />
+      <div className="page-hero-layout">
+        <div className="page-hero-copy min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            {eyebrow && <span className="text-xs font-semibold uppercase text-accent">{eyebrow}</span>}
+            {metadata}
+          </div>
+          <h2 className="mt-3 break-words text-3xl font-bold text-text-primary sm:text-4xl">{title}</h2>
+          <p className="mt-3 max-w-3xl text-sm leading-relaxed text-text-secondary">{description}</p>
+        </div>
+        {(primaryAction || secondaryAction || guidance) && (
+          <div className="page-hero-side">
+            {(primaryAction || secondaryAction) && (
+              <div className="page-hero-actions">
+                {primaryAction}
+                {secondaryAction}
+              </div>
+            )}
+            {guidance}
+          </div>
+        )}
+        {controls && <div className="page-hero-controls">{controls}</div>}
+      </div>
+    </section>
   );
 }
 
@@ -113,7 +192,7 @@ export function AdvancedDetailsAccordion({
   const displayTitle = title || t('workspace.advancedTitle');
   const displayDesc = description || t('workspace.advancedDesc');
   return (
-    <details className="workspace-panel group rounded-xl border border-border-subtle overflow-hidden">
+    <details className="surface-advanced group rounded-xl overflow-hidden">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-text-primary transition-premium hover:bg-bg-hover/40">
         <span>
           {displayTitle}
@@ -159,26 +238,31 @@ export function MeetingCard({
   return (
     <article className="metric-card group rounded-xl border border-border-subtle px-4 py-3 transition-premium hover-lift hover:border-border-focus hover:bg-bg-hover">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-sm font-semibold text-text-primary">{meetingTitle(meeting)}</h3>
-            <Badge variant={statusMeta.variant}>{statusMeta.label}</Badge>
-          </div>
-          <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs text-text-muted">
-            <span className="inline-flex items-center gap-1">
-              <CalendarDays className="h-3.5 w-3.5" />
-              {formatProjectDate(meeting.created_at, lang)}
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <Clock3 className="h-3.5 w-3.5" />
-              {duration > 0 ? `${Math.round(duration / 60)} min` : t('projects.durationNotAvailable')}
-            </span>
-            {meeting.project_name && (
+        <div className="flex min-w-0 flex-1 gap-3">
+          <span className="mt-0.5 hidden h-10 w-10 shrink-0 place-items-center rounded-xl border border-border-subtle bg-bg-glass text-accent shadow-[inset_0_1px_0_var(--surface-highlight)] sm:grid">
+            <FileAudio className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="truncate text-sm font-semibold text-text-primary">{meetingTitle(meeting)}</h3>
+              <Badge variant={statusMeta.variant}>{statusMeta.label}</Badge>
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs text-text-muted">
               <span className="inline-flex items-center gap-1">
-                <FolderKanban className="h-3.5 w-3.5" />
-                {meeting.project_name}
+                <CalendarDays className="h-3.5 w-3.5" />
+                {formatProjectDate(meeting.created_at, lang)}
               </span>
-            )}
+              <span className="inline-flex items-center gap-1">
+                <Clock3 className="h-3.5 w-3.5" />
+                {duration > 0 ? `${Math.round(duration / 60)} min` : t('projects.durationNotAvailable')}
+              </span>
+              {meeting.project_name && (
+                <span className="inline-flex items-center gap-1">
+                  <FolderKanban className="h-3.5 w-3.5" />
+                  {meeting.project_name}
+                </span>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex flex-col gap-2 lg:min-w-[200px] lg:items-end">
@@ -345,7 +429,7 @@ export function DigestPanel({
   const displayTitle = title || t('workspace.digestTitle');
 
   return (
-    <section className="workspace-panel rounded-2xl border border-border-subtle p-4 theme-digest">
+    <section className="insight-panel rounded-2xl p-4 theme-digest">
       <SectionHeader
         icon={Sparkles}
         title={displayTitle}
@@ -363,7 +447,7 @@ export function DigestPanel({
       ) : (
         <div className="mt-3 flex flex-col gap-2.5">
           {items.slice(0, 4).map((item) => (
-            <div key={item.id} className="rounded-xl border border-border-subtle bg-bg-glass p-3 shadow-[inset_0_1px_0_var(--surface-highlight)]">
+            <div key={item.id} className="rounded-xl border border-border-subtle bg-bg-glass p-3 shadow-[inset_0_1px_0_var(--surface-highlight)] transition-premium hover:border-accent/30 hover:bg-bg-hover/40">
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
                 <span>{item.title}</span>
                 {item.projectName && <span>{item.projectName}</span>}
@@ -405,11 +489,11 @@ export function ProjectSidebar({
   const { t } = useTranslation();
   const filtered = projects.filter((project) => project.name.toLowerCase().includes(query.trim().toLowerCase()));
   return (
-    <aside className="workspace-panel rounded-2xl border border-border-subtle p-3 lg:sticky lg:top-5 lg:max-h-[calc(100vh-8rem)] lg:overflow-auto">
+    <aside className="surface-primary rounded-2xl p-3 lg:sticky lg:top-5 lg:max-h-[calc(100vh-8rem)] lg:overflow-auto">
       <div className="px-1 pb-3">
         <h2 className="text-sm font-semibold text-text-primary">{t('workspace.projectsTitle')}</h2>
         <p className="mt-1 text-xs leading-relaxed text-text-muted">{t('workspace.projectsDesc')}</p>
-        <label className="mt-3 flex h-9 items-center gap-2 rounded-lg border border-border-subtle bg-bg-surface px-3">
+        <label className="mt-3 flex h-9 items-center gap-2 rounded-lg border border-border-subtle bg-bg-glass px-3 shadow-[inset_0_1px_0_var(--surface-highlight)]">
           <Search className="h-4 w-4 text-text-muted" />
           <input
             value={query}
@@ -419,17 +503,17 @@ export function ProjectSidebar({
           />
         </label>
       </div>
-      <div className="flex flex-col gap-1">
+      <div className="stagger-list flex flex-col gap-1">
         {filtered.map((project) => (
           <button
             key={project.name}
             type="button"
             onClick={() => onSelect(project.name)}
             className={cn(
-              'rounded-xl px-3 py-2 text-left transition-premium',
+              'rounded-xl border px-3 py-2 text-left transition-premium',
               selectedName === project.name
-                ? 'primary-gradient-surface text-white shadow-[0_12px_28px_var(--accent-glow)]'
-                : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+                ? 'primary-gradient-surface border-white/15 text-white shadow-[0_12px_28px_var(--accent-glow)]'
+                : 'border-transparent text-text-secondary hover:border-border-subtle hover:bg-bg-hover hover:text-text-primary'
             )}
           >
             <span className="block truncate text-sm font-medium">{project.name}</span>
@@ -468,18 +552,18 @@ export function ProjectStatusPanel({
     { label: t('workspace.statRisks'), value: riskCount, icon: ShieldAlert, color: 'text-warning', bgColor: 'bg-warning/10 border-warning/20' },
   ];
   return (
-    <section className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+    <section className="stagger-list grid grid-cols-2 gap-3 lg:grid-cols-3">
       {stats.map((stat) => (
         <div key={stat.label} className="metric-card group relative overflow-hidden rounded-xl border border-border-subtle p-3.5 transition-premium hover-lift hover:border-border-focus hover:bg-bg-hover hover:shadow-[0_8px_24px_rgba(0,0,0,0.1)]">
           <div className="absolute -right-6 -top-6 h-12 w-12 rounded-full bg-accent/5 blur-lg transition-all duration-500 group-hover:scale-150" />
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted transition-colors group-hover:text-text-secondary">{stat.label}</span>
+            <span className="text-[11px] font-medium uppercase text-text-muted transition-colors group-hover:text-text-secondary">{stat.label}</span>
             <span className={`inline-flex items-center justify-center rounded-lg border p-1 ${stat.bgColor}`}>
               <stat.icon className={`h-3.5 w-3.5 ${stat.color}`} />
             </span>
           </div>
           <div className="mt-2 flex items-baseline gap-1">
-            <div className="text-2xl font-bold tracking-tight text-text-primary">{stat.value}</div>
+            <div className="text-2xl font-bold text-text-primary">{stat.value}</div>
           </div>
         </div>
       ))}
@@ -500,8 +584,8 @@ export function AnalysisCTAButton({
   return (
     <Tooltip content={t('workspace.digestCtaTooltip')}>
       <span>
-        <Button size="md" onClick={onClick} disabled={disabled} className="w-full sm:w-auto">
-          <Sparkles className="h-4 w-4" />
+        <Button size="lg" onClick={onClick} disabled={disabled} className="w-full sm:w-auto">
+          <Sparkles className="h-5 w-5" />
           {isGenerated ? t('workspace.digestCtaUpdate') : t('workspace.digestCtaGenerate')}
         </Button>
       </span>
