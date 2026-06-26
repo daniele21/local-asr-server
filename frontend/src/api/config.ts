@@ -54,12 +54,12 @@ export const ANALYSIS_TYPE_ORDER = [
 
 export const ANALYSIS_TYPE_LABELS: Record<string, string> = {
   meeting_brief: 'Brief',
-  action_items: 'Azioni',
-  decisions: 'Decisioni',
-  risks_blockers: 'Rischi',
-  meeting_minutes: 'Verbale',
-  open_questions: 'Domande',
-  project_update: 'Progetto',
+  action_items: 'Actions',
+  decisions: 'Decisions',
+  risks_blockers: 'Risks',
+  meeting_minutes: 'Minutes',
+  open_questions: 'Questions',
+  project_update: 'Project',
   custom_question: 'Custom',
 };
 

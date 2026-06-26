@@ -1,6 +1,6 @@
 /**
  * MeetingListDialog.tsx
- * Dialog showing the complete filtered list of meetings.
+ * Drawer showing the complete filtered list of meetings.
  * Used by DashboardPage as progressive disclosure for the meeting list.
  */
 
@@ -105,7 +105,7 @@ function MeetingRow({
   );
 }
 
-// ─── Main dialog ─────────────────────────────────────────────────────────────
+// ─── Main drawer ─────────────────────────────────────────────────────────────
 
 export interface MeetingListDialogProps {
   open: boolean;
@@ -113,6 +113,7 @@ export interface MeetingListDialogProps {
   meetings: Meeting[];
   onOpenMeeting: (meetingId: string) => void;
   title?: string;
+  dataTour?: string;
 }
 
 export function MeetingListDialog({
@@ -121,6 +122,7 @@ export function MeetingListDialog({
   meetings,
   onOpenMeeting,
   title,
+  dataTour,
 }: MeetingListDialogProps) {
   const { t, lang } = useTranslation();
   const [query, setQuery] = useState('');
@@ -155,14 +157,18 @@ export function MeetingListDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="xl">
+      <DialogContent
+        dataTour={dataTour}
+        size="lg"
+        className="max-h-[85vh] flex flex-col"
+      >
         <DialogHeader
           title={displayTitle}
           description={lang === 'it' ? `${meetings.length} meeting nel periodo selezionato` : `${meetings.length} meetings in selected period`}
         />
 
         {/* Filter bar */}
-        <div className="flex flex-wrap items-center gap-3 border-b border-border-subtle bg-bg-elevated px-5 py-3">
+        <div className="flex flex-wrap items-center gap-3 border-b border-border-subtle bg-bg-surface px-5 py-3">
           {/* Status filter tabs */}
           <div className="flex gap-1">
             {statusOptions.map((opt) => (
@@ -207,7 +213,7 @@ export function MeetingListDialog({
         </div>
 
         {/* List */}
-        <DialogBody className="flex flex-col p-2" noScroll={false}>
+        <DialogBody className="flex flex-col p-2 overflow-y-auto">
           {filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Sparkles className="mb-3 h-8 w-8 text-text-muted" />

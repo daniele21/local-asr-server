@@ -5,18 +5,17 @@
  * Information hierarchy:
  *   Level 1 (Hero)      — Period selector, record CTA, 4 smart KPIs
  *   Level 2 (Spotlight) — Top 3 meetings, top 3 actions, top 2 digest snippets
- *   Level 3 (On-demand) — Full lists, decisions, risks open in Dialog
+ *   Level 3 (On-demand) — Full lists, decisions, risks open in drawers
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Activity,
   AlertTriangle,
   ChevronDown,
   ChevronRight,
-  Clock3,
   FileAudio,
+  Info,
   ListChecks,
   Mic,
   Search,
@@ -31,11 +30,11 @@ import { getDemoMeetings } from '../features/demo/demoData';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Tooltip } from '../components/ui/Tooltip';
+import { Dialog, DialogContent, DialogHeader, DialogBody } from '../components/ui/Dialog';
 import { TaskProcessingLoader } from '../components/workspace/TaskProcessingLoader';
 import { InsightDetailDialog, InsightTab } from '../components/workspace/InsightDetailDialog';
 import { MeetingListDialog } from '../components/workspace/MeetingListDialog';
 import {
-  AdvancedDetailsAccordion,
   DigestPanel,
   EmptyState,
   GuidanceCallout,
@@ -74,42 +73,6 @@ function ViewAllLink({ onClick, label }: { onClick: () => void; label: string })
       {label}
       <ChevronRight className="h-3.5 w-3.5" />
     </button>
-  );
-}
-
-// ─── Smart KPI card — hides when value is 0 ──────────────────────────────────
-
-function KpiCard({
-  label,
-  value,
-  icon: Icon,
-  color,
-  bgColor,
-  alwaysShow = false,
-}: {
-  label: string;
-  value: number;
-  icon: typeof FileAudio;
-  color: string;
-  bgColor: string;
-  alwaysShow?: boolean;
-}) {
-  if (value === 0 && !alwaysShow) return null;
-  return (
-    <div className="metric-card group relative overflow-hidden rounded-xl border border-border-subtle p-4 transition-premium hover-lift hover:border-border-focus hover:bg-bg-hover hover:shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
-      <div className="absolute -right-6 -top-6 h-16 w-16 rounded-full bg-accent/5 blur-xl transition-all duration-500 group-hover:scale-150" />
-      <div className="flex items-center justify-between">
-        <span className="text-min-readable font-medium uppercase text-text-muted transition-colors group-hover:text-text-secondary">
-          {label}
-        </span>
-        <span className={`inline-flex items-center justify-center rounded-lg border p-1.5 ${bgColor}`}>
-          <Icon className={`h-4 w-4 ${color}`} />
-        </span>
-      </div>
-      <div className="mt-2.5 flex items-baseline gap-1.5">
-        <span className="text-3xl font-bold text-text-primary">{value}</span>
-      </div>
-    </div>
   );
 }
 
@@ -158,10 +121,11 @@ export default function DashboardPage({
   const [dropdownCoords, setDropdownCoords] = useState<{ top: number; left: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  // Dialog state
+  // Drawer state
   const [insightDialogOpen, setInsightDialogOpen] = useState(false);
   const [insightDialogTab, setInsightDialogTab] = useState<InsightTab>('actions');
   const [meetingListDialogOpen, setMeetingListDialogOpen] = useState(false);
+  const [techDetailsOpen, setTechDetailsOpen] = useState(false);
 
   useEffect(() => {
     if (isDropdownOpen && triggerRef.current) {
@@ -202,6 +166,8 @@ export default function DashboardPage({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+
+
   // ─── Computed data ──────────────────────────────────────────────────────────
 
   const resolvedRange = useMemo(() => resolveTimeRange(timeRange), [timeRange]);
@@ -236,7 +202,6 @@ export default function DashboardPage({
     () => periodMeetings.filter((m) => m.status !== 'ready'),
     [periodMeetings],
   );
-  const transcribedCount = periodMeetings.filter((m) => Boolean(m.transcription)).length;
   const analyzingCount = periodMeetings.filter(
     (m) => m.status === 'analyzing' || m.jobs.some((j) => !['completed', 'failed', 'cancelled', 'interrupted'].includes(j.status)),
   ).length;
@@ -376,63 +341,60 @@ export default function DashboardPage({
                   <Search className="h-4 w-4" />
                 </button>
               </Tooltip>
+
+              {/* Technical details icon */}
+              <Tooltip content={lang === 'it' ? 'Dettagli tecnici' : 'Technical status'}>
+                <button
+                  type="button"
+                  onClick={() => setTechDetailsOpen(true)}
+                  className="pressable p-2 text-text-muted hover:text-text-primary hover:bg-bg-hover rounded-xl border border-transparent hover:border-border-focus transition-premium"
+                >
+                  <Info className="h-4 w-4" />
+                </button>
+              </Tooltip>
             </div>
             <p className="mt-2 max-w-lg text-sm leading-relaxed text-text-secondary">{t('dashboard.subtitle')}</p>
+            {periodMeetings.length > 0 && (
+              <div className="mt-4 flex flex-wrap gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setMeetingListDialogOpen(true)}
+                  className="flex items-center gap-2 rounded-xl border border-border-subtle bg-bg-glass/40 hover:bg-bg-hover hover:border-border-focus px-3 py-1.5 text-xs font-semibold text-text-secondary transition-premium hover-lift"
+                >
+                  <FileAudio className="h-3.5 w-3.5 text-accent" />
+                  <span>
+                    <strong>{periodMeetings.length}</strong> {lang === 'it' ? 'Meeting nel periodo' : 'Meetings in period'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setInsightDialogTab('actions'); setInsightDialogOpen(true); }}
+                  className="flex items-center gap-2 rounded-xl border border-border-subtle bg-bg-glass/40 hover:bg-bg-hover hover:border-border-focus px-3 py-1.5 text-xs font-semibold text-text-secondary transition-premium hover-lift"
+                >
+                  <ListChecks className="h-3.5 w-3.5 text-success" />
+                  <span>
+                    <strong>{actionItems.length}</strong> {lang === 'it' ? 'Azioni aperte' : 'Open actions'}
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
 
-          {/* Actions */}
+          {/* Context */}
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="lg" onClick={() => navigateTo('recording')} disabled={demoMode}>
-              <Mic className="h-5 w-5" />
-              {t('dashboard.btnRecord')}
-            </Button>
             <GuidanceCallout
               icon={ShieldCheck}
               title={t('dashboard.heroGuidanceTitle')}
               description={demoMode ? t('dashboard.demoReadonlyHint') : t('dashboard.heroGuidanceDesc')}
-              className="hidden xl:block max-w-xs"
+              className="hidden xl:block max-w-sm"
             />
           </div>
         </div>
       </section>
 
-      {/* ── LEVEL 1: Smart KPIs (hidden when 0) ── */}
-      {periodMeetings.length > 0 && (
-        <section className="stagger-list grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <KpiCard
-            label={t('dashboard.statPeriodMeetings')}
-            value={periodMeetings.length}
-            icon={FileAudio}
-            color="text-accent"
-            bgColor="bg-accent/10 border-accent/20"
-            alwaysShow
-          />
-          <KpiCard
-            label={t('dashboard.statToTranscribe')}
-            value={periodMeetings.length - transcribedCount}
-            icon={Clock3}
-            color="text-warning"
-            bgColor="bg-warning/10 border-warning/20"
-          />
-          <KpiCard
-            label={t('dashboard.statAnalyzing')}
-            value={analyzingCount}
-            icon={Activity}
-            color="text-info"
-            bgColor="bg-info/10 border-info/20"
-          />
-          <KpiCard
-            label={t('dashboard.statOpenActions')}
-            value={actionItems.length}
-            icon={ListChecks}
-            color="text-success"
-            bgColor="bg-success/10 border-success/20"
-          />
-        </section>
-      )}
-
       {/* ── LEVEL 2: Main content — Spotlight ── */}
-      <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.8fr)_minmax(300px,1fr)]">
         <main className="flex min-w-0 flex-col gap-5">
 
           {/* Meetings spotlight — top 3 */}
@@ -469,11 +431,13 @@ export default function DashboardPage({
             {periodMeetings.length === 0 ? (
               <EmptyState
                 icon={Mic}
-                title={t('dashboard.emptyMeetingsTitle')}
+                title={timeRange.mode === 'today' ? t('dashboard.emptyMeetingsTodayTitle') : t('dashboard.emptyMeetingsTitle')}
                 description={t('dashboard.emptyMeetingsDesc')}
+                className="mx-auto w-full max-w-md py-6"
                 action={
                   <div className="flex flex-wrap justify-center gap-2">
                     <Button onClick={() => navigateTo('recording')} disabled={demoMode}>{t('dashboard.btnRecord')}</Button>
+                    <Button variant="secondary" onClick={() => navigateTo('transcription')} disabled={demoMode}>{t('dashboard.btnImport')}</Button>
                   </div>
                 }
               />
@@ -503,106 +467,6 @@ export default function DashboardPage({
               </div>
             )}
           </section>
-
-          {/* Actions preview — top 3, rest in dialog */}
-          <section
-            className="surface-primary flex flex-col gap-3 rounded-2xl p-4 theme-tasks"
-            data-tour="open-actions"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <SectionHeader
-                icon={ListChecks}
-                title={t('dashboard.statOpenActions')}
-                description={t('dashboard.openActionsDesc')}
-                tooltip={t('dashboard.openActionsTooltip')}
-              />
-              {actionItems.length > 3 && (
-                <ViewAllLink
-                  onClick={() => { setInsightDialogTab('actions'); setInsightDialogOpen(true); }}
-                  label={t('demo.viewAllActions')}
-                />
-              )}
-            </div>
-
-            {actionItems.length === 0 ? (
-              <p className="text-xs text-text-muted py-3">{t('workspace.emptyActionsTitle')}</p>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {actionItems.slice(0, 3).map((item) => (
-                  <InsightPreviewCard
-                    key={item.id}
-                    text={item.text}
-                    meta={[item.owner, item.dueDate ? `Due: ${item.dueDate}` : '', item.sourceTitle].filter(Boolean).join(' · ')}
-                    onClick={() => { setInsightDialogTab('actions'); setInsightDialogOpen(true); }}
-                  />
-                ))}
-                {actionItems.length > 3 && (
-                  <button
-                    type="button"
-                    onClick={() => { setInsightDialogTab('actions'); setInsightDialogOpen(true); }}
-                    className="view-all-link py-1"
-                  >
-                    {lang === 'it' ? `Vedi tutte le ${actionItems.length} azioni` : `View all ${actionItems.length} actions`}
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
-            )}
-          </section>
-
-          {/* Decisions + Risks row — compact preview */}
-          {(decisions.length > 0 || risks.length > 0) && (
-            <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-              {decisions.length > 0 && (
-                <div className="surface-primary flex flex-col gap-3 rounded-2xl p-4 theme-decisions" data-tour="decision-log">
-                  <div className="flex items-center justify-between gap-3">
-                    <SectionHeader icon={Target} title={t('dashboard.decisionsTitle')} description={t('dashboard.decisionsDesc')} />
-                    {decisions.length > 2 && (
-                      <ViewAllLink
-                        onClick={() => { setInsightDialogTab('decisions'); setInsightDialogOpen(true); }}
-                        label={t('demo.viewAllDecisions')}
-                      />
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    {decisions.slice(0, 2).map((item) => (
-                      <InsightPreviewCard
-                        key={item.id}
-                        text={item.text}
-                        meta={item.sourceTitle}
-                        onClick={() => { setInsightDialogTab('decisions'); setInsightDialogOpen(true); }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {risks.length > 0 && (
-                <div className="surface-primary flex flex-col gap-3 rounded-2xl p-4 theme-risks" data-tour="risk-panel">
-                  <div className="flex items-center justify-between gap-3">
-                    <SectionHeader icon={ShieldAlert} title={t('dashboard.risksTitle')} description={t('dashboard.risksDesc')} />
-                    {risks.length > 2 && (
-                      <ViewAllLink
-                        onClick={() => { setInsightDialogTab('risks'); setInsightDialogOpen(true); }}
-                        label={t('demo.viewAllRisks')}
-                      />
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    {risks.slice(0, 2).map((item) => (
-                      <InsightPreviewCard
-                        key={item.id}
-                        text={item.text}
-                        meta={item.sourceTitle}
-                        variant="warning"
-                        onClick={() => { setInsightDialogTab('risks'); setInsightDialogOpen(true); }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </section>
-          )}
         </main>
 
         {/* ── Aside ── */}
@@ -641,26 +505,105 @@ export default function DashboardPage({
             </section>
           )}
 
-          {/* Technical details */}
-          <AdvancedDetailsAccordion>
-            <dl className="grid grid-cols-[140px_minmax(0,1fr)] gap-2 text-xs">
-              <dt className="text-text-muted">{t('dashboard.techLoaded')}</dt>
-              <dd className="text-text-secondary">{meetings.length}</dd>
-              <dt className="text-text-muted">{t('dashboard.techFiltered')}</dt>
-              <dd className="text-text-secondary">{periodMeetings.length}</dd>
-              <dt className="text-text-muted">{t('dashboard.techReady')}</dt>
-              <dd className="text-text-secondary">{readyCount}</dd>
-              <dt className="text-text-muted">{t('dashboard.techActive')}</dt>
-              <dd className="text-text-secondary">{analyzingCount}</dd>
-              <dt className="text-text-muted">{t('dashboard.techRange')}</dt>
-              <dd className="truncate text-text-secondary">{rangeLabel}</dd>
-            </dl>
-          </AdvancedDetailsAccordion>
         </aside>
       </section>
 
-      {/* ── LEVEL 3: On-demand dialogs ── */}
+      {(periodMeetings.length > 0 || actionItems.length > 0 || decisions.length > 0 || risks.length > 0) && (
+        <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+          {/* Actions preview — top 3, rest in drawer */}
+          <section
+            className="surface-primary flex flex-col gap-3 rounded-2xl p-4 theme-tasks"
+            data-tour="open-actions"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <SectionHeader
+                icon={ListChecks}
+                title={t('dashboard.statOpenActions')}
+                description={t('dashboard.openActionsDesc')}
+                tooltip={t('dashboard.openActionsTooltip')}
+              />
+              {actionItems.length > 3 && (
+                <ViewAllLink
+                  onClick={() => { setInsightDialogTab('actions'); setInsightDialogOpen(true); }}
+                  label={t('demo.viewAllActions')}
+                />
+              )}
+            </div>
+
+            {actionItems.length === 0 ? (
+              <p className="text-xs text-text-muted py-3">{t('workspace.emptyActionsTitle')}</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {actionItems.slice(0, 3).map((item) => (
+                  <InsightPreviewCard
+                    key={item.id}
+                    text={item.text}
+                    meta={[item.owner, item.dueDate ? `${t('workspace.dueDateLabel')} ${item.dueDate}` : '', item.priority, item.sourceTitle].filter(Boolean).join(' · ')}
+                    onClick={() => { setInsightDialogTab('actions'); setInsightDialogOpen(true); }}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="surface-primary flex flex-col gap-3 rounded-2xl p-4 theme-decisions" data-tour="decision-log">
+            <div className="flex items-center justify-between gap-3">
+              <SectionHeader icon={Target} title={t('dashboard.decisionsTitle')} description={t('dashboard.decisionsDesc')} />
+              {decisions.length > 2 && (
+                <ViewAllLink
+                  onClick={() => { setInsightDialogTab('decisions'); setInsightDialogOpen(true); }}
+                  label={t('demo.viewAllDecisions')}
+                />
+              )}
+            </div>
+            {decisions.length === 0 ? (
+              <p className="text-xs text-text-muted py-3">{t('workspace.emptyDecisionsTitle')}</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {decisions.slice(0, 2).map((item) => (
+                  <InsightPreviewCard
+                    key={item.id}
+                    text={item.text}
+                    meta={item.sourceTitle}
+                    onClick={() => { setInsightDialogTab('decisions'); setInsightDialogOpen(true); }}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="surface-primary flex flex-col gap-3 rounded-2xl p-4 theme-risks" data-tour="risk-panel">
+            <div className="flex items-center justify-between gap-3">
+              <SectionHeader icon={ShieldAlert} title={t('dashboard.risksTitle')} description={t('dashboard.risksDesc')} />
+              {risks.length > 2 && (
+                <ViewAllLink
+                  onClick={() => { setInsightDialogTab('risks'); setInsightDialogOpen(true); }}
+                  label={t('demo.viewAllRisks')}
+                />
+              )}
+            </div>
+            {risks.length === 0 ? (
+              <p className="text-xs text-text-muted py-3">{t('workspace.emptyRisksTitle')}</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {risks.slice(0, 2).map((item) => (
+                  <InsightPreviewCard
+                    key={item.id}
+                    text={item.text}
+                    meta={item.sourceTitle}
+                    variant="warning"
+                    onClick={() => { setInsightDialogTab('risks'); setInsightDialogOpen(true); }}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        </section>
+      )}
+
+      {/* ── LEVEL 3: On-demand drawers ── */}
       <InsightDetailDialog
+        dataTour="insight-detail-dialog-content"
         open={insightDialogOpen}
         onOpenChange={setInsightDialogOpen}
         initialTab={insightDialogTab}
@@ -670,15 +613,43 @@ export default function DashboardPage({
       />
 
       <MeetingListDialog
+        dataTour="meeting-list-dialog-content"
         open={meetingListDialogOpen}
         onOpenChange={setMeetingListDialogOpen}
         meetings={periodMeetings}
         onOpenMeeting={(id) => navigateTo('meeting', id)}
       />
 
+      {/* Technical details dialog */}
+      <Dialog open={techDetailsOpen} onOpenChange={setTechDetailsOpen}>
+        <DialogContent size="sm" dataTour="tech-details-dialog-content">
+          <DialogHeader
+            title={t('workspace.advancedTitle')}
+            description={t('workspace.advancedDesc')}
+          />
+          <DialogBody>
+            <p className="mb-4 rounded-lg border border-border-subtle bg-bg-glass px-3 py-2 text-xs leading-relaxed text-text-muted">
+              {t('workspace.advancedHelper')}
+            </p>
+            <dl className="grid grid-cols-[140px_minmax(0,1fr)] gap-3 text-xs">
+              <dt className="text-text-muted">{t('dashboard.techLoaded')}</dt>
+              <dd className="font-semibold text-text-secondary">{meetings.length}</dd>
+              <dt className="text-text-muted">{t('dashboard.techFiltered')}</dt>
+              <dd className="font-semibold text-text-secondary">{periodMeetings.length}</dd>
+              <dt className="text-text-muted">{t('dashboard.techReady')}</dt>
+              <dd className="font-semibold text-text-secondary">{readyCount}</dd>
+              <dt className="text-text-muted">{t('dashboard.techActive')}</dt>
+              <dd className="font-semibold text-text-secondary">{analyzingCount}</dd>
+              <dt className="text-text-muted">{t('dashboard.techRange')}</dt>
+              <dd className="truncate font-semibold text-text-secondary">{rangeLabel}</dd>
+            </dl>
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+
       {/* ── Search overlay ── */}
       {isSearchOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-md pt-[10vh] px-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-bg-base/70 backdrop-blur-md pt-[10vh] px-4 animate-in fade-in duration-200">
           <div className="absolute inset-0" onClick={() => setIsSearchOpen(false)} />
           <div className="relative w-full max-w-2xl bg-bg-surface border border-border-subtle rounded-2xl shadow-premium overflow-hidden flex flex-col max-h-[75vh] animate-in zoom-in-95 duration-200">
             <div className="flex items-center gap-3 px-4 py-3 border-b border-border-subtle bg-bg-elevated">

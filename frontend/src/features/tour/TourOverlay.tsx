@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { X } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { useTranslation } from '../../i18n/i18n';
 import { GuidedTourStep, TOUR_STEPS, tourStepIndex } from './tourSteps';
@@ -17,18 +19,31 @@ interface TourOverlayProps {
   onClose: () => void;
 }
 
+const VIEWPORT_GAP = 16;
+const TARGET_PADDING = 8;
+const POPOVER_MAX_WIDTH = 384;
+const POPOVER_ESTIMATED_HEIGHT = 234;
+const TARGET_TO_POPOVER_GAP = 24;
+
 function measureTarget(selector?: string): SpotlightRect | null {
   if (!selector) return null;
   const element = document.querySelector(selector);
   if (!element) return null;
   const rect = element.getBoundingClientRect();
-  const padding = 8;
   return {
-    top: Math.max(8, rect.top - padding),
-    left: Math.max(8, rect.left - padding),
-    width: Math.min(window.innerWidth - 16, rect.width + padding * 2),
-    height: Math.min(window.innerHeight - 16, rect.height + padding * 2),
+    top: Math.max(TARGET_PADDING, rect.top - TARGET_PADDING),
+    left: Math.max(TARGET_PADDING, rect.left - TARGET_PADDING),
+    width: Math.min(window.innerWidth - TARGET_PADDING * 2, rect.width + TARGET_PADDING * 2),
+    height: Math.min(window.innerHeight - TARGET_PADDING * 2, rect.height + TARGET_PADDING * 2),
   };
+}
+
+function clampedPopoverTop(rect: SpotlightRect): string {
+  const top = Math.min(
+    Math.max(VIEWPORT_GAP, rect.top + VIEWPORT_GAP),
+    Math.max(VIEWPORT_GAP, window.innerHeight - POPOVER_ESTIMATED_HEIGHT - VIEWPORT_GAP),
+  );
+  return `${top}px`;
 }
 
 function popoverPosition(rect: SpotlightRect | null): {
@@ -41,13 +56,13 @@ function popoverPosition(rect: SpotlightRect | null): {
     return {
       top: 'auto',
       left: 'auto',
-      right: '16px',
-      bottom: '16px',
+      right: `${VIEWPORT_GAP}px`,
+      bottom: `${VIEWPORT_GAP}px`,
     };
   }
-  const width = Math.min(384, window.innerWidth - 32);
-  const leftCandidate = Math.min(Math.max(16, rect.left), window.innerWidth - width - 16);
-  const below = rect.top + rect.height + 14;
+  const width = Math.min(POPOVER_MAX_WIDTH, window.innerWidth - VIEWPORT_GAP * 2);
+  const leftCandidate = Math.min(Math.max(VIEWPORT_GAP, rect.left), window.innerWidth - width - VIEWPORT_GAP);
+  const below = rect.top + rect.height + VIEWPORT_GAP;
   if (below + 220 < window.innerHeight) {
     return {
       top: `${below}px`,
@@ -56,8 +71,8 @@ function popoverPosition(rect: SpotlightRect | null): {
       bottom: 'auto',
     };
   }
-  const above = rect.top - 234;
-  if (above > 16) {
+  const above = rect.top - POPOVER_ESTIMATED_HEIGHT;
+  if (above > VIEWPORT_GAP) {
     return {
       top: `${above}px`,
       left: `${leftCandidate}px`,
@@ -65,11 +80,29 @@ function popoverPosition(rect: SpotlightRect | null): {
       bottom: 'auto',
     };
   }
+  const rightOfTarget = rect.left + rect.width + TARGET_TO_POPOVER_GAP;
+  if (rightOfTarget + width <= window.innerWidth - VIEWPORT_GAP) {
+    return {
+      top: clampedPopoverTop(rect),
+      left: `${rightOfTarget}px`,
+      right: 'auto',
+      bottom: 'auto',
+    };
+  }
+  const leftOfTarget = rect.left - width - TARGET_TO_POPOVER_GAP;
+  if (leftOfTarget >= VIEWPORT_GAP) {
+    return {
+      top: clampedPopoverTop(rect),
+      left: `${leftOfTarget}px`,
+      right: 'auto',
+      bottom: 'auto',
+    };
+  }
   return {
     top: 'auto',
     left: 'auto',
-    right: '16px',
-    bottom: '16px',
+    right: `${VIEWPORT_GAP}px`,
+    bottom: `${VIEWPORT_GAP}px`,
   };
 }
 
@@ -91,41 +124,52 @@ export function TourOverlay({ step, onNext, onBack, onClose }: TourOverlayProps)
 
   useEffect(() => {
     let attempts = 0;
-    const updateRect = () => {
-      const target = step.target ? document.querySelector(step.target) : null;
-      target?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: attempts === 0 ? 'smooth' : 'auto' });
+    let didAutoScroll = false;
+    const measureOnly = () => {
       setRect(measureTarget(step.target));
+    };
+    const updateRect = (shouldAutoScroll = false) => {
+      const target = step.target ? document.querySelector(step.target) : null;
+      if (target && shouldAutoScroll && !didAutoScroll) {
+        target.scrollIntoView({
+          block: step.scrollBlock || 'center',
+          inline: 'nearest',
+          behavior: attempts === 0 ? 'smooth' : 'auto',
+        });
+        didAutoScroll = true;
+      }
+      measureOnly();
       attempts += 1;
     };
-    const timeout = window.setTimeout(updateRect, 80);
+    const timeout = window.setTimeout(() => updateRect(true), 80);
     const retry = window.setInterval(() => {
       if (attempts >= 12 || !step.target || document.querySelector(step.target)) {
         window.clearInterval(retry);
       }
-      updateRect();
+      updateRect(!didAutoScroll);
     }, 120);
-    window.addEventListener('resize', updateRect);
-    window.addEventListener('scroll', updateRect, true);
+    window.addEventListener('resize', measureOnly);
+    window.addEventListener('scroll', measureOnly, true);
     return () => {
       window.clearTimeout(timeout);
       window.clearInterval(retry);
-      window.removeEventListener('resize', updateRect);
-      window.removeEventListener('scroll', updateRect, true);
+      window.removeEventListener('resize', measureOnly);
+      window.removeEventListener('scroll', measureOnly, true);
     };
-  }, [step.target]);
+  }, [step.scrollBlock, step.target]);
 
   const position = useMemo(() => popoverPosition(rect), [rect]);
 
-  return (
+  return createPortal(
     <div aria-label={t('tour.ariaLabel')} data-tour="guided-tour-popover">
       {!isComplete && rect && (
         <div
-          className="fixed z-[56] rounded-2xl border border-accent/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.58),0_0_0_8px_var(--accent-glow),0_20px_70px_rgba(0,0,0,0.35)] pointer-events-none transition-all duration-300"
+          className="fixed z-[90] rounded-2xl border border-accent/80 shadow-[var(--tour-spotlight-shadow)] pointer-events-none transition-all duration-300"
           style={rect as React.CSSProperties}
         />
       )}
       <aside
-        className="fixed z-[60] w-[min(24rem,calc(100vw-2rem))] bg-bg-surface border border-border-subtle rounded-2xl p-5 shadow-premium"
+        className="fixed z-[100] w-[min(24rem,calc(100vw-2rem))] bg-bg-surface border border-border-subtle rounded-2xl p-5 shadow-premium"
         style={position}
         aria-live="polite"
       >
@@ -133,7 +177,9 @@ export function TourOverlay({ step, onNext, onBack, onClose }: TourOverlayProps)
           <span className="text-[10px] font-bold uppercase tracking-widest text-accent">
             {t('tour.progress', { current: Math.min(currentIndex + 1, total), total })}
           </span>
-          <button onClick={onClose} className="rounded-md px-2 text-text-muted transition-premium hover:bg-bg-hover hover:text-text-primary text-lg leading-none" aria-label={t('tour.close')}>x</button>
+          <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-md text-text-muted transition-premium hover:bg-bg-hover hover:text-text-primary" aria-label={t('tour.close')}>
+            <X className="h-4 w-4" />
+          </button>
         </div>
         <div className="mt-3 h-1 overflow-hidden rounded-full bg-bg-surface">
           <div
@@ -151,6 +197,7 @@ export function TourOverlay({ step, onNext, onBack, onClose }: TourOverlayProps)
           </Button>
         </div>
       </aside>
-    </div>
+    </div>,
+    document.body
   );
 }

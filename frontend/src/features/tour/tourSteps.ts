@@ -1,8 +1,15 @@
 export type TourStepId =
   | 'home-summary'
+  | 'home-meetings'
+  | 'home-record'
+  | 'recording-setup'
+  | 'recording-live'
+  | 'recording-save'
+  | 'recording-to-today'
   | 'home-actions'
   | 'home-decisions'
   | 'home-risks'
+  | 'today-to-projects'
   | 'project-sidebar'
   | 'project-status'
   | 'project-actions'
@@ -15,6 +22,7 @@ export interface GuidedTourStep {
   id: TourStepId;
   route: string;
   target?: string;
+  scrollBlock?: ScrollLogicalPosition;
   titleKey: string;
   bodyKey: string;
 }
@@ -26,6 +34,48 @@ export const TOUR_STEPS: GuidedTourStep[] = [
     target: '[data-tour="today-summary"]',
     titleKey: 'tour.homeSummaryTitle',
     bodyKey: 'tour.homeSummaryBody',
+  },
+  {
+    id: 'home-meetings',
+    route: 'home',
+    target: '[data-tour="today-meetings"]',
+    titleKey: 'tour.homeMeetingsTitle',
+    bodyKey: 'tour.homeMeetingsBody',
+  },
+  {
+    id: 'home-record',
+    route: 'home',
+    target: '[data-tour="new-meeting-btn"]',
+    titleKey: 'tour.recordingIntroTitle',
+    bodyKey: 'tour.recordingIntroBody',
+  },
+  {
+    id: 'recording-setup',
+    route: 'recording',
+    target: '[data-tour="recording-source-setup"]',
+    titleKey: 'tour.recordingSetupStepTitle',
+    bodyKey: 'tour.recordingSetupStepBody',
+  },
+  {
+    id: 'recording-live',
+    route: 'recording',
+    target: '[data-tour="recording-live-meter"]',
+    titleKey: 'tour.recordingLiveStepTitle',
+    bodyKey: 'tour.recordingLiveStepBody',
+  },
+  {
+    id: 'recording-save',
+    route: 'recording',
+    target: '[data-tour="recording-save-workflow"]',
+    titleKey: 'tour.recordingSaveStepTitle',
+    bodyKey: 'tour.recordingSaveStepBody',
+  },
+  {
+    id: 'recording-to-today',
+    route: 'home',
+    target: '[data-tour="today-meetings"]',
+    titleKey: 'tour.recordingToTodayTitle',
+    bodyKey: 'tour.recordingToTodayBody',
   },
   {
     id: 'home-actions',
@@ -49,9 +99,17 @@ export const TOUR_STEPS: GuidedTourStep[] = [
     bodyKey: 'tour.homeRisksBody',
   },
   {
+    id: 'today-to-projects',
+    route: 'home',
+    target: '[data-tour="nav-projects"]',
+    titleKey: 'tour.todayToProjectsTitle',
+    bodyKey: 'tour.todayToProjectsBody',
+  },
+  {
     id: 'project-sidebar',
     route: 'projects',
     target: '[data-tour="project-sidebar"]',
+    scrollBlock: 'start',
     titleKey: 'tour.projectSidebarTitle',
     bodyKey: 'tour.projectSidebarBody',
   },
@@ -59,6 +117,7 @@ export const TOUR_STEPS: GuidedTourStep[] = [
     id: 'project-status',
     route: 'projects',
     target: '[data-tour="project-status"]',
+    scrollBlock: 'nearest',
     titleKey: 'tour.projectStatusTitle',
     bodyKey: 'tour.projectStatusBody',
   },
@@ -101,4 +160,3 @@ export const TOUR_STEPS: GuidedTourStep[] = [
 export function tourStepIndex(stepId: TourStepId): number {
   return TOUR_STEPS.findIndex((step) => step.id === stepId);
 }
-

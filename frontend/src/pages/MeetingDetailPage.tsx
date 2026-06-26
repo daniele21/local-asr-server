@@ -1,6 +1,7 @@
-import { type ComponentType, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
+  ChevronDown,
   CheckCircle2,
   Clock3,
   FileText,
@@ -15,6 +16,8 @@ import { ApiClient, AnalysisRun, Meeting, TranscriptionJob } from '../api/apiCli
 import { ANALYSIS_TYPE_LABELS, ANALYSIS_TYPE_ORDER } from '../api/config';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
+import { Tooltip } from '../components/ui/Tooltip';
+import { AdvancedDetailsAccordion } from '../components/workspace/MeetingWorkspace';
 import { renderMarkdown } from '../utils/markdown';
 import { formatBytes, formatProjectDate, getDurationSeconds } from '../utils/formatters';
 import { useTranslation } from '../i18n/i18n';
@@ -41,62 +44,6 @@ function jobProgress(job: TranscriptionJob): string {
   return `${step} · ${job.progress || 0}%`;
 }
 
-interface MeetingActionTileProps {
-  icon: ComponentType<{ className?: string }>;
-  label: string;
-  description: string;
-  detail?: string;
-  variant?: 'primary' | 'secondary';
-  disabled?: boolean;
-  isLoading?: boolean;
-  onClick: () => void;
-}
-
-function MeetingActionTile({
-  icon: Icon,
-  label,
-  description,
-  detail,
-  variant = 'secondary',
-  disabled = false,
-  isLoading = false,
-  onClick,
-}: MeetingActionTileProps) {
-  const primary = variant === 'primary';
-  return (
-    <button
-      type="button"
-      disabled={disabled || isLoading}
-      onClick={onClick}
-      title={description}
-      aria-label={`${label}. ${description}`}
-      className={`group flex min-h-[112px] flex-col items-start justify-between rounded-lg border p-4 text-left transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-55 ${
-        primary
-          ? 'border-accent/55 bg-accent text-white shadow-[0_16px_36px_rgba(14,165,233,0.22)] hover:bg-accent-hover focus-visible:outline-accent'
-          : 'border-border-subtle bg-bg-elevated/78 text-text-primary hover:border-border-focus hover:bg-bg-hover focus-visible:outline-border-focus'
-      }`}
-    >
-      <span className="flex w-full items-start justify-between gap-3">
-        <span className="flex min-w-0 items-center gap-2 text-sm font-semibold">
-          <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-md ${primary ? 'bg-white/16 text-white' : 'bg-accent/10 text-accent'}`}>
-            <Icon className="h-4 w-4" />
-          </span>
-          <span className="truncate">{label}</span>
-        </span>
-        {isLoading && <Loader2 className="h-4 w-4 shrink-0 animate-spin" />}
-      </span>
-      <span className={`mt-3 text-xs leading-relaxed ${primary ? 'text-white/84' : 'text-text-secondary'}`}>
-        {description}
-      </span>
-      {detail && (
-        <span className={`mt-3 text-[11px] font-semibold uppercase ${primary ? 'text-white/70' : 'text-text-muted'}`}>
-          {detail}
-        </span>
-      )}
-    </button>
-  );
-}
-
 export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = false }: MeetingDetailPageProps) {
   const { t, lang } = useTranslation();
   const [meeting, setMeeting] = useState<Meeting | null>(null);
@@ -104,6 +51,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [selectedAnalysisType, setSelectedAnalysisType] = useState('meeting_brief');
   const [error, setError] = useState<string | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const load = async () => {
     if (!recordingId) return;
@@ -134,7 +82,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
 
   useEffect(() => {
     load();
-  }, [recordingId]);
+  }, [recordingId, demoMode, lang]);
 
   const activeJobs = useMemo(
     () => (meeting?.jobs || []).filter((job) => activeJobStatuses.has(job.status)),
@@ -151,6 +99,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
 
   const startTranscription = async () => {
     if (!meeting) return;
+    if (demoMode) return;
     setBusyAction('transcription');
     try {
       await ApiClient.createTranscriptionJob(meeting.id, {});
@@ -164,6 +113,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
 
   const startPipeline = async (pipelineId = 'meeting_default') => {
     if (!meeting) return;
+    if (demoMode) return;
     setBusyAction(pipelineId);
     try {
       await ApiClient.createAnalysisPipeline({
@@ -214,9 +164,10 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
   const selectedRun = meeting.latest_analysis?.[selectedAnalysisType];
   const selectedHistory = meeting.analysis_runs.filter((run) => run.analysis_type === selectedAnalysisType);
   const recordingDuration = getDurationSeconds(meeting.recording);
+  const canAnalyze = Boolean(meeting.transcription) && !demoMode;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       <section className="flex flex-col gap-4 border-b border-border-subtle pb-5">
         <div className="flex items-center justify-between gap-4">
           <button
@@ -232,7 +183,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,460px)] xl:items-end">
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(300px,380px)] xl:items-start">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-2">
               <Badge variant={meeting.status === 'ready' ? 'success' : meeting.status === 'analyzing' ? 'warning' : 'idle'}>
@@ -245,6 +196,94 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               <span>{formatProjectDate(meeting.created_at, lang)}</span>
               <span>{recordingDuration > 0 ? `${Math.round(recordingDuration / 60)} min` : t('projects.durationNotAvailable')}</span>
               <span>{formatBytes(meeting.recording.bytes_written || 0)}</span>
+            </div>
+            <div
+              className="mt-4 flex flex-wrap items-center gap-2"
+              aria-label={t('meeting.primaryActionsLabel')}
+            >
+              {!meeting.transcription && (
+                <Tooltip content={t('meeting.transcribeDescription')}>
+                  <span>
+                    <Button
+                      size="sm"
+                      disabled={demoMode}
+                      onClick={startTranscription}
+                      isLoading={busyAction === 'transcription'}
+                    >
+                      <FileText className="h-4 w-4" />
+                      {t('meeting.btnTranscribe')}
+                    </Button>
+                  </span>
+                </Tooltip>
+              )}
+              <Tooltip content={t('meeting.analyzeDescription')}>
+                <span>
+                  <Button
+                    size="sm"
+                    disabled={!canAnalyze}
+                    onClick={() => startPipeline('meeting_default')}
+                    isLoading={busyAction === 'meeting_default'}
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    {t('meeting.btnAnalyze')}
+                  </Button>
+                </span>
+              </Tooltip>
+              <Tooltip content={t('meeting.deepDescription')}>
+                <span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={!canAnalyze}
+                    onClick={() => startPipeline('meeting_deep')}
+                    isLoading={busyAction === 'meeting_deep'}
+                  >
+                    <ListChecks className="h-4 w-4" />
+                    {t('meeting.btnDeep')}
+                  </Button>
+                </span>
+              </Tooltip>
+              <div className="relative">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setMoreOpen((open) => !open)}
+                  aria-expanded={moreOpen}
+                >
+                  {t('common.more')}
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </Button>
+                {moreOpen && (
+                  <div className="absolute left-0 top-9 z-40 w-48 rounded-lg border border-border-subtle bg-bg-surface p-1 shadow-premium">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMoreOpen(false);
+                        load();
+                      }}
+                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      {t('meeting.btnUpdate')}
+                    </button>
+                    {!meeting.transcription && (
+                      <button
+                        type="button"
+                        disabled={demoMode}
+                        onClick={() => {
+                          setMoreOpen(false);
+                          startTranscription();
+                        }}
+                        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:text-text-muted"
+                      >
+                        <FileText className="h-3.5 w-3.5" />
+                        {t('meeting.btnTranscribe')}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <div className="workspace-panel rounded-lg border border-border-subtle p-3">
@@ -266,43 +305,6 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
         )}
       </section>
 
-      <section
-        className={`mx-auto grid w-full gap-3 ${meeting.transcription ? 'max-w-3xl sm:grid-cols-2' : 'max-w-5xl lg:grid-cols-3'}`}
-        aria-label={t('meeting.primaryActionsLabel')}
-      >
-        {!meeting.transcription && (
-          <MeetingActionTile
-            icon={FileText}
-            label={t('meeting.btnTranscribe')}
-            description={t('meeting.transcribeDescription')}
-            detail={t('meeting.actionRequiredBeforeAnalysis')}
-            variant="primary"
-            disabled={demoMode}
-            onClick={startTranscription}
-            isLoading={busyAction === 'transcription'}
-          />
-        )}
-        <MeetingActionTile
-          icon={Sparkles}
-          label={t('meeting.btnAnalyze')}
-          description={t('meeting.analyzeDescription')}
-          detail={!meeting.transcription ? t('meeting.actionRequiresTranscription') : t('meeting.analyzeDetail')}
-          variant={meeting.transcription ? 'primary' : 'secondary'}
-          disabled={!meeting.transcription || demoMode}
-          onClick={() => startPipeline('meeting_default')}
-          isLoading={busyAction === 'meeting_default'}
-        />
-        <MeetingActionTile
-          icon={ListChecks}
-          label={t('meeting.btnDeep')}
-          description={t('meeting.deepDescription')}
-          detail={!meeting.transcription ? t('meeting.actionRequiresTranscription') : t('meeting.deepDetail')}
-          disabled={!meeting.transcription || demoMode}
-          onClick={() => startPipeline('meeting_deep')}
-          isLoading={busyAction === 'meeting_deep'}
-        />
-      </section>
-
       {(activeJobs.length > 0 || meeting.analysis_runs.some((run) => activeJobStatuses.has(run.status))) && (
         <section className="border border-warning/30 bg-warning/5 rounded-lg px-4 py-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
@@ -318,9 +320,9 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
         </section>
       )}
 
-      <section className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-6">
-        <main className="flex flex-col gap-6 min-w-0">
-          <div className="border border-border-subtle rounded-lg overflow-hidden">
+      <section className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <main className="flex flex-col gap-5 min-w-0">
+          <div className="surface-primary rounded-lg overflow-hidden">
             <div className="px-4 py-3 border-b border-border-subtle bg-bg-elevated flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-accent" />
@@ -349,7 +351,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
             </div>
             <div className="p-5 bg-bg-elevated min-h-[260px]">
               {selectedRun ? (
-                <div className="prose prose-invert max-w-none">
+                <div className="max-w-none">
                   {renderMarkdown(runMarkdown(selectedRun))}
                 </div>
               ) : (
@@ -361,7 +363,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
             </div>
           </div>
 
-          <div className="border border-border-subtle rounded-lg overflow-hidden">
+          <div className="surface-supporting rounded-lg overflow-hidden">
             <div className="px-4 py-3 border-b border-border-subtle bg-bg-elevated flex items-center gap-2">
               <FileText className="w-4 h-4 text-text-muted" />
               <h3 className="text-sm font-semibold text-text-primary">{t('meeting.transcriptTitle')}</h3>
@@ -378,8 +380,8 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
           </div>
         </main>
 
-        <aside className="flex flex-col gap-5">
-          <section className="border border-border-subtle rounded-lg p-4 bg-bg-elevated">
+        <aside className="flex flex-col gap-4">
+          <section className="surface-supporting rounded-lg p-4">
             <h3 className="text-sm font-semibold text-text-primary mb-3">{t('meeting.statusTitle')}</h3>
             <div className="flex flex-col gap-3 text-xs text-text-secondary">
               <div className="flex items-center justify-between gap-3">
@@ -399,7 +401,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
             </div>
           </section>
 
-          <section className="border border-border-subtle rounded-lg p-4 bg-bg-elevated">
+          <section className="surface-supporting rounded-lg p-4">
             <div className="flex items-center gap-2 mb-3">
               <History className="w-4 h-4 text-text-muted" />
               <h3 className="text-sm font-semibold text-text-primary">{t('meeting.runHistoryTitle')}</h3>
@@ -426,8 +428,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
             </div>
           </section>
 
-          <section className="border border-border-subtle rounded-lg p-4 bg-bg-elevated">
-            <h3 className="text-sm font-semibold text-text-primary mb-3">{t('meeting.techDetailsTitle')}</h3>
+          <AdvancedDetailsAccordion title={t('meeting.techDetailsTitle')}>
             <dl className="grid grid-cols-[110px_minmax(0,1fr)] gap-2 text-xs">
               <dt className="text-text-muted">Recording ID</dt>
               <dd className="text-text-secondary truncate">{meeting.id}</dd>
@@ -438,7 +439,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               <dt className="text-text-muted">Modalità</dt>
               <dd className="text-text-secondary">{meeting.recording.capture_mode || '-'}</dd>
             </dl>
-          </section>
+          </AdvancedDetailsAccordion>
         </aside>
       </section>
     </div>

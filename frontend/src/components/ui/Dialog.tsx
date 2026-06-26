@@ -33,7 +33,7 @@ function DialogOverlay() {
   return (
     <RadixDialog.Overlay
       className={cn(
-        'fixed inset-0 z-[50] bg-black/60 backdrop-blur-md',
+        'fixed inset-0 z-[50] bg-bg-base/70 backdrop-blur-md',
         'data-[state=open]:animate-in data-[state=open]:fade-in-0',
         'data-[state=closed]:animate-out data-[state=closed]:fade-out-0',
         'duration-200',
@@ -49,6 +49,7 @@ export interface DialogContentProps {
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
   className?: string;
   hideClose?: boolean;
+  dataTour?: string;
 }
 
 function DialogContent({
@@ -56,17 +57,19 @@ function DialogContent({
   size = 'md',
   className,
   hideClose = false,
+  dataTour,
 }: DialogContentProps) {
   return (
     <RadixDialog.Portal>
       <DialogOverlay />
       <RadixDialog.Content
+        data-tour={dataTour}
         className={cn(
           // Desktop: centered modal
           'fixed left-1/2 top-1/2 z-[60] -translate-x-1/2 -translate-y-1/2',
           'w-[calc(100%-2rem)]',
           SIZE_CLASSES[size] ?? SIZE_CLASSES.md,
-          'rounded-2xl border border-border-subtle bg-bg-surface shadow-[var(--shadow-premium)]',
+          'rounded-2xl border border-border-subtle ui-overlay-surface',
           'flex flex-col overflow-hidden',
           // Desktop animations
           'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
@@ -105,7 +108,7 @@ export interface DialogHeaderProps {
 
 function DialogHeader({ title, description, className }: DialogHeaderProps) {
   return (
-    <div className={cn('border-b border-border-subtle bg-bg-elevated px-5 py-4 pr-12', className)}>
+    <div className={cn('ui-overlay-bar border-b border-border-subtle px-5 py-4 pr-12', className)}>
       <RadixDialog.Title className="text-base font-semibold text-text-primary">
         {title}
       </RadixDialog.Title>
@@ -151,7 +154,7 @@ function DialogFooter({ children, className }: DialogFooterProps) {
   return (
     <div
       className={cn(
-        'flex items-center justify-end gap-2 border-t border-border-subtle bg-bg-elevated px-5 py-3',
+        'ui-overlay-bar flex items-center justify-end gap-2 border-t border-border-subtle px-5 py-3',
         className,
       )}
     >

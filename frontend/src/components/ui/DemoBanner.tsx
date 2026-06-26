@@ -19,21 +19,21 @@ export function DemoBanner({ onExitDemo, onStartTour, isTouring = false }: DemoB
 
   return (
     <div
-      className="animate-in slide-in-from-top-1 duration-300 rounded-xl border border-amber-500/25 bg-amber-500/8 px-4 py-2.5"
+      className="demo-banner-surface animate-in slide-in-from-top-1 duration-300 rounded-xl border px-4 py-2.5"
       role="status"
       aria-label={lang === 'it' ? 'Demo mode attiva' : 'Demo mode active'}
     >
       <div className="flex flex-wrap items-center gap-3">
         {/* Icon + text */}
-        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-amber-500/15 text-amber-400">
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-warning/20 bg-warning/10 text-warning">
           <Clapperboard className="h-3.5 w-3.5" />
         </span>
 
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-0.5">
-          <span className="text-xs font-semibold text-amber-300">
+          <span className="text-xs font-semibold text-text-primary">
             {t('demo.bannerTitle')}
           </span>
-          <span className="text-xs text-amber-200/70">
+          <span className="text-xs text-text-secondary">
             {t('demo.bannerDesc')}
           </span>
         </div>
@@ -45,7 +45,7 @@ export function DemoBanner({ onExitDemo, onStartTour, isTouring = false }: DemoB
               size="sm"
               variant="ghost"
               onClick={onStartTour}
-              className="text-xs text-amber-300 hover:bg-amber-500/15 hover:text-amber-200 border-amber-500/20"
+              className="text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary border-border-subtle"
             >
               {t('demo.bannerTour')}
             </Button>
@@ -54,7 +54,7 @@ export function DemoBanner({ onExitDemo, onStartTour, isTouring = false }: DemoB
             size="sm"
             variant="ghost"
             onClick={onExitDemo}
-            className="text-xs text-amber-300 hover:bg-amber-500/15 hover:text-amber-200 border-amber-500/20"
+            className="text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary border-border-subtle"
           >
             <X className="h-3.5 w-3.5" />
             {t('demo.bannerExit')}

@@ -1,6 +1,6 @@
 /**
  * InsightDetailDialog.tsx
- * Reusable dialog for viewing actions, decisions, and risks in detail.
+ * Reusable drawer for viewing actions, decisions, and risks in detail.
  *
  * Features:
  * - Tab switcher: Actions | Decisions | Risks
@@ -9,7 +9,7 @@
  * - Empty state per tab
  */
 
-import { useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -17,7 +17,6 @@ import {
   Search,
   ShieldAlert,
   Target,
-  UserRound,
   X,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogBody } from '../ui/Dialog';
@@ -38,6 +37,7 @@ export interface InsightDetailDialogProps {
   actions?: InsightItem[];
   decisions?: InsightItem[];
   risks?: InsightItem[];
+  dataTour?: string;
 }
 
 // ─── Tab button ──────────────────────────────────────────────────────────────
@@ -82,10 +82,14 @@ function TabButton({
 
 // ─── Action item card ────────────────────────────────────────────────────────
 
+function metadata(items: Array<string | null | undefined>): string {
+  return items.filter(Boolean).join(' · ');
+}
+
 function ActionCard({ item }: { item: InsightItem }) {
   const { t } = useTranslation();
   return (
-    <div className="insight-card-compact flex flex-col gap-2">
+    <div className="rounded-lg border border-border-subtle bg-bg-elevated px-3 py-2 transition-all hover:border-border-focus hover:bg-bg-hover">
       <div className="flex items-start gap-2">
         <span
           className={cn(
@@ -97,30 +101,27 @@ function ActionCard({ item }: { item: InsightItem }) {
         >
           <CheckCircle2 className="h-3 w-3" />
         </span>
-        <p
-          className={cn(
-            'text-sm leading-snug text-text-primary',
-            item.completed && 'text-text-muted line-through',
-          )}
-        >
-          {item.text}
-        </p>
-      </div>
-      <div className="flex flex-wrap gap-1.5 pl-6 text-[11px]">
-        {item.projectName && <Badge variant="info">{item.projectName}</Badge>}
-        {item.owner && (
-          <span className="inline-flex items-center gap-1 rounded-full border border-border-subtle bg-bg-glass px-2 py-0.5">
-            <UserRound className="h-3 w-3 text-text-muted" />
-            {item.owner}
-          </span>
-        )}
-        {item.dueDate && (
-          <Badge variant="warning">
-            {t('workspace.dueDateLabel')} {item.dueDate}
-          </Badge>
-        )}
+        <div className="min-w-0">
+          <p
+            className={cn(
+              'text-sm leading-snug text-text-primary',
+              item.completed && 'text-text-muted line-through',
+            )}
+          >
+            {item.text}
+          </p>
+          <p className="mt-1 truncate text-[11px] text-text-muted">
+            {metadata([
+              item.owner,
+              item.dueDate ? `${t('workspace.dueDateLabel')} ${item.dueDate}` : null,
+              item.priority,
+              item.sourceTitle,
+            ])}
+          </p>
+        </div>
         {item.priority && (
           <Badge
+            className="ml-auto shrink-0"
             variant={
               item.priority.toLowerCase().includes('high') || item.priority.toLowerCase().includes('alta')
                 ? 'warning'
@@ -129,11 +130,6 @@ function ActionCard({ item }: { item: InsightItem }) {
           >
             {item.priority}
           </Badge>
-        )}
-        {item.sourceTitle && (
-          <span className="rounded-full border border-border-subtle bg-bg-glass px-2 py-0.5 text-text-muted">
-            {item.sourceTitle}
-          </span>
         )}
       </div>
     </div>
@@ -145,15 +141,15 @@ function ActionCard({ item }: { item: InsightItem }) {
 function DecisionCard({ item }: { item: InsightItem }) {
   const { lang } = useTranslation();
   return (
-    <div className="insight-card-compact flex flex-col gap-1.5">
+    <div className="rounded-lg border border-border-subtle bg-bg-elevated px-3 py-2 transition-all hover:border-border-focus hover:bg-bg-hover">
       <p className="text-sm leading-snug text-text-primary">{item.text}</p>
-      <div className="flex flex-wrap gap-2 text-[11px] text-text-muted">
-        {item.projectName && <span>{item.projectName}</span>}
-        {item.sourceDate && (
-          <span>{new Date(item.sourceDate).toLocaleDateString(lang === 'it' ? 'it-IT' : 'en-US')}</span>
-        )}
-        {item.sourceTitle && <span>{item.sourceTitle}</span>}
-      </div>
+      <p className="mt-1 truncate text-[11px] text-text-muted">
+        {metadata([
+          item.projectName,
+          item.sourceDate ? new Date(item.sourceDate).toLocaleDateString(lang === 'it' ? 'it-IT' : 'en-US') : null,
+          item.sourceTitle,
+        ])}
+      </p>
     </div>
   );
 }
@@ -162,7 +158,7 @@ function DecisionCard({ item }: { item: InsightItem }) {
 
 function RiskCard({ item }: { item: InsightItem }) {
   return (
-    <div className="rounded-xl border border-warning/20 bg-warning/5 px-3.5 py-2.5 transition-all hover:border-warning/35 hover:bg-warning/10">
+    <div className="rounded-lg border border-warning/25 bg-warning/10 px-3 py-2 transition-all hover:border-warning/40 hover:bg-warning/10">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-2">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
@@ -170,15 +166,12 @@ function RiskCard({ item }: { item: InsightItem }) {
         </div>
         {item.severity && <Badge variant="warning">{item.severity}</Badge>}
       </div>
-      <div className="mt-2 flex flex-wrap gap-2 pl-5 text-[11px] text-text-muted">
-        {item.projectName && <span>{item.projectName}</span>}
-        {item.sourceTitle && <span>{item.sourceTitle}</span>}
-      </div>
+      <p className="mt-1 truncate pl-5 text-[11px] text-text-muted">{metadata([item.projectName, item.sourceTitle])}</p>
     </div>
   );
 }
 
-// ─── Main Dialog ──────────────────────────────────────────────────────────────
+// ─── Main Drawer ──────────────────────────────────────────────────────────────
 
 export function InsightDetailDialog({
   open,
@@ -187,10 +180,17 @@ export function InsightDetailDialog({
   actions = [],
   decisions = [],
   risks = [],
+  dataTour,
 }: InsightDetailDialogProps) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<InsightTab>(initialTab);
   const [query, setQuery] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    setActiveTab(initialTab);
+    setQuery('');
+  }, [open, initialTab]);
 
   const tabs = [
     { id: 'actions' as InsightTab, label: t('projects.actionsTitle'), icon: ListChecks, items: actions },
@@ -213,11 +213,15 @@ export function InsightDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="lg">
+      <DialogContent
+        dataTour={dataTour}
+        size="lg"
+        className="max-h-[85vh] flex flex-col"
+      >
         <DialogHeader title={titleMap[activeTab]} />
 
         {/* Tabs + Search */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle bg-bg-elevated px-5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle bg-bg-surface px-5 py-3">
           <div className="flex gap-1">
             {tabs.map((tab) => (
               <TabButton
@@ -250,7 +254,7 @@ export function InsightDetailDialog({
         </div>
 
         {/* Content */}
-        <DialogBody className="flex flex-col gap-2 p-4">
+        <DialogBody className="flex flex-col gap-2 p-4 overflow-y-auto">
           {activeItems.length === 0 ? (
             <div className="py-10 text-center text-sm text-text-muted">
               {query

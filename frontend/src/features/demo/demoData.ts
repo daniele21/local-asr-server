@@ -90,7 +90,7 @@ function getMeetingSpecs(lang: string) {
         title: 'Product sync - Onboarding e permessi macOS',
         createdAt: isoDaysAgo(0, 10, 15),
         duration: 2780,
-        text: 'Il team conferma che il primo avvio deve spiegare solo cartella, microfono e cattura audio. Luca validara il flusso permessi entro venerdi, Sara chiudera la vista onboarding e Daniele preparera la demo beta.',
+        text: 'Ok, iniziamo. Allora, per quanto riguarda la prima esperienza di avvio dell\'app, direi che siamo tutti d\'accordo: dobbiamo tenerla il più semplice possibile. Niente configurazioni tecniche astruse subito, altrimenti l\'utente si spaventa e chiude tutto. Quindi, il primo avvio spiegherà solo tre concetti base: la cartella di destinazione dei file, l\'accesso al microfono e come funziona la cattura dell\'audio di sistema. Luca, tu riesci a fare un check approfondito sul flusso dei permessi di macOS entro venerdì? Dobbiamo essere sicuri al cento per cento che con la build firmata non ci siano blocchi o popup imprevisti. Sara, invece, per la schermata di onboarding, dovremmo rivedere i testi per renderli meno tecnici, puntando sui benefici pratici. Te ne occupi tu entro giovedì? Perfetto. E infine io, cioè Daniele, mi metto al lavoro per preparare la demo beta pronta per venerdì, così la facciamo provare ai primi utenti esterni. Ci sono domande su questo? Va bene, allora procediamo così.',
         brief: 'Il team ha riallineato il primo avvio: meno configurazione tecnica, permessi macOS guidati e demo pronta per i primi utenti beta.',
         actions: [
           { task: 'Validare il flusso permessi macOS con build firmata', owner: 'Luca', due_date: 'Venerdi', priority: 'Alta', status: 'open' },
@@ -169,7 +169,7 @@ function getMeetingSpecs(lang: string) {
         title: 'Product sync - Onboarding and macOS permissions',
         createdAt: isoDaysAgo(0, 10, 15),
         duration: 2780,
-        text: 'The team confirms that the first launch should only explain the folder, microphone, and audio capture. Luca will validate the permissions flow by Friday, Sara will close the onboarding view, and Daniele will prepare the beta demo.',
+        text: 'Okay, let\'s get started. So, regarding the first launch experience of the app, I think we all agree that we need to keep it as simple and clean as possible. No complicated technical configurations right away, or we risk overwhelming the user. So, the onboarding will only cover three basic things: the storage folder, microphone access, and how the system audio capture actually works. Luca, can you run a thorough test on the macOS permissions flow by Friday? We need to make absolutely sure that the signed build doesn\'t trigger any unexpected blocks or system dialogs. Sara, for the onboarding screen itself, could you refine the copy to make it much less technical and more user-friendly? Ideally by Thursday. Sounds good. And as for myself, Daniele, I will focus on preparing the beta demo by Friday so we can finally share it with our first external testers. Any questions on this? Alright, let\'s execute.',
         brief: 'The team has realigned the first launch: less technical configuration, guided macOS permissions, and demo ready for the first beta users.',
         actions: [
           { task: 'Validate macOS permissions flow with signed build', owner: 'Luca', due_date: 'Friday', priority: 'High', status: 'open' },

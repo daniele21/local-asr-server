@@ -17,7 +17,7 @@ function SheetOverlay() {
   return (
     <RadixDialog.Overlay
       className={cn(
-        'fixed inset-0 z-[50] bg-black/50 backdrop-blur-sm',
+        'fixed inset-0 z-[50] bg-bg-base/65 backdrop-blur-sm',
         'data-[state=open]:animate-in data-[state=open]:fade-in-0',
         'data-[state=closed]:animate-out data-[state=closed]:fade-out-0',
         'duration-200',
@@ -36,6 +36,7 @@ export interface SheetContentProps {
   widthClass?: string;
   className?: string;
   hideClose?: boolean;
+  dataTour?: string;
 }
 
 function SheetContent({
@@ -44,6 +45,7 @@ function SheetContent({
   widthClass = 'w-full sm:w-[440px]',
   className,
   hideClose = false,
+  dataTour,
 }: SheetContentProps) {
   const sideClasses =
     side === 'right'
@@ -54,10 +56,11 @@ function SheetContent({
     <RadixDialog.Portal>
       <SheetOverlay />
       <RadixDialog.Content
+        data-tour={dataTour}
         className={cn(
           // Fixed to viewport edge, full height
           'fixed top-0 z-[60] flex h-full flex-col',
-          'border-border-subtle bg-bg-surface shadow-[var(--shadow-premium)]',
+          'border-border-subtle ui-overlay-surface',
           widthClass,
           sideClasses,
           // Radix animations
@@ -97,7 +100,7 @@ export interface SheetHeaderProps {
 
 function SheetHeader({ title, description, className }: SheetHeaderProps) {
   return (
-    <div className={cn('border-b border-border-subtle bg-bg-elevated px-5 py-4 pr-12 shrink-0', className)}>
+    <div className={cn('ui-overlay-bar border-b border-border-subtle px-5 py-4 pr-12 shrink-0', className)}>
       <RadixDialog.Title className="text-base font-semibold text-text-primary">
         {title}
       </RadixDialog.Title>
@@ -134,7 +137,7 @@ export interface SheetFooterProps {
 
 function SheetFooter({ children, className }: SheetFooterProps) {
   return (
-    <div className={cn('flex items-center justify-end gap-2 border-t border-border-subtle bg-bg-elevated px-5 py-3 shrink-0', className)}>
+    <div className={cn('ui-overlay-bar flex items-center justify-end gap-2 border-t border-border-subtle px-5 py-3 shrink-0', className)}>
       {children}
     </div>
   );

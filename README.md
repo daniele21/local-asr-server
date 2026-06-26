@@ -240,6 +240,13 @@ runs are stored in `analysis_runs` with `analysis_type`, template metadata,
 optional `pipeline_run_id` and `result_markdown`, so a meeting can keep history
 for brief, actions, decisions, risks, minutes and project updates.
 
+In the React workspace, the meeting detail screen keeps analysis actions compact:
+`Analyze` runs the fast brief/actions/decisions/risks pipeline, while `Deep
+analysis` adds minutes, open questions and project update. Long action,
+decision, risk and meeting lists open in right-side drawers. Demo mode is
+frontend-only in the UI: it uses the typed demo dataset, avoids real API calls
+while active, and is indicated only by the banner below the header.
+
 ## Result caching
 
 ClosedRoom reuses a completed transcription when the audio bytes and every ASR

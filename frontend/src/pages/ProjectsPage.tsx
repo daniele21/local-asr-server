@@ -33,7 +33,6 @@ import {
   EmptyState,
   ProjectDigestPanel,
   ProjectSidebar,
-  ProjectStatusPanel,
   RiskPanel,
   SectionHeader,
 } from '../components/workspace/MeetingWorkspace';
@@ -309,9 +308,7 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
     );
   }
 
-  const transcribedCount = periodItems.filter((item) => Boolean(item.transcription)).length;
   const readyCount = periodItems.filter(projectItemHasAnalysis).length;
-  const latestProjectUpdate = digestItems[0]?.text;
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_minmax(0,1fr)] animate-page-in">
@@ -350,6 +347,58 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
                   {projectRangeLabel}
                 </div>
               </div>
+
+              {/* Compact project status pills */}
+              {periodItems.length > 0 && (
+                <div className="mt-4 flex flex-wrap gap-2.5" data-tour="project-status">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const timelineSec = document.querySelector('[data-tour="project-situation"]')?.nextElementSibling;
+                      timelineSec?.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    className="flex items-center gap-2 rounded-xl border border-border-subtle bg-bg-glass/40 hover:bg-bg-hover hover:border-border-focus px-3 py-1.5 text-xs font-semibold text-text-secondary transition-premium hover-lift"
+                  >
+                    <FileAudio className="h-3.5 w-3.5 text-accent" />
+                    <span>
+                      <strong>{periodItems.length}</strong> {lang === 'it' ? 'Meeting' : 'Meetings'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => openInsightDialog('actions')}
+                    className="flex items-center gap-2 rounded-xl border border-border-subtle bg-bg-glass/40 hover:bg-bg-hover hover:border-border-focus px-3 py-1.5 text-xs font-semibold text-text-secondary transition-premium hover-lift"
+                  >
+                    <ListChecks className="h-3.5 w-3.5 text-success" />
+                    <span>
+                      <strong>{actionItemsAll.length}</strong> {lang === 'it' ? 'Azioni aperte' : 'Open actions'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => openInsightDialog('decisions')}
+                    className="flex items-center gap-2 rounded-xl border border-border-subtle bg-bg-glass/40 hover:bg-bg-hover hover:border-border-focus px-3 py-1.5 text-xs font-semibold text-text-secondary transition-premium hover-lift"
+                  >
+                    <Target className="h-3.5 w-3.5 text-info" />
+                    <span>
+                      <strong>{decisions.length}</strong> {lang === 'it' ? 'Decisioni' : 'Decisions'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => openInsightDialog('risks')}
+                    className="flex items-center gap-2 rounded-xl border border-border-subtle bg-bg-glass/40 hover:bg-bg-hover hover:border-border-focus px-3 py-1.5 text-xs font-semibold text-text-secondary transition-premium hover-lift"
+                  >
+                    <ShieldAlert className="h-3.5 w-3.5 text-warning" />
+                    <span>
+                      <strong>{risks.length}</strong> {lang === 'it' ? 'Rischi' : 'Risks'}
+                    </span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* CTA actions */}
@@ -365,23 +414,6 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
               </Button>
             </div>
           </div>
-        </section>
-
-        <section className="surface-primary flex flex-col gap-3 rounded-2xl p-4" data-tour="project-status">
-          <SectionHeader
-            icon={Sparkles}
-            title={t('projects.statusTitle')}
-            description={latestProjectUpdate || t('projects.statusDesc')}
-            tooltip={t('projects.statusTooltip')}
-          />
-          <ProjectStatusPanel
-            meetingCount={periodItems.length}
-            transcribedCount={transcribedCount}
-            readyCount={readyCount}
-            actionCount={actionItemsAll.length}
-            decisionCount={decisions.length}
-            riskCount={risks.length}
-          />
         </section>
 
         <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
