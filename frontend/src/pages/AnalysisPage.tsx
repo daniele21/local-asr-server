@@ -6,6 +6,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Select } from '../components/ui/Select';
 import { Input } from '../components/ui/Input';
+import { TaskProcessingLoader } from '../components/workspace/TaskProcessingLoader';
 
 import { renderMarkdown } from '../utils/markdown';
 import { estimateTokenCount } from '../utils/formatters';
@@ -571,11 +572,20 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMo
         {/* Right Column: Display Panel */}
         <div className="lg:col-span-2">
           {loading ? (
-            <Card className="h-96 flex flex-col items-center justify-center text-center gap-4">
-              <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
-              <strong className="text-sm font-semibold">{t('analysis.analyzingStatus')}</strong>
-              <p className="text-xs text-text-secondary">{statusText}</p>
-            </Card>
+            <TaskProcessingLoader
+              title={t('workspace.loaderAnalysisTitle')}
+              description={t('workspace.loaderAnalysisDesc')}
+              steps={[
+                t('workspace.loaderAnalysisStep1'),
+                t('workspace.loaderAnalysisStep2'),
+                t('workspace.loaderAnalysisStep3'),
+                t('workspace.loaderAnalysisStep4'),
+              ]}
+              activeStep={2}
+              progress={68}
+              variant="analysis"
+              helperText={statusText || t('workspace.loaderLocalHelper')}
+            />
           ) : analysisResult ? (
             <div className="flex flex-col gap-4">
               <div className="flex justify-between items-center bg-bg-elevated/40 border border-border-subtle rounded-xl px-4 py-3.5">

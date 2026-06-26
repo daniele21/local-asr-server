@@ -13,7 +13,9 @@ import {
 import { ApiClient, Meeting } from '../api/apiClient';
 import { getDemoMeetings } from '../features/demo/demoData';
 import { Button } from '../components/ui/Button';
+import { Badge } from '../components/ui/Badge';
 import { TimeRangeFilter } from '../components/workspace/TimeRangeFilter';
+import { TaskProcessingLoader } from '../components/workspace/TaskProcessingLoader';
 import {
   ActionChecklist,
   AdvancedDetailsAccordion,
@@ -84,6 +86,11 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
 
   const resolvedRange = useMemo(() => resolveTimeRange(timeRange), [timeRange]);
   const rangeLabel = useMemo(() => formatTimeRangeLabel(timeRange, lang), [timeRange, lang]);
+  const workspaceLoadingSteps = useMemo(() => [
+    t('workspace.loaderDashboardStep1'),
+    t('workspace.loaderDashboardStep2'),
+    t('workspace.loaderDashboardStep3'),
+  ], [t]);
 
   const searchedMeetings = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -131,25 +138,33 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 py-20">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-accent border-t-transparent" />
-        <span className="text-sm text-text-secondary">{t('common.loading')}</span>
+      <div className="py-16">
+        <TaskProcessingLoader
+          title={t('workspace.loaderDashboardTitle')}
+          description={t('workspace.loaderDashboardDesc')}
+          steps={workspaceLoadingSteps}
+          activeStep={1}
+          progress={66}
+          variant="analysis"
+          helperText={t('workspace.loaderLocalHelper')}
+        />
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-5">
-      <section className="flex flex-col gap-4 border-b border-border-subtle pb-4" data-tour="today-summary">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <section className="premium-hero rounded-2xl p-5 sm:p-6" data-tour="today-summary">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
-            <span className="text-xs font-semibold uppercase tracking-widest text-accent">{rangeLabel}</span>
-            <h2 className="mt-1 text-2xl font-bold tracking-tight text-text-primary">{t('dashboard.title')}</h2>
-            <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-text-secondary">
-              {t('dashboard.subtitle')}
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-widest text-accent">{rangeLabel}</span>
+              <Badge variant="success">{t('dashboard.localBadge')}</Badge>
+            </div>
+            <h2 className="mt-2 text-3xl font-bold tracking-tight text-text-primary sm:text-4xl">{t('dashboard.title')}</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-text-secondary">{t('dashboard.subtitle')}</p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 lg:justify-end">
             <Button onClick={() => navigateTo('recording')} disabled={demoMode}>
               <Mic className="h-4 w-4" />
               {t('dashboard.btnRecord')}
@@ -158,10 +173,12 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
               <FileAudio className="h-4 w-4" />
               {t('dashboard.btnImport')}
             </Button>
+            {demoMode && <p className="basis-full text-xs text-text-muted lg:text-right">{t('dashboard.demoReadonlyHint')}</p>}
           </div>
         </div>
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-          <div data-tour="time-range-filter">
+        <div className="mt-5 grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(260px,360px)] xl:items-start">
+          <div data-tour="time-range-filter" className="rounded-xl border border-border-subtle bg-bg-glass p-3">
+            <p className="mb-2 text-xs text-text-muted">{t('dashboard.rangeHelper')}</p>
             <TimeRangeFilter value={timeRange} options={rangeOptions} onChange={setTimeRange} />
           </div>
           <label className="flex h-10 min-w-[260px] items-center gap-2 rounded-lg border border-border-subtle bg-bg-elevated px-3">
@@ -176,14 +193,14 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
         </div>
       </section>
 
-      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4 animate-slide-up">
         {[
           { label: t('dashboard.statPeriodMeetings'), value: periodMeetings.length, icon: FileAudio, color: 'text-accent', bgColor: 'bg-accent/10 border-accent/20' },
           { label: t('dashboard.statToTranscribe'), value: periodMeetings.length - transcribedCount, icon: Clock3, color: 'text-warning', bgColor: 'bg-warning/10 border-warning/20' },
           { label: t('dashboard.statAnalyzing'), value: analyzingCount, icon: Activity, color: 'text-info', bgColor: 'bg-info/10 border-info/20' },
           { label: t('dashboard.statOpenActions'), value: actionItems.length, icon: ListChecks, color: 'text-success', bgColor: 'bg-success/10 border-success/20' },
         ].map((item) => (
-          <div key={item.label} className="metric-card group relative overflow-hidden rounded-lg border border-border-subtle p-4 transition-all duration-300 hover:border-border-focus hover:bg-bg-hover hover:shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
+          <div key={item.label} className="metric-card group relative overflow-hidden rounded-xl border border-border-subtle p-4 transition-premium hover-lift hover:border-border-focus hover:bg-bg-hover hover:shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
             <div className="absolute -right-6 -top-6 h-16 w-16 rounded-full bg-accent/5 blur-xl transition-all duration-500 group-hover:scale-150" />
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted transition-colors group-hover:text-text-secondary">{item.label}</span>
@@ -200,12 +217,12 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
 
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
         <main className="flex min-w-0 flex-col gap-5">
-          <section className="workspace-panel flex flex-col gap-3 rounded-lg border border-border-subtle p-4 theme-audio">
+          <section className="workspace-panel flex flex-col gap-3 rounded-2xl border border-border-subtle p-4 theme-audio">
             <SectionHeader
               icon={FileAudio}
-              title={t('dashboard.statPeriodMeetings')}
-              description={lang === 'it' ? 'Il filtro selezionato governa questa lista e tutti i blocchi della pagina.' : 'The selected filter rules this list and all blocks on the page.'}
-              tooltip={lang === 'it' ? 'Default: solo i meeting di oggi. Estendi il periodo con i chip o un range custom.' : "Default: today's meetings only. Extend the period with chips or a custom range."}
+              title={t('dashboard.meetingsTitle')}
+              description={t('dashboard.meetingsDesc')}
+              tooltip={t('dashboard.meetingsTooltip')}
             />
             {periodMeetings.length === 0 ? (
               <EmptyState
@@ -234,21 +251,21 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
           </section>
 
           <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-            <div className="workspace-panel flex flex-col gap-3 rounded-lg border border-border-subtle p-4 theme-tasks" data-tour="open-actions">
+            <div className="workspace-panel flex flex-col gap-3 rounded-2xl border border-border-subtle p-4 theme-tasks" data-tour="open-actions">
               <SectionHeader
                 icon={ListChecks}
                 title={t('dashboard.statOpenActions')}
-                description={lang === 'it' ? 'Task derivati dalle analisi action item già disponibili.' : 'Tasks derived from available action item analyses.'}
-                tooltip={lang === 'it' ? 'Le azioni sono lette dagli ultimi risultati strutturati dei meeting nel periodo.' : 'Actions are read from the latest structured results of meetings in the period.'}
+                description={t('dashboard.openActionsDesc')}
+                tooltip={t('dashboard.openActionsTooltip')}
               />
               <ActionChecklist items={actionItems.slice(0, 8)} />
             </div>
-            <div className="workspace-panel flex flex-col gap-3 rounded-lg border border-border-subtle p-4 theme-decisions" data-tour="decision-log">
+            <div className="workspace-panel flex flex-col gap-3 rounded-2xl border border-border-subtle p-4 theme-decisions" data-tour="decision-log">
               <SectionHeader
                 icon={Target}
-                title={lang === 'it' ? 'Decisioni recenti' : 'Recent decisions'}
-                description={lang === 'it' ? 'Decision log ordinato dai meeting più recenti del periodo.' : 'Decision log ordered by the most recent meetings of the period.'}
-                tooltip={lang === 'it' ? 'Non rilegge i transcript: usa l\'ultimo output decisioni salvato per ciascun meeting.' : 'Does not reread transcripts: uses the last saved decisions output for each meeting.'}
+                title={t('dashboard.decisionsTitle')}
+                description={t('dashboard.decisionsDesc')}
+                tooltip={t('dashboard.decisionsTooltip')}
               />
               <DecisionLog items={decisions.slice(0, 8)} />
             </div>
@@ -258,7 +275,7 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
         <aside className="flex flex-col gap-4">
           <DigestPanel items={digestItems} title={t('dashboard.digestTitle')} />
 
-          <section className="workspace-panel rounded-lg border border-border-subtle p-4 theme-pipeline">
+          <section className="workspace-panel rounded-2xl border border-border-subtle p-4 theme-pipeline">
             <SectionHeader
               icon={AlertTriangle}
               title={t('dashboard.toCompleteTitle')}
@@ -269,7 +286,7 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
                 <button
                   key={meeting.id}
                   onClick={() => navigateTo('meeting', meeting.id)}
-                  className="rounded-lg border border-border-subtle bg-bg-surface px-3 py-1.5 text-left transition-colors hover:border-border-focus hover:bg-bg-hover"
+                  className="rounded-xl border border-border-subtle bg-bg-surface px-3 py-2 text-left transition-premium hover:border-border-focus hover:bg-bg-hover"
                 >
                   <div className="truncate text-xs font-semibold text-text-primary">{meetingTitle(meeting)}</div>
                   <div className="mt-0.5 text-[11px] text-text-muted">
@@ -283,11 +300,11 @@ export default function DashboardPage({ navigateTo, demoMode = false }: Dashboar
             </div>
           </section>
 
-          <section className="workspace-panel flex flex-col gap-3 rounded-lg border border-border-subtle p-4 theme-risks" data-tour="risk-panel">
+          <section className="workspace-panel flex flex-col gap-3 rounded-2xl border border-border-subtle p-4 theme-risks" data-tour="risk-panel">
             <SectionHeader
               icon={Sparkles}
-              title={lang === 'it' ? 'Rischi e blocker' : 'Risks and blockers'}
-              description={lang === 'it' ? 'Segnali aggregati dalle analisi rischi del periodo.' : 'Aggregated signals from risk analyses of the period.'}
+              title={t('dashboard.risksTitle')}
+              description={t('dashboard.risksDesc')}
             />
             <RiskPanel items={risks.slice(0, 5)} />
           </section>

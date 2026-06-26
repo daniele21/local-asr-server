@@ -22,6 +22,7 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { ProjectPromptModal } from '../components/ui/ProjectPromptModal';
 import { TimeRangeFilter } from '../components/workspace/TimeRangeFilter';
+import { TaskProcessingLoader } from '../components/workspace/TaskProcessingLoader';
 import {
   ActionChecklist,
   AdvancedDetailsAccordion,
@@ -79,6 +80,7 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
   const [projectRange, setProjectRange] = useState<TimeRangeState>({ mode: 'last7' });
   const [actionScope, setActionScope] = useState<ActionScope>('week');
   const [projectDigestGeneratedAt, setProjectDigestGeneratedAt] = useState<string | null>(null);
+  const [isProjectGenerating, setIsProjectGenerating] = useState(false);
   const [editingRecordingId, setEditingRecordingId] = useState<string | null>(null);
   const [editTitleValue, setEditTitleValue] = useState('');
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
@@ -136,6 +138,7 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
 
   useEffect(() => {
     setProjectDigestGeneratedAt(null);
+    setIsProjectGenerating(false);
   }, [selectedProjectName, projectRange.mode, projectRange.startDate, projectRange.endDate]);
 
   const selectedProject = useMemo(
@@ -250,25 +253,36 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
   };
 
   const handleGenerateProjectSituation = () => {
-    const timestamp = new Date().toLocaleString(lang === 'it' ? 'it-IT' : 'en-US', {
-      dateStyle: 'short',
-      timeStyle: 'short',
-    });
-    setProjectDigestGeneratedAt(timestamp);
     const insightCount = digestItems.length + actionItemsAll.length + decisions.length + risks.length;
-    showToast(
-      insightCount > 0
-        ? t('projects.toastDigestSuccess')
-        : t('projects.toastDigestEmpty'),
-      insightCount > 0 ? 'success' : 'info'
-    );
+    setIsProjectGenerating(true);
+    window.setTimeout(() => {
+      const timestamp = new Date().toLocaleString(lang === 'it' ? 'it-IT' : 'en-US', {
+        dateStyle: 'short',
+        timeStyle: 'short',
+      });
+      setProjectDigestGeneratedAt(timestamp);
+      setIsProjectGenerating(false);
+      showToast(
+        insightCount > 0
+          ? t('projects.toastDigestSuccess')
+          : t('projects.toastDigestEmpty'),
+        insightCount > 0 ? 'success' : 'info'
+      );
+    }, 850);
   };
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 py-20">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-accent border-t-transparent" />
-        <span className="text-sm text-text-secondary">{t('common.loading')}</span>
+      <div className="py-16">
+        <TaskProcessingLoader
+          title={t('workspace.loaderProjectsTitle')}
+          description={t('workspace.loaderProjectsDesc')}
+          steps={[t('workspace.loaderProjectsStep1'), t('workspace.loaderProjectsStep2'), t('workspace.loaderProjectsStep3')]}
+          activeStep={1}
+          progress={62}
+          variant="project"
+          helperText={t('workspace.loaderLocalHelper')}
+        />
       </div>
     );
   }
@@ -301,15 +315,16 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
       </div>
 
       <main className="flex min-w-0 flex-col gap-6">
-        <section className="flex flex-col gap-5 border-b border-border-subtle pb-5">
+        <section className="premium-hero rounded-2xl p-5 sm:p-6">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div className="min-w-0">
-              <span className="text-xs font-semibold uppercase tracking-widest text-accent">{t('projects.projectLabel')}</span>
-              <h2 className="mt-1 truncate text-3xl font-semibold text-text-primary">{selectedProject.name}</h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-widest text-accent">{t('projects.projectLabel')}</span>
+                <Badge variant={readyCount > 0 ? 'success' : 'info'}>{projectRangeLabel}</Badge>
+              </div>
+              <h2 className="mt-2 truncate text-3xl font-semibold text-text-primary sm:text-4xl">{selectedProject.name}</h2>
               <p className="mt-2 max-w-2xl text-sm leading-relaxed text-text-secondary">
-                {lang === 'it' 
-                  ? 'Stato, azioni, decisioni e rischi derivati dagli insight già generati sui meeting collegati.' 
-                  : 'Status, actions, decisions, and risks derived from already generated meeting insights.'}
+                {t('projects.heroDesc')}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -320,14 +335,18 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
               <span data-tour="project-situation">
                 <AnalysisCTAButton
                   onClick={handleGenerateProjectSituation}
-                  disabled={periodItems.length === 0}
+                  disabled={periodItems.length === 0 || isProjectGenerating}
                   isGenerated={Boolean(projectDigestGeneratedAt)}
                 />
               </span>
+              <p className="basis-full text-xs leading-relaxed text-text-muted xl:text-right">{t('projects.situationHelper')}</p>
             </div>
           </div>
           <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-            <TimeRangeFilter value={projectRange} options={projectRangeOptions} onChange={setProjectRange} />
+            <div className="rounded-xl border border-border-subtle bg-bg-glass p-3">
+              <p className="mb-2 text-xs text-text-muted">{t('projects.rangeHelper')}</p>
+              <TimeRangeFilter value={projectRange} options={projectRangeOptions} onChange={setProjectRange} />
+            </div>
             <div className="inline-flex items-center gap-2 rounded-lg border border-border-subtle bg-bg-elevated px-3 py-2 text-xs text-text-muted">
               <CalendarDays className="h-4 w-4" />
               {projectRangeLabel}
@@ -439,12 +458,30 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
           </div>
 
           <aside className="flex flex-col gap-5">
-            <ProjectDigestPanel
-              items={projectDigestGeneratedAt ? digestItems : []}
-              generatedAt={projectDigestGeneratedAt}
-            />
+            {isProjectGenerating ? (
+              <TaskProcessingLoader
+                title={t('workspace.loaderProjectSituationTitle')}
+                description={t('workspace.loaderProjectSituationDesc')}
+                steps={[
+                  t('workspace.loaderProjectSituationStep1'),
+                  t('workspace.loaderProjectSituationStep2'),
+                  t('workspace.loaderProjectSituationStep3'),
+                  t('workspace.loaderProjectSituationStep4'),
+                ]}
+                activeStep={2}
+                progress={72}
+                variant="project"
+                compact
+                helperText={t('workspace.loaderLocalHelper')}
+              />
+            ) : (
+              <ProjectDigestPanel
+                items={projectDigestGeneratedAt ? digestItems : []}
+                generatedAt={projectDigestGeneratedAt}
+              />
+            )}
 
-            <section className="workspace-panel rounded-lg border border-border-subtle p-4">
+            <section className="workspace-panel rounded-2xl border border-border-subtle p-4">
               <SectionHeader
                 icon={MoreHorizontal}
                 title={t('projects.analysisTitle')}
@@ -453,7 +490,7 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
               <div className="mt-4 flex flex-col gap-2">
                 <AnalysisCTAButton
                   onClick={handleGenerateProjectSituation}
-                  disabled={periodItems.length === 0}
+                  disabled={periodItems.length === 0 || isProjectGenerating}
                   isGenerated={Boolean(projectDigestGeneratedAt)}
                 />
                 <Button variant="secondary" size="sm" onClick={() => navigateTo('analysis')}>

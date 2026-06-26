@@ -13,6 +13,7 @@ import SettingsPage from './pages/SettingsPage';
 import RecordingOverlayPage from './pages/RecordingOverlayPage';
 import MeetingDetailPage from './pages/MeetingDetailPage';
 import { Badge } from './components/ui/Badge';
+import { Button } from './components/ui/Button';
 import { Tooltip } from './components/ui/Tooltip';
 import { TourOverlay } from './features/tour/TourOverlay';
 import { TOUR_STEPS, TourStepId, tourStepIndex } from './features/tour/tourSteps';
@@ -97,6 +98,14 @@ function MainApp() {
     if (!nextStep) return;
     setTourStep(nextStep.id);
     navigateTo(nextStep.route);
+  };
+
+  const retreatTour = () => {
+    if (!tourStep) return;
+    const previousStep = TOUR_STEPS[tourStepIndex(tourStep) - 1];
+    if (!previousStep) return;
+    setTourStep(previousStep.id);
+    navigateTo(previousStep.route);
   };
 
   const closeTour = () => {
@@ -225,13 +234,13 @@ function MainApp() {
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-2 self-stretch xl:self-auto xl:justify-self-end">
-          <button
+          <Button
             onClick={() => navigateTo('recording')}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white shadow-md shadow-accent/10 hover:bg-accent-hover transition-colors"
+            size="md"
           >
             <Mic className="w-4 h-4" />
             <span className="hidden sm:inline">{t('dashboard.btnRecord')}</span>
-          </button>
+          </Button>
 
           {/* Server status */}
           <Badge
@@ -345,7 +354,7 @@ function MainApp() {
       <footer className="border-t border-border-subtle pt-4 text-center text-[11px] text-text-muted mt-8 leading-relaxed select-none">
         <span dangerouslySetInnerHTML={{ __html: t('common.powerBy') }} />
       </footer>
-      {tourStep && <TourOverlay step={TOUR_STEPS[tourStepIndex(tourStep)]} onNext={advanceTour} onClose={closeTour} />}
+      {tourStep && <TourOverlay step={TOUR_STEPS[tourStepIndex(tourStep)]} onNext={advanceTour} onBack={retreatTour} onClose={closeTour} />}
       </div>
     </div>
   );

@@ -14,6 +14,7 @@ import {
   ShieldAlert,
   Sparkles,
   Target,
+  UserRound,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -69,7 +70,7 @@ export function SectionHeader({
           <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
           {tooltip && <ExplainTooltip content={tooltip} />}
         </div>
-        {description && <p className="mt-1 text-xs leading-relaxed text-text-muted">{description}</p>}
+        {description && <p className="mt-1 max-w-2xl text-xs leading-relaxed text-text-muted">{description}</p>}
       </div>
       {action}
     </div>
@@ -90,7 +91,7 @@ export function EmptyState({
   className?: string;
 }) {
   return (
-    <div className={cn('empty-state-panel rounded-lg border border-dashed border-border-subtle px-5 py-8 text-center', className)}>
+    <div className={cn('empty-state-panel rounded-xl border border-dashed border-border-subtle px-5 py-8 text-center animate-fade-in', className)}>
       <Icon className="mx-auto mb-3 h-8 w-8 text-text-muted" />
       <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
       <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-text-secondary">{description}</p>
@@ -112,15 +113,24 @@ export function AdvancedDetailsAccordion({
   const displayTitle = title || t('workspace.advancedTitle');
   const displayDesc = description || t('workspace.advancedDesc');
   return (
-    <details className="workspace-panel group rounded-lg border border-border-subtle">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-text-primary">
+    <details className="workspace-panel group rounded-xl border border-border-subtle overflow-hidden">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-text-primary transition-premium hover:bg-bg-hover/40">
         <span>
           {displayTitle}
           <span className="block text-xs font-normal text-text-muted">{displayDesc}</span>
         </span>
         <ChevronDown className="h-4 w-4 text-text-muted transition-transform group-open:rotate-180" />
       </summary>
-      <div className="border-t border-border-subtle p-4">{children}</div>
+      <div className="grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 group-open:grid-rows-[1fr]">
+        <div className="min-h-0 overflow-hidden">
+          <div className="border-t border-border-subtle p-4 animate-fade-in">
+            <p className="mb-3 rounded-lg border border-border-subtle bg-bg-glass px-3 py-2 text-xs leading-relaxed text-text-muted">
+              {t('workspace.advancedHelper')}
+            </p>
+            {children}
+          </div>
+        </div>
+      </div>
     </details>
   );
 }
@@ -147,7 +157,7 @@ export function MeetingCard({
   const duration = getDurationSeconds(meeting.recording);
   const analysisTypes = Object.keys(meeting.latest_analysis || {});
   return (
-    <article className="metric-card group rounded-lg border border-border-subtle px-4 py-3 transition-all duration-200 hover:border-border-focus hover:bg-bg-hover">
+    <article className="metric-card group rounded-xl border border-border-subtle px-4 py-3 transition-premium hover-lift hover:border-border-focus hover:bg-bg-hover">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -216,25 +226,38 @@ export function ActionChecklist({
     return <EmptyState icon={ListChecks} title={displayEmptyTitle} description={displayEmptyDesc} className="py-7" />;
   }
   return (
-    <div className="metric-card flex flex-col divide-y divide-border-subtle rounded-lg border border-border-subtle">
+    <div className="metric-card flex flex-col divide-y divide-border-subtle rounded-xl border border-border-subtle overflow-hidden">
       {items.map((item) => (
-        <div key={item.id} className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-2.5 px-3.5 py-2.5 hover:bg-bg-hover/30 transition-colors">
-          <input
-            type="checkbox"
-            checked={Boolean(item.completed)}
-            readOnly
+        <div key={item.id} className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-3 px-3.5 py-3 transition-premium hover:bg-bg-hover/35">
+          <span
+            role="checkbox"
+            aria-checked={Boolean(item.completed)}
             aria-label={`Stato azione: ${item.text}`}
-            className="mt-0.5 h-4 w-4 rounded border-border-subtle bg-bg-surface accent-accent"
-          />
+            title={t('workspace.actionsReadOnly')}
+            className={cn(
+              'mt-0.5 grid h-5 w-5 place-items-center rounded-md border transition-premium',
+              item.completed
+                ? 'border-success/40 bg-success/15 text-success'
+                : 'border-border-subtle bg-bg-glass text-transparent shadow-[inset_0_1px_0_var(--surface-highlight)]'
+            )}
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" />
+          </span>
           <div className="min-w-0">
             <p className={cn('text-sm leading-snug text-text-primary', item.completed && 'line-through text-text-muted')}>
               {limitText(item.text, 180)}
             </p>
-            <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-text-muted">
-              {item.projectName && <span>{item.projectName}</span>}
-              {item.owner && <span>Owner: {item.owner}</span>}
-              {item.dueDate && <span>{t('workspace.dueDateLabel')} {item.dueDate}</span>}
-              <span>{item.sourceTitle}</span>
+            <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-text-muted">
+              {item.projectName && <Badge variant="info">{item.projectName}</Badge>}
+              {item.owner && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-border-subtle bg-bg-glass px-2 py-1">
+                  <UserRound className="h-3 w-3" />
+                  {item.owner}
+                </span>
+              )}
+              {item.dueDate && <Badge variant="warning">{t('workspace.dueDateLabel')} {item.dueDate}</Badge>}
+              {item.priority && <Badge variant={item.priority.toLowerCase().includes('high') || item.priority.toLowerCase().includes('alta') ? 'warning' : 'idle'}>{item.priority}</Badge>}
+              <span className="inline-flex rounded-full border border-border-subtle bg-bg-glass px-2 py-1">{item.sourceTitle}</span>
             </div>
           </div>
         </div>
@@ -262,7 +285,7 @@ export function DecisionLog({
   return (
     <div className="flex flex-col gap-2">
       {items.map((item) => (
-        <div key={item.id} className="metric-card rounded-lg border border-border-subtle px-3.5 py-2.5 transition-all duration-200 hover:border-border-focus hover:bg-bg-hover">
+        <div key={item.id} className="metric-card rounded-xl border border-border-subtle px-3.5 py-2.5 transition-premium hover-lift hover:border-border-focus hover:bg-bg-hover">
           <p className="text-sm leading-snug text-text-primary">{limitText(item.text, 190)}</p>
           <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-text-muted">
             {item.projectName && <span>{item.projectName}</span>}
@@ -294,7 +317,7 @@ export function RiskPanel({
   return (
     <div className="flex flex-col gap-2">
       {items.map((item) => (
-        <div key={item.id} className="rounded-lg border border-warning/20 bg-warning/5 px-3.5 py-2.5 hover:border-warning/35 transition-all duration-200">
+        <div key={item.id} className="rounded-xl border border-warning/20 bg-warning/5 px-3.5 py-2.5 transition-premium hover:border-warning/35 hover:bg-warning/10">
           <div className="flex items-start justify-between gap-3">
             <p className="text-sm leading-snug text-text-primary">{limitText(item.text, 180)}</p>
             {item.severity && <Badge variant="warning">{item.severity}</Badge>}
@@ -322,7 +345,7 @@ export function DigestPanel({
   const displayTitle = title || t('workspace.digestTitle');
 
   return (
-    <section className="workspace-panel rounded-lg border border-border-subtle p-4 theme-digest">
+    <section className="workspace-panel rounded-2xl border border-border-subtle p-4 theme-digest">
       <SectionHeader
         icon={Sparkles}
         title={displayTitle}
@@ -340,7 +363,7 @@ export function DigestPanel({
       ) : (
         <div className="mt-3 flex flex-col gap-2.5">
           {items.slice(0, 4).map((item) => (
-            <div key={item.id} className="border-l-2 border-accent/70 pl-2.5">
+            <div key={item.id} className="rounded-xl border border-border-subtle bg-bg-glass p-3 shadow-[inset_0_1px_0_var(--surface-highlight)]">
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
                 <span>{item.title}</span>
                 {item.projectName && <span>{item.projectName}</span>}
@@ -382,9 +405,10 @@ export function ProjectSidebar({
   const { t } = useTranslation();
   const filtered = projects.filter((project) => project.name.toLowerCase().includes(query.trim().toLowerCase()));
   return (
-    <aside className="workspace-panel rounded-lg border border-border-subtle p-3 lg:sticky lg:top-5 lg:max-h-[calc(100vh-8rem)] lg:overflow-auto">
+    <aside className="workspace-panel rounded-2xl border border-border-subtle p-3 lg:sticky lg:top-5 lg:max-h-[calc(100vh-8rem)] lg:overflow-auto">
       <div className="px-1 pb-3">
         <h2 className="text-sm font-semibold text-text-primary">{t('workspace.projectsTitle')}</h2>
+        <p className="mt-1 text-xs leading-relaxed text-text-muted">{t('workspace.projectsDesc')}</p>
         <label className="mt-3 flex h-9 items-center gap-2 rounded-lg border border-border-subtle bg-bg-surface px-3">
           <Search className="h-4 w-4 text-text-muted" />
           <input
@@ -402,9 +426,9 @@ export function ProjectSidebar({
             type="button"
             onClick={() => onSelect(project.name)}
             className={cn(
-              'rounded-lg px-3 py-2 text-left transition-colors',
+              'rounded-xl px-3 py-2 text-left transition-premium',
               selectedName === project.name
-                ? 'bg-accent text-white'
+                ? 'primary-gradient-surface text-white shadow-[0_12px_28px_var(--accent-glow)]'
                 : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
             )}
           >
@@ -446,7 +470,7 @@ export function ProjectStatusPanel({
   return (
     <section className="grid grid-cols-2 gap-3 lg:grid-cols-3">
       {stats.map((stat) => (
-        <div key={stat.label} className="metric-card group relative overflow-hidden rounded-lg border border-border-subtle p-3.5 transition-all duration-300 hover:border-border-focus hover:bg-bg-hover hover:shadow-[0_8px_24px_rgba(0,0,0,0.1)]">
+        <div key={stat.label} className="metric-card group relative overflow-hidden rounded-xl border border-border-subtle p-3.5 transition-premium hover-lift hover:border-border-focus hover:bg-bg-hover hover:shadow-[0_8px_24px_rgba(0,0,0,0.1)]">
           <div className="absolute -right-6 -top-6 h-12 w-12 rounded-full bg-accent/5 blur-lg transition-all duration-500 group-hover:scale-150" />
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted transition-colors group-hover:text-text-secondary">{stat.label}</span>
@@ -476,7 +500,7 @@ export function AnalysisCTAButton({
   return (
     <Tooltip content={t('workspace.digestCtaTooltip')}>
       <span>
-        <Button size="sm" onClick={onClick} disabled={disabled}>
+        <Button size="md" onClick={onClick} disabled={disabled} className="w-full sm:w-auto">
           <Sparkles className="h-4 w-4" />
           {isGenerated ? t('workspace.digestCtaUpdate') : t('workspace.digestCtaGenerate')}
         </Button>

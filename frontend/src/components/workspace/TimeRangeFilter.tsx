@@ -24,10 +24,10 @@ export function TimeRangeFilter({ value, options, onChange, className }: TimeRan
             type="button"
             onClick={() => onChange({ ...value, mode: option.mode })}
             className={cn(
-              'inline-flex h-9 items-center justify-center rounded-lg border px-3 text-xs font-semibold transition-all duration-150',
+              'pressable inline-flex h-9 items-center justify-center rounded-lg border px-3 text-xs font-semibold transition-premium',
               value.mode === option.mode
-                ? 'border-accent bg-accent text-white shadow-sm shadow-accent/15'
-                : 'border-border-subtle bg-bg-elevated text-text-secondary hover:border-border-focus hover:text-text-primary'
+                ? 'primary-gradient-surface border-accent text-white shadow-[0_10px_24px_var(--accent-glow)]'
+                : 'border-border-subtle bg-bg-elevated text-text-secondary hover:border-border-focus hover:bg-bg-hover hover:text-text-primary'
             )}
           >
             {option.label}
@@ -44,14 +44,14 @@ export function TimeRangeFilter({ value, options, onChange, className }: TimeRan
             type="date"
             value={value.startDate || ''}
             onChange={(event) => onChange({ ...value, startDate: event.target.value })}
-            className="h-9 rounded-lg border border-border-subtle bg-bg-elevated px-3 text-xs text-text-primary outline-none focus:border-border-focus"
+            className="h-9 rounded-lg border border-border-subtle bg-bg-elevated px-3 text-xs text-text-primary outline-none transition-premium focus:border-border-focus focus:ring-2 focus:ring-accent/20"
           />
           <span className="hidden sm:inline text-text-muted">-</span>
           <input
             type="date"
             value={value.endDate || ''}
             onChange={(event) => onChange({ ...value, endDate: event.target.value })}
-            className="h-9 rounded-lg border border-border-subtle bg-bg-elevated px-3 text-xs text-text-primary outline-none focus:border-border-focus"
+            className="h-9 rounded-lg border border-border-subtle bg-bg-elevated px-3 text-xs text-text-primary outline-none transition-premium focus:border-border-focus focus:ring-2 focus:ring-accent/20"
           />
         </div>
       )}

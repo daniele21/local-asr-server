@@ -2,7 +2,7 @@ import React from 'react';
 import { cn } from '../../utils/cn';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'warning';
   size?: 'sm' | 'md' | 'lg';
   isLoading?: boolean;
 }
@@ -14,13 +14,14 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         disabled={disabled || isLoading}
         className={cn(
-          'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all duration-200 active:scale-[0.96] ease-spring focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer',
+          'pressable is-disabled-surface inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-premium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:cursor-not-allowed cursor-pointer',
           // Variants
           {
-            'bg-gradient-to-b from-accent to-accent/90 text-white hover:from-accent-hover hover:to-accent shadow-[0_4px_12px_rgba(14,165,233,0.2),inset_0_1px_0px_rgba(255,255,255,0.15)] focus-visible:outline-accent': variant === 'primary',
-            'bg-bg-elevated text-text-primary border border-border-subtle hover:border-border-focus hover:bg-bg-hover shadow-[0_2px_8px_rgba(0,0,0,0.1),inset_0_1px_0px_rgba(255,255,255,0.05)] focus-visible:outline-border-focus': variant === 'secondary',
+            'primary-gradient-surface text-white hover:-translate-y-0.5 hover:shadow-[0_16px_34px_var(--accent-glow)] shadow-[0_10px_28px_var(--accent-glow),inset_0_1px_0px_rgba(255,255,255,0.22)] focus-visible:outline-accent': variant === 'primary',
+            'bg-bg-elevated text-text-primary border border-border-subtle hover:-translate-y-0.5 hover:border-border-focus hover:bg-bg-hover shadow-[0_8px_24px_rgba(0,0,0,0.12),inset_0_1px_0px_rgba(255,255,255,0.08)] focus-visible:outline-border-focus': variant === 'secondary',
             'bg-transparent text-text-secondary hover:bg-bg-hover hover:text-text-primary focus-visible:outline-border-focus': variant === 'ghost',
-            'bg-danger/8 text-danger border border-danger/30 hover:bg-danger/15 focus-visible:outline-danger': variant === 'danger',
+            'bg-danger/10 text-danger border border-danger/30 hover:bg-danger/15 hover:border-danger/45 focus-visible:outline-danger': variant === 'danger',
+            'bg-warning/10 text-warning border border-warning/30 hover:bg-warning/15 hover:border-warning/45 focus-visible:outline-warning': variant === 'warning',
           },
           // Sizes
           {
@@ -41,7 +42,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
             role="status"
             aria-label="Caricamento"
           >
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path
               className="opacity-75"
               fill="currentColor"

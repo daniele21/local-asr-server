@@ -16,7 +16,7 @@ export const Badge: React.FC<BadgeProps> = ({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-bg-surface border border-border-subtle text-text-secondary select-none',
+        'inline-flex items-center gap-1.5 rounded-full border border-border-subtle bg-bg-glass px-2.5 py-1 text-[11px] font-semibold text-text-secondary shadow-[inset_0_1px_0_var(--surface-highlight)] select-none',
         {
           'text-success border-success/30 bg-success/10': variant === 'online' || variant === 'success',
           'text-danger border-danger/30 bg-danger/10': variant === 'offline' || variant === 'danger',
@@ -28,7 +28,7 @@ export const Badge: React.FC<BadgeProps> = ({
       {...props}
     >
       <span
-        className={cn('w-2 h-2 rounded-full flex-shrink-0', {
+        className={cn('h-1.5 w-1.5 rounded-full flex-shrink-0', {
           'bg-success shadow-[0_0_8px_var(--success)]': variant === 'online' || variant === 'success',
           'bg-danger shadow-[0_0_6px_var(--danger)]': variant === 'offline' || variant === 'danger',
           'bg-warning': variant === 'warning',
