@@ -2,8 +2,8 @@
 # =============================================================================
 # build.sh — ClosedRoom macOS App Build Script
 #
-# Produces:  dist/ClosedRoom.app   (self-contained .app bundle)
-#            dist/ClosedRoom.dmg   (distributable disk image)
+# Produces:  dist/ClosedRoom-<version>.app   (self-contained .app bundle)
+#            dist/ClosedRoom-<version>.dmg   (distributable disk image)
 #
 # Usage:
 #   ./build.sh                           # full build (ad-hoc signed)
@@ -29,17 +29,31 @@
 set -euo pipefail
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-APP_NAME="ClosedRoom"
+APP_NAME="${CLOSEDROOM_APP_NAME:-ClosedRoom}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('$SCRIPT_DIR/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || python3 -c "import re; print(re.search(r'version\s*=\s*\"([^\"]+)\"', open('$SCRIPT_DIR/pyproject.toml').read()).group(1))" 2>/dev/null || echo "1.0.0")
-BUNDLE_ID="com.closedroom.app"
+BUNDLE_ID="${CLOSEDROOM_APP_BUNDLE_ID:-com.closedroom.app}"
 BUILD_ASSETS="$SCRIPT_DIR/build_assets"
 DIST_DIR="$SCRIPT_DIR/dist"
-APP_PATH="$DIST_DIR/$APP_NAME.app"
-DMG_PATH="$DIST_DIR/${APP_NAME}-${APP_VERSION}.dmg"
+APP_BUNDLE_BASENAME="${APP_NAME}-${APP_VERSION}"
+APP_BUNDLE_NAME="${APP_BUNDLE_BASENAME}.app"
+APP_PATH="$DIST_DIR/$APP_BUNDLE_NAME"
+DMG_PATH="$DIST_DIR/${APP_BUNDLE_BASENAME}.dmg"
+LEGACY_APP_PATH="$DIST_DIR/$APP_NAME.app"
 CREATE_DMG=true
 CLEAN_BUILD=false
 INSTALL_TO_APPLICATIONS=false
+
+# Derive the helper bundle ID to prevent permission conflicts
+HELPER_BUNDLE_ID="${CLOSEDROOM_HELPER_BUNDLE_ID:-}"
+if [[ -z "$HELPER_BUNDLE_ID" ]]; then
+    if [[ "$BUNDLE_ID" == "com.closedroom.app" ]]; then
+        HELPER_BUNDLE_ID="com.closedroom.nativecapture"
+    else
+        HELPER_BUNDLE_ID="${BUNDLE_ID}.nativecapture"
+    fi
+fi
+
 
 # Code signing identity.
 # Use a real Apple identity to keep TCC permissions stable across builds.
@@ -97,6 +111,7 @@ fi
 echo ""
 echo "═══════════════════════════════════════════════════════════"
 echo "  Building $APP_NAME v$APP_VERSION"
+echo "  Artifact: $APP_BUNDLE_NAME"
 if [[ "$SIGN_IDENTITY" == "-" ]]; then
     echo "  Signing:  ad-hoc (TCC permissions will reset on install)"
 else
@@ -165,14 +180,14 @@ rm -rf "$NATIVE_HELPER_APP"
 mkdir -p "$NATIVE_HELPER_APP/Contents/MacOS"
 cp "$NATIVE_HELPER_CACHE" "$NATIVE_HELPER_APP_EXE"
 chmod +x "$NATIVE_HELPER_APP_EXE"
-cat > "$NATIVE_HELPER_APP/Contents/Info.plist" <<'PLIST'
+cat > "$NATIVE_HELPER_APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>com.closedroom.nativecapture</string>
+    <string>$HELPER_BUNDLE_ID</string>
     <key>CFBundleName</key>
     <string>ClosedRoom Native Capture</string>
     <key>CFBundleDisplayName</key>
@@ -322,6 +337,12 @@ log "Step 4/5: Running PyInstaller..."
 
 cd "$SCRIPT_DIR"
 
+log "  Removing stale app artifacts..."
+rm -rf "$APP_PATH"
+if [[ "$LEGACY_APP_PATH" != "$APP_PATH" ]]; then
+    rm -rf "$LEGACY_APP_PATH"
+fi
+
 log "  Building python wheel..."
 rm -rf dist/wheels
 uv build --wheel --out-dir dist/wheels/
@@ -336,6 +357,10 @@ WHEEL_FILE=$(ls dist/wheels/local_asr_server-*.whl)
 uv pip install --python build_venv "${WHEEL_FILE}[app]" "pyinstaller>=6.0"
 
 log "  Running PyInstaller from build_venv..."
+CLOSEDROOM_APP_NAME="$APP_NAME" \
+CLOSEDROOM_APP_BUNDLE_ID="$BUNDLE_ID" \
+CLOSEDROOM_APP_DISPLAY_NAME="$APP_BUNDLE_BASENAME" \
+CLOSEDROOM_APP_BUNDLE_NAME="$APP_BUNDLE_NAME" \
 build_venv/bin/pyinstaller \
     --clean \
     --noconfirm \
@@ -456,15 +481,16 @@ codesign --verify --strict --verbose=2 "$APP_PATH" \
 
 log "  Verifying native capture helper diagnostics..."
 HELPER_DIAG="$("$NATIVE_HELPER_IN_APP" diagnostics || true)"
-HELPER_DIAG="$HELPER_DIAG" python3 -c '
+CLOSEDROOM_HELPER_BUNDLE_ID="$HELPER_BUNDLE_ID" HELPER_DIAG="$HELPER_DIAG" python3 -c '
 import json
 import os
 
 payload = json.loads(os.environ.get("HELPER_DIAG") or "{}")
 errors = []
 
-if payload.get("bundle_identifier") != "com.closedroom.nativecapture":
-    errors.append("bad bundle_identifier: {}".format(payload.get("bundle_identifier")))
+expected_helper_id = os.environ.get("CLOSEDROOM_HELPER_BUNDLE_ID")
+if payload.get("bundle_identifier") != expected_helper_id:
+    errors.append("bad bundle_identifier: {} (expected {})".format(payload.get("bundle_identifier"), expected_helper_id))
 if payload.get("code_signature") != "signed":
     errors.append("bad code_signature: {}".format(payload.get("code_signature")))
 if payload.get("screen_capture") not in {"granted", "required"}:
@@ -481,7 +507,7 @@ fi
 
 
 APP_SIZE=$(du -sh "$APP_PATH" | cut -f1)
-ok "ClosedRoom.app ($APP_SIZE)"
+ok "$APP_BUNDLE_NAME ($APP_SIZE)"
 
 # ── Step 5: Create DMG ────────────────────────────────────────────────────────
 if $CREATE_DMG; then
@@ -489,17 +515,21 @@ if $CREATE_DMG; then
     ./create_dmg.sh "$APP_PATH" "$DMG_PATH" "$APP_NAME" "$APP_VERSION"
 else
     log "Step 5/5: Skipping DMG (--no-dmg)"
+    if [[ -f "$DMG_PATH" ]]; then
+        rm -f "$DMG_PATH"
+        warn "Removed stale DMG: $DMG_PATH"
+    fi
 fi
 
 # ── Optional: install to /Applications ───────────────────────────────────────
 # Guarded above: only reachable when SIGN_IDENTITY is not ad-hoc.
 if $INSTALL_TO_APPLICATIONS; then
     log "Installing to /Applications..."
-    rm -rf "/Applications/$APP_NAME.app"
-    ditto "$APP_PATH" "/Applications/$APP_NAME.app"
+    rm -rf "/Applications/$APP_BUNDLE_NAME"
+    ditto "$APP_PATH" "/Applications/$APP_BUNDLE_NAME"
     # Remove quarantine so macOS does not gate the app on first open.
-    xattr -dr com.apple.quarantine "/Applications/$APP_NAME.app" 2>/dev/null || true
-    ok "Installed: /Applications/$APP_NAME.app"
+    xattr -dr com.apple.quarantine "/Applications/$APP_BUNDLE_NAME" 2>/dev/null || true
+    ok "Installed: /Applications/$APP_BUNDLE_NAME"
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
@@ -515,7 +545,7 @@ if [[ "$SIGN_IDENTITY" == "-" ]]; then
     echo "    open $APP_PATH"
     echo ""
     echo "  To install (TCC permissions will reset):"
-    echo "    ditto $APP_PATH /Applications/$APP_NAME.app"
+    echo "    ditto $APP_PATH /Applications/$APP_BUNDLE_NAME"
     echo ""
     echo "  ⚠  For stable TCC permissions across builds, use a real Apple identity:"
     echo "    export CLOSEDROOM_SIGN_IDENTITY=\"Apple Development: Name (TEAMID)\""
@@ -528,6 +558,6 @@ else
     echo "  To install with stable TCC permissions:"
     echo "    ./build.sh --no-dmg --install"
     echo "  or manually:"
-    echo "    ditto $APP_PATH /Applications/$APP_NAME.app"
+    echo "    ditto $APP_PATH /Applications/$APP_BUNDLE_NAME"
 fi
 echo "═══════════════════════════════════════════════════════════"

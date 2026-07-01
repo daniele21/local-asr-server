@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from local_asr_server.audio_router import AudioRouter
+from local_asr_server.app_identity import get_app_identity
 from local_asr_server.analysis_templates import list_pipelines, list_templates
 from local_asr_server.settings import load_settings, save_settings
 from local_asr_server.prompts import load_prompts, save_prompts
@@ -51,6 +52,7 @@ def health(request: Request) -> dict:
     return {
         "ok": True,
         "server": "local-asr-server",
+        **get_app_identity().as_health_payload(),
         "backend": "mlx-whisper",
         "default_model": request.app.state.default_model,
         "status": status_str,
@@ -1012,5 +1014,4 @@ def clear_mock_data(request: Request):
         p.unlink(missing_ok=True)
 
     return {"success": True}
-
 

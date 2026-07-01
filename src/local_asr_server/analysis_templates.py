@@ -53,7 +53,7 @@ TEMPLATES: dict[str, AnalysisTemplate] = {
         version=DEFAULT_TEMPLATE_VERSION,
         prompt=(
             "Analizza questa trascrizione come un meeting di lavoro. "
-            "Rispondi in italiano con markdown leggibile e, se possibile, con JSON strutturato. "
+            "Rispondi in italiano con markdown leggibile. "
             "Includi: sintesi in 5 righe, contesto, decisioni, azioni, rischi/blocchi, domande aperte. "
             "Non inventare fatti non presenti nella trascrizione."
         ),

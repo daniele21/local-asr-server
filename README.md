@@ -730,7 +730,17 @@ During development, `./run.sh` starts ClosedRoom and follows the managed LLM sid
 ./build.sh
 ```
 
-The packaged app includes the native capture helper and validates the helper bundle during build.
+The packaged app includes the native capture helper and validates the helper bundle during build. The final app bundle and visible bundle name are versioned from `pyproject.toml`, for example `dist/ClosedRoom-0.1.0.app`, so local builds can be installed side by side instead of overwriting or visually colliding with `ClosedRoom.app`. The build also removes stale unversioned app bundles from `dist/`.
+
+If an older `ClosedRoom.app` is still running on the standard app port, the versioned bundle starts its own local server on the next available app port instead of silently reusing the old server. Quit the old menu bar app if you want the versioned build to use the default port.
+
+To install the signed build into `/Applications` with the same versioned name:
+
+```bash
+./build.sh --no-dmg --install
+```
+
+When using `--no-dmg`, open the generated `.app` directly. The script removes any stale same-version DMG so an old disk image is not mistaken for the current build output.
 
 ---
 

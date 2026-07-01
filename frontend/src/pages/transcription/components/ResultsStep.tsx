@@ -354,13 +354,12 @@ export default function ResultsStep({
           { id: 'text' as const, label: t('transcription.tabText') },
           { id: 'analysis' as const, label: t('transcription.tabAnalysis') || 'Analisi', hide: !transcriptionResult.analysis },
           { id: 'segments' as const, label: t('transcription.tabSegments'), hide: !transcriptionResult.segments || transcriptionResult.segments.length === 0 },
-          { id: 'raw' as const, label: t('transcription.tabRaw') },
         ].map(
           (tab) =>
             !tab.hide && (
               <button
                 key={tab.id}
-                onClick={() => setResultTab(tab.id)}
+                onClick={() => setResultTab(tab.id as any)}
                 className={`pb-2 border-b-2 transition-colors cursor-pointer ${
                   resultTab === tab.id
                     ? 'border-accent text-accent'
@@ -383,12 +382,6 @@ export default function ResultsStep({
 
         {resultTab === 'text' && (
           <p className="whitespace-pre-wrap">{transcriptionResult.text}</p>
-        )}
-
-        {resultTab === 'raw' && (
-          <pre className="font-mono text-xs text-text-primary overflow-x-auto whitespace-pre-wrap">
-            {JSON.stringify(transcriptionResult, null, 2)}
-          </pre>
         )}
 
         {resultTab === 'segments' && (

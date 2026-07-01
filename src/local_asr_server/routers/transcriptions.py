@@ -107,11 +107,14 @@ def run_recording_transcription(
     def job_event(status: str, step: str, progress: int):
         if job is None:
             return
-        job.status = status
-        job.current_step = step
-        job.progress = progress
-        job.updated_at = time.time()
-        job.events.put(job.public())
+        if hasattr(app.state, "transcription_jobs"):
+            app.state.transcription_jobs.update_progress(job.id, status, progress, step)
+        else:
+            job.status = status
+            job.current_step = step
+            job.progress = progress
+            job.updated_at = time.time()
+            job.events.put(job.public())
 
     job_event("validating_audio", "validating_audio", 10)
     track_results = []

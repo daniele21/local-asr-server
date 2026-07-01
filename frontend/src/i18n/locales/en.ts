@@ -702,6 +702,8 @@ const en = {
     deepDetail: 'Full pipeline',
     actionRequiresTranscription: 'Requires transcription',
     actionRequiredBeforeAnalysis: 'First step',
+    selectModelTitle: 'Select transcription model',
+    selectModelDescription: 'Choose which local Whisper model to use for transcribing this meeting.',
   },
   workspace: {
     advancedTitle: 'Advanced details',

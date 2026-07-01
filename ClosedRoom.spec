@@ -9,8 +9,9 @@ Or via the build script:
     ./build.sh
 """
 
-import sys
 import shutil
+import os
+import sys
 from pathlib import Path
 
 # ── Project layout ─────────────────────────────────────────────────────────────
@@ -36,6 +37,11 @@ CACHE_DIR      = PROJECT_ROOT / ".cache"
 AUDIO_HELPER   = CACHE_DIR / "audio-helper" / "audio-helper"
 NATIVE_CAPTURE_HELPER = CACHE_DIR / "native-capture-helper" / "native-capture-helper"
 BUILD_ASSETS   = PROJECT_ROOT / "build_assets"                      # created by build.sh
+APP_NAME       = os.environ.get("CLOSEDROOM_APP_NAME", "ClosedRoom")
+APP_BUNDLE_NAME = os.environ.get("CLOSEDROOM_APP_BUNDLE_NAME", f"{APP_NAME}.app")
+APP_DISPLAY_NAME = os.environ.get("CLOSEDROOM_APP_DISPLAY_NAME", APP_NAME)
+APP_BUNDLE_ID   = os.environ.get("CLOSEDROOM_APP_BUNDLE_ID", "com.closedroom.app")
+
 
 # Resolve paths from the installed package in the active environment
 try:
@@ -142,6 +148,7 @@ hidden_imports = [
 
     # local_asr_server modules
     "local_asr_server",
+    "local_asr_server.app_identity",
     "local_asr_server.server",
     "local_asr_server.cli",
     "local_asr_server.menubar",
@@ -213,7 +220,7 @@ exe = EXE(                                                              # noqa: 
     a.scripts,
     [],
     exclude_binaries=True,
-    name="ClosedRoom",
+    name=APP_NAME,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -234,7 +241,7 @@ coll = COLLECT(                                                         # noqa: 
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="ClosedRoom",
+    name=APP_NAME,
 )
 
 # ── BUNDLE: produce the .app ───────────────────────────────────────────────────
@@ -244,16 +251,16 @@ icns_path = BUILD_ASSETS / "icon.icns"
 
 app = BUNDLE(                                                           # noqa: F821
     coll,
-    name="ClosedRoom.app",
+    name=APP_BUNDLE_NAME,
     icon=str(icns_path) if icns_path.exists() else None,
-    bundle_identifier="com.closedroom.app",
+    bundle_identifier=APP_BUNDLE_ID,
     version=APP_VERSION,
     info_plist={
         # Run as a regular application (visible in Dock when running, stays in menu bar)
         "LSUIElement": False,
-        "CFBundleName": "ClosedRoom",
-        "CFBundleDisplayName": "ClosedRoom",
-        "CFBundleIdentifier": "com.closedroom.app",
+        "CFBundleName": APP_DISPLAY_NAME,
+        "CFBundleDisplayName": APP_DISPLAY_NAME,
+        "CFBundleIdentifier": APP_BUNDLE_ID,
         "CFBundleVersion": APP_VERSION,
         "CFBundleShortVersionString": APP_VERSION,
         "NSHumanReadableCopyright": "© 2026 ClosedRoom",

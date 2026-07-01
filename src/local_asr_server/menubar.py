@@ -18,6 +18,8 @@ from __future__ import annotations
 import os
 import sys
 import logging
+import json
+import socket
 import threading
 import webbrowser
 from pathlib import Path
@@ -73,7 +75,13 @@ if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
                 )
 
 from local_asr_server.window import ClosedRoomWindowManager
-from local_asr_server.runtime.models import DEFAULT_API_PORT, LOCAL_SERVICE_HOST
+from local_asr_server.app_identity import get_app_identity
+from local_asr_server.runtime.models import (
+    DEFAULT_API_PORT,
+    DEFAULT_DEV_RELOAD_PORT,
+    DEFAULT_LOCAL_LLM_PORT,
+    LOCAL_SERVICE_HOST,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +94,6 @@ except ImportError:
     _RUMPS_AVAILABLE = False
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-
-APP_PORT = DEFAULT_API_PORT
-APP_URL = f"http://{LOCAL_SERVICE_HOST}:{APP_PORT}"
 
 # Status icons shown in the menu bar (using SF Symbols via text fallbacks)
 ICON_IDLE = "🎙️"
@@ -105,9 +110,10 @@ class _ServerThread(threading.Thread):
     the main menu bar process exits.
     """
 
-    def __init__(self, app_instance: ClosedRoomApp) -> None:
+    def __init__(self, app_instance: ClosedRoomApp, port: int) -> None:
         super().__init__(name="closedroom-server", daemon=True)
         self.app_instance = app_instance
+        self.port = port
         self._server: Optional[object] = None
         self._app: Optional[object] = None
         self.ready = threading.Event()
@@ -118,9 +124,10 @@ class _ServerThread(threading.Thread):
         from local_asr_server.settings import load_settings
         from local_asr_server.paths import APP_NAME
 
-        # If a server is already running on APP_PORT, reuse it
-        if _check_server_health():
-            logger.info("A server is already running on port %s. Reusing it.", APP_PORT)
+        # If this exact app build is already serving the selected port, reuse it.
+        status = _get_server_status(self.port)
+        if _is_reusable_server(status):
+            logger.info("A compatible server is already running on port %s. Reusing it.", self.port)
             self.ready.set()
             return
 
@@ -137,7 +144,7 @@ class _ServerThread(threading.Thread):
         config = uvicorn.Config(
             app,
             host="127.0.0.1",
-            port=APP_PORT,
+            port=self.port,
             log_level="warning",
             loop="asyncio",
         )
@@ -167,26 +174,76 @@ class _ServerThread(threading.Thread):
 
 # ── Health check ──────────────────────────────────────────────────────────────
 
-def _check_server_health() -> bool:
+def _build_app_url(port: int) -> str:
+    return f"http://{LOCAL_SERVICE_HOST}:{port}"
+
+
+def _check_server_health(port: int) -> bool:
     """Return True if the local server is responding."""
-    import urllib.request
-    import urllib.error
-    try:
-        with urllib.request.urlopen(f"{APP_URL}/health", timeout=2) as resp:
-            return resp.status == 200
-    except Exception:
-        return False
+    return bool(_get_server_status(port).get("ok"))
 
 
-def _get_server_status() -> dict:
+def _get_server_status(port: int) -> dict:
     """Return the parsed /health JSON or an empty dict on failure."""
     import urllib.request
-    import json
     try:
-        with urllib.request.urlopen(f"{APP_URL}/health", timeout=2) as resp:
+        with urllib.request.urlopen(f"{_build_app_url(port)}/health", timeout=2) as resp:
             return json.loads(resp.read())
     except Exception:
         return {}
+
+
+def _is_port_open(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.25)
+        return sock.connect_ex((LOCAL_SERVICE_HOST, port)) == 0
+
+
+def _is_reusable_server(status: dict) -> bool:
+    """Return True only for a healthy server that matches this app identity."""
+    if not status.get("ok"):
+        return False
+
+    current = get_app_identity()
+    if not current.bundled:
+        return True
+
+    return (
+        status.get("bundle_identifier") == current.bundle_identifier
+        and status.get("bundle_display_name") == current.display_name
+        and status.get("app_version") == current.version
+    )
+
+
+def _select_app_port() -> int:
+    """
+    Prefer the standard app port, but do not silently reuse a stale bundle server.
+
+    This lets a versioned build run even while an older ``ClosedRoom.app`` still
+    owns the default port.
+    """
+    candidate_ports = [DEFAULT_API_PORT]
+    candidate_ports.extend(
+        port
+        for port in range(DEFAULT_API_PORT + 2, DEFAULT_API_PORT + 32)
+        if port not in {DEFAULT_DEV_RELOAD_PORT, DEFAULT_LOCAL_LLM_PORT}
+    )
+
+    for port in candidate_ports:
+        status = _get_server_status(port)
+        if _is_reusable_server(status):
+            return port
+        if status:
+            logger.warning(
+                "Port %s is served by another ClosedRoom build (%s); trying another port.",
+                port,
+                status.get("bundle_display_name") or status.get("server") or "unknown",
+            )
+            continue
+        if not _is_port_open(port):
+            return port
+
+    raise RuntimeError("No available local port found for ClosedRoom.")
 
 
 # ── LaunchAgent helpers (forward to launchd module) ───────────────────────────
@@ -233,11 +290,14 @@ class ClosedRoomApp(rumps.App):
         # Build the menu
         self._build_menu()
 
+        self.app_port = _select_app_port()
+        self.app_url = _build_app_url(self.app_port)
+
         # Initialize the window manager
-        self.window_manager = ClosedRoomWindowManager(APP_URL)
+        self.window_manager = ClosedRoomWindowManager(self.app_url)
 
         # Start the server
-        self._server_thread = _ServerThread(self)
+        self._server_thread = _ServerThread(self, self.app_port)
         self._server_thread.start()
 
         # Poll until server is ready, then update icon
@@ -300,7 +360,7 @@ class ClosedRoomApp(rumps.App):
         # Extra wait for uvicorn to bind the port
         import time
         for _ in range(20):
-            if _check_server_health():
+            if _check_server_health(self.app_port):
                 break
             time.sleep(0.5)
 
@@ -314,7 +374,7 @@ class ClosedRoomApp(rumps.App):
             self.menu["📋 Copia ultima trascrizione"].set_callback(self._copy_last_transcription)
 
             # Replace loading screen with the real application URL
-            self.window_manager.load_url(APP_URL)
+            self.window_manager.load_url(self.app_url)
 
         run_on_main_thread(update_ui)
 
@@ -324,7 +384,7 @@ class ClosedRoomApp(rumps.App):
     @rumps.timer(5)
     def _refresh_status(self, _) -> None:
         """Update the status menu item and icon every 5 seconds."""
-        status = _get_server_status()
+        status = _get_server_status(self.app_port)
         if not status:
             self._update_status_item("Server non raggiungibile ⚠️")
             self.title = ICON_ERROR
@@ -414,7 +474,7 @@ class ClosedRoomApp(rumps.App):
         run_on_main_thread(set_status_transcribing)
 
         try:
-            url = f"{APP_URL}/v1/audio/transcriptions/path"
+            url = f"{self.app_url}/v1/audio/transcriptions/path"
             req_data = json.dumps({"file": file_path}).encode("utf-8")
             req = urllib.request.Request(
                 url,
@@ -480,7 +540,7 @@ class ClosedRoomApp(rumps.App):
 
     def _shortcut_toggle_recording(self) -> None:
         """Toggle recording via global keyboard shortcut."""
-        status = _get_server_status()
+        status = _get_server_status(self.app_port)
         server_status = status.get("status", "idle")
         if server_status == "recording":
             self.window_manager.evaluate_js("RecordingController.stop()")
@@ -536,7 +596,7 @@ class ClosedRoomApp(rumps.App):
             from pynput.keyboard import Controller, Key
             import time
 
-            with urllib.request.urlopen(f"{APP_URL}/v1/transcriptions?limit=1", timeout=2) as resp:
+            with urllib.request.urlopen(f"{self.app_url}/v1/transcriptions?limit=1", timeout=2) as resp:
                 data = json.loads(resp.read())
                 items = data.get("items", [])
                 if items:
@@ -571,14 +631,14 @@ class ClosedRoomApp(rumps.App):
 
     def _start_recording(self, _) -> None:
         """Trigger recording start in WKWebView."""
-        if not _check_server_health():
+        if not _check_server_health(self.app_port):
             self._update_status_item("Server non raggiungibile ⚠️")
             return
         self.window_manager.evaluate_js("RecordingController.start()")
 
     def _stop_recording(self, _) -> None:
         """Trigger recording stop in WKWebView."""
-        if not _check_server_health():
+        if not _check_server_health(self.app_port):
             self._update_status_item("Server non raggiungibile ⚠️")
             return
         self.window_manager.evaluate_js("RecordingController.stop()")
@@ -590,7 +650,7 @@ class ClosedRoomApp(rumps.App):
         from AppKit import NSPasteboard, NSStringPboardType
 
         try:
-            with urllib.request.urlopen(f"{APP_URL}/v1/transcriptions?limit=1", timeout=2) as resp:
+            with urllib.request.urlopen(f"{self.app_url}/v1/transcriptions?limit=1", timeout=2) as resp:
                 data = json.loads(resp.read())
                 items = data.get("items", [])
                 if items:
@@ -616,7 +676,7 @@ class ClosedRoomApp(rumps.App):
     def _open_preferences(self, _) -> None:
         """Show window and navigate to the settings tab."""
         self.window_manager.show()
-        self.window_manager.load_url(f"{APP_URL}/#settings")
+        self.window_manager.load_url(f"{self.app_url}/#settings")
 
     def _quit(self, _) -> None:
         """Gracefully stop the server, close the window, and quit."""

@@ -122,6 +122,12 @@ class TranscriptionJobManager:
         self._emit(job, "cancelling", job.progress, "cancelling")
         return job.public()
 
+    def update_progress(self, job_id: str, status: str, progress: int, step: str | None = None) -> None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+        if job is not None:
+            self._emit(job, status, progress, step)
+
     def drain_events(self, job_id: str) -> list[dict[str, Any]] | None:
         with self._lock:
             job = self._jobs.get(job_id)

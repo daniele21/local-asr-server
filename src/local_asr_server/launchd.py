@@ -1,7 +1,7 @@
 """
 launchd.py — macOS LaunchAgent management for ClosedRoom.
 
-Creates and removes a launchd plist so ClosedRoom.app launches automatically
+Creates and removes a launchd plist so the ClosedRoom app launches automatically
 when the user logs in.
 
 The plist is installed at::
@@ -24,20 +24,35 @@ from local_asr_server.paths import APP_BUNDLE_ID
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 _LAUNCH_AGENTS_DIR = Path.home() / "Library" / "LaunchAgents"
-_PLIST_PATH = _LAUNCH_AGENTS_DIR / f"{APP_BUNDLE_ID}.plist"
 
-# Path to the .app bundle (resolved at install time)
-_APP_PATHS = [
-    Path("/Applications/ClosedRoom.app"),
-    Path.home() / "Applications" / "ClosedRoom.app",
+
+def _get_plist_path() -> Path:
+    """Return the LaunchAgent plist Path, dynamically resolved from the current app identity."""
+    from local_asr_server.app_identity import get_app_identity
+    return _LAUNCH_AGENTS_DIR / f"{get_app_identity().bundle_identifier}.plist"
+
+
+# App bundle candidates (resolved at install time).
+_APP_ROOTS = [
+    Path("/Applications"),
+    Path.home() / "Applications",
 ]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _find_app_binary() -> Path | None:
-    """Locate the ClosedRoom.app binary in standard locations."""
-    for app in _APP_PATHS:
+    """Locate the ClosedRoom binary in the current or installed app bundle."""
+    if getattr(sys, "frozen", False):
+        current_binary = Path(sys.executable).resolve()
+        if current_binary.exists():
+            return current_binary
+
+    app_paths: list[Path] = []
+    for root in _APP_ROOTS:
+        app_paths.extend(sorted(root.glob("ClosedRoom*.app")))
+
+    for app in app_paths:
         binary = app / "Contents" / "MacOS" / "ClosedRoom"
         if binary.exists():
             return binary
@@ -80,7 +95,7 @@ def _ensure_log_dir() -> None:
 
 def is_launch_agent_installed() -> bool:
     """Return True if the LaunchAgent plist exists on disk."""
-    return _PLIST_PATH.exists()
+    return _get_plist_path().exists()
 
 
 def install_launch_agent(app_binary: Path | None = None) -> Path:
@@ -103,9 +118,9 @@ def install_launch_agent(app_binary: Path | None = None) -> Path:
 
     binary = app_binary or _find_app_binary()
     if binary is None:
-        checked = [str(a) for a in _APP_PATHS]
+        checked = [str(root / "ClosedRoom*.app") for root in _APP_ROOTS]
         raise FileNotFoundError(
-            "ClosedRoom.app not found in standard locations:\n"
+            "ClosedRoom app not found in standard locations:\n"
             + "\n".join(f"  {p}" for p in checked)
             + "\nMove the app to /Applications/ first."
         )
@@ -114,12 +129,13 @@ def install_launch_agent(app_binary: Path | None = None) -> Path:
     _ensure_log_dir()
 
     plist_content = _generate_plist(binary)
-    _PLIST_PATH.write_text(plist_content, encoding="utf-8")
+    plist_path = _get_plist_path()
+    plist_path.write_text(plist_content, encoding="utf-8")
 
     # Load the agent immediately so the user doesn't need to log out
     try:
         subprocess.run(
-            ["launchctl", "load", str(_PLIST_PATH)],
+            ["launchctl", "load", str(plist_path)],
             check=True,
             capture_output=True,
         )
@@ -127,7 +143,7 @@ def install_launch_agent(app_binary: Path | None = None) -> Path:
         # Non-fatal: the plist is installed and will activate on next login
         pass
 
-    return _PLIST_PATH
+    return plist_path
 
 
 def uninstall_launch_agent() -> None:
@@ -136,17 +152,18 @@ def uninstall_launch_agent() -> None:
 
     No-op if the plist does not exist.
     """
-    if not _PLIST_PATH.exists():
+    plist_path = _get_plist_path()
+    if not plist_path.exists():
         return
 
     # Unload the agent first so it stops immediately
     try:
         subprocess.run(
-            ["launchctl", "unload", str(_PLIST_PATH)],
+            ["launchctl", "unload", str(plist_path)],
             check=True,
             capture_output=True,
         )
     except subprocess.CalledProcessError:
         pass  # Already unloaded or never loaded — safe to continue
 
-    _PLIST_PATH.unlink(missing_ok=True)
+    plist_path.unlink(missing_ok=True)

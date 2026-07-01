@@ -3,8 +3,11 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Circle,
   Clock3,
+  Edit3,
   FileAudio,
   FolderKanban,
   Info,
@@ -226,10 +229,24 @@ export function MeetingCard({
   meeting,
   lang,
   onOpen,
+  isEditing = false,
+  editTitleValue = '',
+  setEditTitleValue = () => {},
+  onRename = () => {},
+  onSaveRename = () => {},
+  onCancelRename = () => {},
+  demoMode = false,
 }: {
   meeting: Meeting;
   lang: string;
   onOpen: () => void;
+  isEditing?: boolean;
+  editTitleValue?: string;
+  setEditTitleValue?: (value: string) => void;
+  onRename?: () => void;
+  onSaveRename?: () => void;
+  onCancelRename?: () => void;
+  demoMode?: boolean;
 }) {
   const { t } = useTranslation();
   const statusMeta = {
@@ -243,6 +260,7 @@ export function MeetingCard({
 
   const duration = getDurationSeconds(meeting.recording);
   const analysisTypes = Object.keys(meeting.latest_analysis || {});
+  
   return (
     <article className="metric-card group rounded-xl border border-border-subtle px-4 py-3 transition-premium hover-lift hover:border-border-focus hover:bg-bg-hover">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -250,10 +268,41 @@ export function MeetingCard({
           <span className="mt-0.5 hidden h-10 w-10 shrink-0 place-items-center rounded-xl border border-border-subtle bg-bg-glass text-accent shadow-[inset_0_1px_0_var(--surface-highlight)] sm:grid">
             <FileAudio className="h-4 w-4" />
           </span>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="truncate text-sm font-semibold text-text-primary">{meetingTitle(meeting)}</h3>
-              <Badge variant={statusMeta.variant}>{statusMeta.label}</Badge>
+              {isEditing ? (
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="text"
+                    value={editTitleValue}
+                    onChange={(event) => setEditTitleValue(event.target.value)}
+                    maxLength={200}
+                    className="min-w-0 flex-1 rounded-lg border border-border-focus bg-bg-surface px-3 py-1.5 text-sm text-text-primary outline-none"
+                    autoFocus
+                  />
+                  <div className="flex gap-2 shrink-0">
+                    <Button size="sm" onClick={onSaveRename}>{lang === 'it' ? 'Salva' : 'Save'}</Button>
+                    <Button size="sm" variant="ghost" onClick={onCancelRename}>{lang === 'it' ? 'Annulla' : 'Cancel'}</Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex min-w-0 items-center gap-2 group/title">
+                  <h3 className="truncate text-sm font-semibold text-text-primary">{meetingTitle(meeting)}</h3>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRename();
+                    }}
+                    disabled={demoMode}
+                    className="text-text-muted transition-colors hover:text-text-primary opacity-0 group-hover/title:opacity-100 focus:opacity-100"
+                    aria-label={lang === 'it' ? 'Rinomina meeting' : 'Rename meeting'}
+                  >
+                    <Edit3 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+              {!isEditing && <Badge variant={statusMeta.variant}>{statusMeta.label}</Badge>}
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs text-text-muted">
               <span className="inline-flex items-center gap-1">
@@ -275,15 +324,10 @@ export function MeetingCard({
         </div>
         <div className="flex flex-col gap-2 lg:min-w-[200px] lg:items-end">
           <div className="flex flex-wrap gap-1.5 lg:justify-end">
-            {meeting.transcription ? (
+            {meeting.transcription && (
               <span className="inline-flex items-center gap-1 rounded-md border border-success/25 bg-success/10 px-2 py-1 text-[11px] text-success">
                 <CheckCircle2 className="h-3 w-3" />
                 {t('workspace.transcriptionBadge')}
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 rounded-md border border-warning/25 bg-warning/10 px-2 py-1 text-[11px] text-warning">
-                <AlertTriangle className="h-3 w-3" />
-                {t('workspace.toTranscribeBadge')}
               </span>
             )}
             {analysisTypes.slice(0, 3).map((type) => (
@@ -297,6 +341,31 @@ export function MeetingCard({
           </Button>
         </div>
       </div>
+
+      {/* Action Required Banner inside card */}
+      {meeting.status !== 'ready' && meeting.status !== 'recording' && meeting.status !== 'analyzing' && (
+        <div className={cn(
+          "mt-3 flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-xs text-text-primary animate-in fade-in duration-200",
+          !meeting.transcription
+            ? "border-warning/20 bg-warning/5"
+            : "border-info/20 bg-info/5"
+        )}>
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertTriangle className={cn(
+              "h-3.5 w-3.5 shrink-0",
+              !meeting.transcription ? "text-warning" : "text-info"
+            )} />
+            <span className={cn("font-semibold", !meeting.transcription ? "text-warning" : "text-info")}>
+              {lang === 'it' ? 'Da completare:' : 'To complete:'}
+            </span>
+            <span className="truncate text-text-secondary">
+              {!meeting.transcription
+                ? (lang === 'it' ? 'Trascrizione mancante (richiede Whisper)' : 'Missing transcription (requires Whisper)')
+                : (lang === 'it' ? 'Analisi AI / Insight da completare' : 'AI analysis / Insights to complete')}
+            </span>
+          </div>
+        </div>
+      )}
     </article>
   );
 }
@@ -481,55 +550,122 @@ export function ProjectDigestPanel({
   return <DigestPanel items={items} title={t('workspace.projectDigestTitle')} generatedAt={generatedAt} />;
 }
 
+function getInitials(name: string): string {
+  const clean = name.replace(/[^\w\s]/g, '').trim();
+  const parts = clean.split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return clean.slice(0, 2).toUpperCase() || 'P';
+}
+
 export function ProjectSidebar({
   projects,
   selectedName,
   query,
   onQueryChange,
   onSelect,
+  isCollapsed = false,
+  onToggleCollapse,
 }: {
   projects: Project[];
   selectedName: string;
   query: string;
   onQueryChange: (value: string) => void;
   onSelect: (name: string) => void;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }) {
   const { t } = useTranslation();
   const filtered = projects.filter((project) => project.name.toLowerCase().includes(query.trim().toLowerCase()));
   return (
-    <aside className="surface-primary rounded-2xl p-3 lg:sticky lg:top-5 lg:max-h-[calc(100vh-8rem)] lg:overflow-auto">
-      <div className="px-1 pb-3">
-        <h2 className="text-sm font-semibold text-text-primary">{t('workspace.projectsTitle')}</h2>
-        <p className="mt-1 text-xs leading-relaxed text-text-muted">{t('workspace.projectsDesc')}</p>
-        <label className="mt-3 flex h-9 items-center gap-2 rounded-lg border border-border-subtle bg-bg-glass px-3 shadow-[inset_0_1px_0_var(--surface-highlight)]">
-          <Search className="h-4 w-4 text-text-muted" />
-          <input
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder={t('workspace.searchPlaceholder')}
-            className="min-w-0 flex-1 border-0 bg-transparent text-xs text-text-primary outline-none placeholder:text-text-muted"
-          />
-        </label>
+    <aside
+      className={cn(
+        "surface-primary rounded-2xl lg:sticky lg:top-5 flex flex-col gap-3 transition-all duration-300",
+        isCollapsed
+          ? "w-[52px] p-2 items-center overflow-hidden"
+          : "w-full p-3 h-fit lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto"
+      )}
+    >
+      <div className={cn("px-1 pb-1 w-full", isCollapsed ? "flex flex-col items-center gap-3" : "")}>
+        <div className="flex items-center justify-between gap-2 w-full">
+          {!isCollapsed && (
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-text-primary">{t('workspace.projectsTitle')}</h2>
+              <Tooltip content={t('workspace.projectsDesc')}>
+                <span className="cursor-help text-text-muted hover:text-text-primary transition-colors">
+                  <Info className="h-3.5 w-3.5" />
+                </span>
+              </Tooltip>
+            </div>
+          )}
+          {onToggleCollapse && (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className={cn(
+                "p-1.5 rounded-lg border border-border-subtle bg-bg-glass text-text-muted hover:text-text-primary hover:border-border-focus transition-all flex items-center justify-center",
+                isCollapsed ? "mx-auto" : ""
+              )}
+              title={isCollapsed ? t('projects.expandSidebar') || 'Espandi' : t('projects.collapseSidebar') || 'Riduci'}
+            >
+              {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
+            </button>
+          )}
+        </div>
+        {!isCollapsed && (
+          <label className="mt-3 flex h-9 items-center gap-2 rounded-lg border border-border-subtle bg-bg-glass px-3 shadow-[inset_0_1px_0_var(--surface-highlight)] w-full">
+            <Search className="h-4 w-4 text-text-muted" />
+            <input
+              value={query}
+              onChange={(event) => onQueryChange(event.target.value)}
+              placeholder={t('workspace.searchPlaceholder')}
+              className="min-w-0 flex-1 border-0 bg-transparent text-xs text-text-primary outline-none placeholder:text-text-muted"
+            />
+          </label>
+        )}
       </div>
-      <div className="stagger-list flex flex-col gap-1">
-        {filtered.map((project) => (
-          <button
-            key={project.name}
-            type="button"
-            onClick={() => onSelect(project.name)}
-            className={cn(
-              'rounded-xl border px-3 py-2 text-left transition-premium',
-              selectedName === project.name
-                ? 'primary-gradient-surface border-white/15 text-white shadow-[0_12px_28px_var(--accent-glow)]'
-                : 'border-transparent text-text-secondary hover:border-border-subtle hover:bg-bg-hover hover:text-text-primary'
-            )}
-          >
-            <span className="block truncate text-sm font-medium">{project.name}</span>
-            <span className={cn('mt-0.5 block text-[11px]', selectedName === project.name ? 'text-white/75' : 'text-text-muted')}>
-              {project.items.length} meeting
-            </span>
-          </button>
-        ))}
+      <div className={cn("stagger-list flex flex-col gap-1 w-full", isCollapsed ? "items-center" : "")}>
+        {filtered.map((project) => {
+          const initials = getInitials(project.name);
+          const isSelected = selectedName === project.name;
+          if (isCollapsed) {
+            return (
+              <Tooltip key={project.name} content={`${project.name} (${project.items.length} meeting)`}>
+                <button
+                  type="button"
+                  onClick={() => onSelect(project.name)}
+                  className={cn(
+                    'h-10 w-10 flex items-center justify-center rounded-xl border text-xs font-bold transition-premium shrink-0',
+                    isSelected
+                      ? 'primary-gradient-surface border-white/15 text-white shadow-[0_4px_12px_rgba(61,125,255,0.25)]'
+                      : 'border-transparent bg-bg-glass text-text-secondary hover:border-border-subtle hover:bg-bg-hover hover:text-text-primary'
+                  )}
+                >
+                  {initials}
+                </button>
+              </Tooltip>
+            );
+          }
+          return (
+            <button
+              key={project.name}
+              type="button"
+              onClick={() => onSelect(project.name)}
+              className={cn(
+                'rounded-xl border px-3 py-2 text-left transition-premium w-full shrink-0',
+                isSelected
+                  ? 'primary-gradient-surface border-white/15 text-white shadow-[0_4px_12px_rgba(61,125,255,0.25)]'
+                  : 'border-transparent text-text-secondary hover:border-border-subtle hover:bg-bg-hover hover:text-text-primary'
+              )}
+            >
+              <span className="block truncate text-sm font-medium">{project.name}</span>
+              <span className={cn('mt-0.5 block text-[11px]', isSelected ? 'text-white/75' : 'text-text-muted')}>
+                {project.items.length} meeting
+              </span>
+            </button>
+          );
+        })}
       </div>
     </aside>
   );

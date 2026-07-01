@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from local_asr_server.analysis_jobs import AnalysisJobManager
+from local_asr_server.app_identity import get_app_version
 from local_asr_server.audio_router import AudioRouter
 from local_asr_server.catalog import CatalogStore
 from local_asr_server.jobs import JobStore
@@ -50,7 +51,7 @@ def create_app(
 ) -> FastAPI:
     app = FastAPI(
         title="ClosedRoom",
-        version="0.1.0",
+        version=get_app_version(),
         description="Local ASR transcription server powered by MLX Whisper.",
     )
 

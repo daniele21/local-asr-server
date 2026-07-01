@@ -3,7 +3,7 @@ paths.py — Centralized path resolution for ClosedRoom.
 
 Handles the difference between:
   - Dev mode: running directly with `uv run local-asr` from the project root.
-  - Bundle mode: running inside `ClosedRoom.app` (PyInstaller frozen binary).
+  - Bundle mode: running inside the macOS .app bundle (PyInstaller frozen binary).
 
 All path helpers are pure functions with no side effects. Directories are
 created on demand only where explicitly noted.
@@ -45,7 +45,7 @@ def get_bundle_dir() -> Path:
 
 
 def get_app_contents_dir() -> Path | None:
-    """Return ``ClosedRoom.app/Contents`` when running from a bundled app."""
+    """Return the app bundle ``Contents`` directory when running bundled."""
     if not is_bundled():
         return None
 

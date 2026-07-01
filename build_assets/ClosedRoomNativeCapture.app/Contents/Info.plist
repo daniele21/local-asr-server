@@ -4,7 +4,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>com.closedroom.nativecapture</string>
+    <string>com.closedroom.app.test.nativecapture</string>
     <key>CFBundleName</key>
     <string>ClosedRoom Native Capture</string>
     <key>CFBundleDisplayName</key>

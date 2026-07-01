@@ -6,16 +6,16 @@
 #   ./create_dmg.sh <app-path> <dmg-path> <app-name> <version>
 #
 # Example:
-#   ./create_dmg.sh dist/ClosedRoom.app dist/ClosedRoom.dmg ClosedRoom 1.0.0
+#   ./create_dmg.sh dist/ClosedRoom-1.0.0.app dist/ClosedRoom-1.0.0.dmg ClosedRoom 1.0.0
 # =============================================================================
 set -euo pipefail
 
-APP_PATH="${1:-dist/ClosedRoom.app}"
-DMG_PATH="${2:-dist/ClosedRoom.dmg}"
-APP_NAME="${3:-ClosedRoom}"
-VERSION="${4:-1.0.0}"
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('$SCRIPT_DIR/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || python3 -c "import re; print(re.search(r'version\s*=\s*\"([^\"]+)\"', open('$SCRIPT_DIR/pyproject.toml').read()).group(1))" 2>/dev/null || echo "1.0.0")
+APP_NAME="${3:-ClosedRoom}"
+VERSION="${4:-$DEFAULT_VERSION}"
+APP_PATH="${1:-dist/${APP_NAME}-${VERSION}.app}"
+DMG_PATH="${2:-dist/${APP_NAME}-${VERSION}.dmg}"
 STAGING_DIR="$SCRIPT_DIR/dist/dmg_staging"
 VOLUME_NAME="$APP_NAME $VERSION"
 

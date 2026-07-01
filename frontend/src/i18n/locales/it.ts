@@ -702,6 +702,8 @@ const it = {
     deepDetail: 'Pipeline completa',
     actionRequiresTranscription: 'Richiede trascrizione',
     actionRequiredBeforeAnalysis: 'Primo passo',
+    selectModelTitle: 'Seleziona modello di trascrizione',
+    selectModelDescription: 'Scegli quale modello Whisper locale utilizzare per trascrivere questo meeting.',
   },
   workspace: {
     advancedTitle: 'Dettagli avanzati',

@@ -360,14 +360,18 @@ class RecordingApiTests(unittest.TestCase):
         self.assertEqual(job.status_code, 202)
         job_id = job.json()["id"]
 
-        for _ in range(20):
+        statuses = []
+        for _ in range(50):
             status = self.client.get(f"/v1/jobs/{job_id}").json()
+            statuses.append(status["status"])
             if status["status"] == "completed":
                 break
             import time
             time.sleep(0.05)
 
         self.assertEqual(status["status"], "completed")
+        intermediate_stages = [s for s in statuses if s not in {"queued", "completed"}]
+        self.assertTrue(len(intermediate_stages) > 0, f"Expected intermediate stages in {statuses}")
         self.assertEqual(status["result"]["text"], "[00:00] Tu: Ciao")
 
     def test_active_recording_and_overlay_flow(self) -> None:
@@ -398,6 +402,10 @@ class RecordingApiTests(unittest.TestCase):
         health = self.client.get("/health")
         self.assertEqual(health.status_code, 200)
         self.assertEqual(health.json()["status"], "recording")
+        self.assertEqual(health.json()["app_version"], "0.1.0")
+        from local_asr_server.app_identity import get_app_identity
+        self.assertEqual(health.json()["bundle_identifier"], get_app_identity().bundle_identifier)
+        self.assertIn("bundle_display_name", health.json())
 
         # 4. Append chunk and verify bytes_written changes
         chunk = self.client.post(

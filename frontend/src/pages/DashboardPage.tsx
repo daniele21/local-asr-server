@@ -11,7 +11,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  AlertTriangle,
   ChevronDown,
   ChevronRight,
   FileAudio,
@@ -58,6 +57,7 @@ import {
 } from '../utils/meetingInsights';
 import { useTranslation } from '../i18n/i18n';
 import { cn } from '../utils/cn';
+import { useToast } from '../context/ToastContext';
 
 interface DashboardPageProps {
   navigateTo: (page: string, detail?: string | null) => void;
@@ -112,6 +112,7 @@ export default function DashboardPage({
   onActivateDemo,
 }: DashboardPageProps) {
   const { t, lang } = useTranslation();
+  const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [query, setQuery] = useState('');
@@ -120,6 +121,10 @@ export default function DashboardPage({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [dropdownCoords, setDropdownCoords] = useState<{ top: number; left: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+
+  // Rename state
+  const [editingRecordingId, setEditingRecordingId] = useState<string | null>(null);
+  const [editTitleValue, setEditTitleValue] = useState('');
 
   // Drawer state
   const [insightDialogOpen, setInsightDialogOpen] = useState(false);
@@ -198,16 +203,46 @@ export default function DashboardPage({
     [sources],
   );
 
-  const incompleteMeetings = useMemo(
-    () => periodMeetings.filter((m) => m.status !== 'ready'),
-    [periodMeetings],
-  );
   const analyzingCount = periodMeetings.filter(
     (m) => m.status === 'analyzing' || m.jobs.some((j) => !['completed', 'failed', 'cancelled', 'interrupted'].includes(j.status)),
   ).length;
   const readyCount = periodMeetings.filter((m) => m.status === 'ready').length;
 
   const hasAnyData = meetings.length > 0;
+
+  const handleRenameClick = (meeting: Meeting) => {
+    if (demoMode) return;
+    setEditingRecordingId(meeting.recording.id);
+    setEditTitleValue(meeting.recording.title || meetingTitle(meeting));
+  };
+
+  const handleSaveRename = async (meeting: Meeting) => {
+    if (demoMode) return;
+    const title = editTitleValue.trim();
+    if (!title) {
+      showToast(t('transcription.titleEmptyError') || 'Title cannot be empty.', 'error');
+      return;
+    }
+    try {
+      // Optimistic update
+      setMeetings((prev) =>
+        prev.map((m) =>
+          m.id === meeting.id ? { ...m, recording: { ...m.recording, title } } : m
+        )
+      );
+      setEditingRecordingId(null);
+
+      await ApiClient.updateRecording(meeting.recording.id, { title });
+      showToast(t('transcription.titleSaveSuccess') || 'Title updated successfully', 'success');
+
+      // Sync backend state in background
+      const data = await ApiClient.listMeetings(120);
+      setMeetings(data.items || []);
+    } catch (err: any) {
+      showToast(t('transcription.titleSaveError', { error: err.message }) || 'Error updating title', 'error');
+      load();
+    }
+  };
 
   // ─── Loading ────────────────────────────────────────────────────────────────
 
@@ -450,6 +485,13 @@ export default function DashboardPage({
                     meeting={meeting}
                     lang={lang}
                     onOpen={() => navigateTo('meeting', meeting.id)}
+                    isEditing={editingRecordingId === meeting.recording.id}
+                    editTitleValue={editTitleValue}
+                    setEditTitleValue={setEditTitleValue}
+                    onRename={() => handleRenameClick(meeting)}
+                    onSaveRename={() => handleSaveRename(meeting)}
+                    onCancelRename={() => setEditingRecordingId(null)}
+                    demoMode={demoMode}
                   />
                 ))}
                 {/* View all trigger */}
@@ -473,38 +515,6 @@ export default function DashboardPage({
         <aside className="flex flex-col gap-4">
           {/* Digest */}
           <DigestPanel items={digestItems.slice(0, 2)} title={t('dashboard.digestTitle')} />
-
-          {/* Incomplete pipeline */}
-          {incompleteMeetings.length > 0 && (
-            <section className="surface-supporting rounded-2xl p-4 theme-pipeline">
-              <SectionHeader icon={AlertTriangle} title={t('dashboard.toCompleteTitle')} description={t('dashboard.toCompleteDesc')} />
-              <div className="mt-3 flex flex-col gap-2">
-                {incompleteMeetings.slice(0, 4).map((meeting) => (
-                  <button
-                    key={meeting.id}
-                    onClick={() => navigateTo('meeting', meeting.id)}
-                    className="rounded-xl border border-border-subtle bg-bg-surface px-3 py-2 text-left transition-premium hover:border-border-focus hover:bg-bg-hover"
-                  >
-                    <div className="truncate text-xs font-semibold text-text-primary">{meetingTitle(meeting)}</div>
-                    <div className="mt-0.5 text-[11px] text-text-muted">
-                      {!meeting.transcription ? t('dashboard.missingTranscription') : t('dashboard.missingInsights')}
-                    </div>
-                  </button>
-                ))}
-                {incompleteMeetings.length > 4 && (
-                  <button
-                    type="button"
-                    onClick={() => setMeetingListDialogOpen(true)}
-                    className="view-all-link py-1"
-                  >
-                    {lang === 'it' ? `+ ${incompleteMeetings.length - 4} altri` : `+ ${incompleteMeetings.length - 4} more`}
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
-            </section>
-          )}
-
         </aside>
       </section>
 
