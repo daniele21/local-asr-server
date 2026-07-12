@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from local_asr_server.app_services import AppServices
 from local_asr_server.analysis_templates import (
     DEFAULT_ANALYSIS_TYPE,
     DEFAULT_TEMPLATE_VERSION,
@@ -16,9 +17,11 @@ from local_asr_server.analysis_templates import (
     template_for_analysis_type,
 )
 from local_asr_server.jobs import JobStore
-from local_asr_server.schemas import AnalysisPipelineRequest, AnalysisRequest
+from local_asr_server.schemas import ANALYSIS_LLM_REQUEST_FIELDS, AnalysisPipelineRequest, AnalysisRequest
 from local_asr_server.services.analysis_service import AnalysisService
 from local_asr_server.settings import load_settings
+from local_asr_server.llm import DEFAULT_GEMINI_MODEL
+from local_asr_server.runtime.models import resolve_local_llm_model_path
 
 ANALYSIS_JOB_TYPE = "analysis"
 
@@ -26,8 +29,8 @@ ANALYSIS_JOB_TYPE = "analysis"
 class AnalysisJobManager:
     """Runs analysis workflows as persistent jobs backed by JobStore."""
 
-    def __init__(self, app_state: Any, store: JobStore) -> None:
-        self._app_state = app_state
+    def __init__(self, services: AppServices, store: JobStore) -> None:
+        self._services = services
         self._store = store
 
     def create(self, body: AnalysisRequest) -> dict[str, Any]:
@@ -36,9 +39,10 @@ class AnalysisJobManager:
         job_id = str(uuid.uuid4())
         run_id = str(uuid.uuid4())
         scope_type, scope_id = self._resolve_scope(body, run_id)
-        settings = load_settings()
-        provider = body.llm_provider or settings.get("llm_provider", "mock")
-        llm_options = self._llm_options(settings)
+        settings = AnalysisService.settings_with_request_overrides(load_settings(), body)
+        provider = settings.get("llm_provider", "mock")
+        effective_model = self._effective_model(provider, settings)
+        llm_options = self._llm_options(settings, provider=provider, model=effective_model)
         payload = self._request_payload(body)
         input_hash = self._input_hash(body, payload)
 
@@ -54,7 +58,7 @@ class AnalysisJobManager:
                 "input_hash": input_hash,
             },
         )
-        self._app_state.catalog_store.create_analysis_run(
+        self._services.catalog.create_analysis_run(
             {
                 "id": run_id,
                 "job_id": job_id,
@@ -67,7 +71,7 @@ class AnalysisJobManager:
                 "template_version": body.template_version,
                 "pipeline_run_id": body.pipeline_run_id,
                 "provider": provider,
-                "model": settings.get("local_llm_model") or "",
+                "model": effective_model,
                 "temperature": llm_options.get("temperature"),
                 "reasoning": llm_options.get("reasoning") or "auto",
                 "effective_reasoning": None,
@@ -101,12 +105,12 @@ class AnalysisJobManager:
             templates = [get_template(template_id) for template_id in pipeline.template_ids]
         jobs = []
         for template in templates:
+            llm_options = self._request_llm_options(body)
             request_body = AnalysisRequest(
                 transcription_id=body.transcription_id,
                 recording_id=body.recording_id,
                 text=body.text,
-                llm_provider=body.llm_provider,
-                gemini_api_key=body.gemini_api_key,
+                **llm_options,
                 analysis_type=template.analysis_type,
                 template_id=template.id,
                 template_version=template.version,
@@ -130,12 +134,12 @@ class AnalysisJobManager:
                 self._mark_cancelled(job_id, run_id)
                 return
             self._store.update(job_id, status="running", current_step="analysis", progress=10)
-            self._app_state.catalog_store.update_analysis_run(run_id, status="running")
-            result = AnalysisService(self._app_state).analyze(body)
+            self._services.catalog.update_analysis_run(run_id, status="running")
+            result = AnalysisService(self._services).analyze(body)
             if self._store.get(job_id) and self._store.get(job_id).get("cancel_requested"):
                 self._mark_cancelled(job_id, run_id)
                 return
-            self._app_state.catalog_store.update_analysis_run(
+            self._services.catalog.update_analysis_run(
                 run_id,
                 status="completed",
                 result=result,
@@ -154,7 +158,7 @@ class AnalysisJobManager:
             self._mark_failed(job_id, run_id, str(exc))
 
     def _mark_cancelled(self, job_id: str, run_id: str) -> None:
-        self._app_state.catalog_store.update_analysis_run(
+        self._services.catalog.update_analysis_run(
             run_id,
             status="cancelled",
             completed_at=time.time(),
@@ -163,7 +167,7 @@ class AnalysisJobManager:
 
     def _mark_failed(self, job_id: str, run_id: str, error: str) -> None:
         error = error[:2000]
-        self._app_state.catalog_store.update_analysis_run(
+        self._services.catalog.update_analysis_run(
             run_id,
             status="failed",
             error=error,
@@ -212,7 +216,7 @@ class AnalysisJobManager:
         if body.transcription_id or not body.recording_id:
             return body
         try:
-            transcription = self._app_state.transcription_store.find_for_recording(body.recording_id)
+            transcription = self._services.transcriptions.find_for_recording(body.recording_id)
         except Exception:
             transcription = None
         if not transcription:
@@ -222,7 +226,7 @@ class AnalysisJobManager:
     def _input_hash(self, body: AnalysisRequest, payload: dict[str, Any]) -> str:
         if body.transcription_id:
             try:
-                text = self._app_state.transcription_store.get(body.transcription_id).get("text", "")
+                text = self._services.transcriptions.get(body.transcription_id).get("text", "")
             except Exception:
                 text = body.transcription_id
         elif body.text:
@@ -233,14 +237,50 @@ class AnalysisJobManager:
             text = repr(payload)
         return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
-    def _llm_options(self, settings: dict[str, Any]) -> dict[str, Any]:
+    def _request_llm_options(self, body: AnalysisPipelineRequest) -> dict[str, Any]:
+        options: dict[str, Any] = {}
+        provided_fields = getattr(body, "model_fields_set", None)
+        if provided_fields is None:
+            provided_fields = getattr(body, "__fields_set__", None)
+        tracks_provided_fields = provided_fields is not None
+        provided_fields = provided_fields or set()
+        for field in ANALYSIS_LLM_REQUEST_FIELDS:
+            if tracks_provided_fields and field not in provided_fields:
+                continue
+            value = getattr(body, field, None)
+            if value is None:
+                if tracks_provided_fields:
+                    options[field] = None
+                continue
+            if isinstance(value, str) and not value.strip():
+                continue
+            options[field] = value
+        return options
+
+    def _effective_model(self, provider: str, settings: dict[str, Any]) -> str:
+        if provider == "gemini":
+            return settings.get("gemini_model") or DEFAULT_GEMINI_MODEL
+        if provider in {"nemotron_local", "voxtral_local"}:
+            return settings.get("local_llm_model") or ""
+        return ""
+
+    def _llm_options(self, settings: dict[str, Any], *, provider: str, model: str) -> dict[str, Any]:
+        model_path = resolve_local_llm_model_path(settings, model)
         return {
+            "provider": provider,
+            "model": model,
+            "mode": settings.get("local_llm_mode") or "auto",
+            "url": settings.get("local_llm_url") or "",
             "quality_preset": settings.get("local_llm_quality_preset") or "balanced",
             "temperature": settings.get("local_llm_temperature"),
             "reasoning": settings.get("local_llm_reasoning") or "auto",
             "show_thinking": False,
             "max_output_tokens": settings.get("local_llm_max_output_tokens"),
             "json_mode": settings.get("local_llm_json_mode", True),
+            "backend": settings.get("local_llm_backend") or "",
+            "model_path": model_path,
+            "mmproj_path": settings.get("local_llm_mmproj_path") or "",
+            "ctx_size": settings.get("local_llm_ctx_size"),
         }
 
     def _prompt_version(self, body: AnalysisRequest, provider: str) -> str:

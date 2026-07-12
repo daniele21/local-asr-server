@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 
 LOCAL_SERVICE_HOST = "127.0.0.1"
@@ -29,6 +29,10 @@ LocalLLMMode = Literal["auto", "external", "disabled"]
 LLMQualityPreset = Literal["precise", "balanced", "creative"]
 LLMReasoningPolicy = Literal["auto", "on", "off"]
 
+LOCAL_LLM_MODES = frozenset({"auto", "external", "disabled"})
+LLM_QUALITY_PRESETS = frozenset({"precise", "balanced", "creative"})
+LLM_REASONING_POLICIES = frozenset({"auto", "on", "off"})
+
 
 DEFAULT_LLM_QUALITY_PRESET: LLMQualityPreset = "balanced"
 DEFAULT_LLM_REASONING: LLMReasoningPolicy = "auto"
@@ -42,3 +46,13 @@ class AnalysisQualityDefaults:
 
 
 ANALYSIS_QUALITY_DEFAULTS = AnalysisQualityDefaults()
+
+
+def resolve_local_llm_model_path(settings: dict[str, Any], model: str | None = None) -> str:
+    """Resolve model-specific paths before the legacy global model path."""
+
+    selected_model = model or settings.get("local_llm_model") or ""
+    model_paths = settings.get("local_llm_model_paths") or {}
+    if not isinstance(model_paths, dict):
+        model_paths = {}
+    return model_paths.get(selected_model) or settings.get("local_llm_model_path") or ""

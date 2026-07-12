@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from local_asr_server.runtime.models import DEFAULT_LOCAL_LLM_URL
+from local_asr_server.runtime.models import DEFAULT_LOCAL_LLM_URL, resolve_local_llm_model_path
 from local_asr_server.runtime.llm_sidecar import LocalLLMSidecar
 from local_asr_server.settings import load_settings
 
@@ -40,11 +40,19 @@ class RuntimeServiceManager:
     def __init__(self, llm_sidecar: LocalLLMSidecar | None = None) -> None:
         self.llm_sidecar = llm_sidecar or LocalLLMSidecar()
 
-    def _llm_settings(self) -> dict[str, Any]:
+    def _llm_settings(self, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
         settings = load_settings()
+        if overrides:
+            settings = {
+                **settings,
+                **{
+                    key: value
+                    for key, value in overrides.items()
+                    if value is not None and not (isinstance(value, str) and not value.strip())
+                },
+            }
         model = settings.get("local_llm_model") or "nemotron-nano-4b-q8"
-        model_paths = settings.get("local_llm_model_paths") or {}
-        model_path = settings.get("local_llm_model_path") or model_paths.get(model) or ""
+        model_path = resolve_local_llm_model_path(settings, model)
         return {
             "mode": settings.get("local_llm_mode", "auto"),
             "model": model,
@@ -102,8 +110,11 @@ class RuntimeServiceManager:
             },
         ).public()
 
-    def ensure_llm_ready(self, *, capability: str = "text", reasoning: str | None = None) -> dict[str, Any]:
-        llm = self._llm_settings()
+    def ensure_llm_ready(
+        self, *, capability: str = "text", reasoning: str | None = None,
+        overrides: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        llm = self._llm_settings(overrides)
         mode = llm["mode"]
         if mode == "disabled":
             raise RuntimeError("local_llm_disabled")

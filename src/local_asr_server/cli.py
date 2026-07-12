@@ -213,8 +213,8 @@ def main() -> None:
         
         # Get model key from args, settings, or default
         llm_model = args.llm_model or settings.get("local_llm_model") or "nemotron-nano-4b-q8"
-        llm_model_paths = settings.get("local_llm_model_paths", {})
-        llm_model_path = args.llm_model_path or llm_model_paths.get(llm_model) or settings.get("local_llm_model_path") or ""
+        from local_asr_server.runtime.models import resolve_local_llm_model_path
+        llm_model_path = args.llm_model_path or resolve_local_llm_model_path(settings, llm_model)
         settings["local_llm_model"] = llm_model
         settings["local_llm_model_path"] = llm_model_path
         save_settings(settings)

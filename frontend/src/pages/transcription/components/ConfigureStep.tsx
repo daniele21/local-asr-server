@@ -4,7 +4,7 @@ import { Button } from '../../../components/ui/Button';
 import { Select } from '../../../components/ui/Select';
 import { Input } from '../../../components/ui/Input';
 import { Checkbox } from '../../../components/ui/Checkbox';
-import { MODELS, LANGUAGES, TASKS } from '../../../api/config';
+import { ASR_PROVIDERS, LANGUAGES, MODELS, SPEECHMATICS_DIARIZATION, SPEECHMATICS_MODELS, SPEECHMATICS_REGIONS, TASKS } from '../../../api/config';
 import { useTranslation } from '../../../i18n/i18n';
 
 interface ConfigureStepProps {
@@ -17,6 +17,14 @@ interface ConfigureStepProps {
   setTargetTask: (task: string) => void;
   targetModel: string;
   setTargetModel: (model: string) => void;
+  asrProvider: string;
+  setAsrProvider: (provider: string) => void;
+  speechmaticsRegion: string;
+  setSpeechmaticsRegion: (region: string) => void;
+  speechmaticsModel: string;
+  setSpeechmaticsModel: (model: string) => void;
+  speechmaticsDiarization: string;
+  setSpeechmaticsDiarization: (mode: string) => void;
   modelCacheStatus: string;
   temperature: string;
   setTemperature: (temp: string) => void;
@@ -40,6 +48,14 @@ export default function ConfigureStep({
   setTargetTask,
   targetModel,
   setTargetModel,
+  asrProvider,
+  setAsrProvider,
+  speechmaticsRegion,
+  setSpeechmaticsRegion,
+  speechmaticsModel,
+  setSpeechmaticsModel,
+  speechmaticsDiarization,
+  setSpeechmaticsDiarization,
   modelCacheStatus,
   temperature,
   setTemperature,
@@ -79,6 +95,12 @@ export default function ConfigureStep({
           </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Select label="Provider ASR" value={asrProvider} onChange={(e) => setAsrProvider(e.target.value)}>
+              {ASR_PROVIDERS.map((provider) => (
+                <option key={provider.value} value={provider.value}>{provider.label}</option>
+              ))}
+            </Select>
+
             <Select
               label={t('transcription.languageLabel')}
               value={targetLanguage}
@@ -91,64 +113,90 @@ export default function ConfigureStep({
               ))}
             </Select>
 
-            <Select
-              label={t('transcription.taskLabel')}
-              value={targetTask}
-              onChange={(e) => setTargetTask(e.target.value)}
-            >
-              {TASKS.map((tOpt) => (
-                <option key={tOpt.value} value={tOpt.value}>
-                  {tOpt.label}
-                </option>
-              ))}
-            </Select>
+            {asrProvider === 'local' && (
+              <>
+                <Select
+                  label={t('transcription.taskLabel')}
+                  value={targetTask}
+                  onChange={(e) => setTargetTask(e.target.value)}
+                >
+                  {TASKS.map((tOpt) => (
+                    <option key={tOpt.value} value={tOpt.value}>
+                      {tOpt.label}
+                    </option>
+                  ))}
+                </Select>
 
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="model-select" className="text-sm font-medium text-text-secondary flex justify-between">
-                <span>{t('transcription.modelLabel')}</span>
-                <span className="text-[10px] font-bold text-text-muted">{modelCacheStatus}</span>
-              </label>
-              <Select id="model-select" value={targetModel} onChange={(e) => setTargetModel(e.target.value)}>
-                {MODELS.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="model-select" className="text-sm font-medium text-text-secondary flex justify-between">
+                    <span>{t('transcription.modelLabel')}</span>
+                    <span className="text-[10px] font-bold text-text-muted">{modelCacheStatus}</span>
+                  </label>
+                  <Select id="model-select" value={targetModel} onChange={(e) => setTargetModel(e.target.value)}>
+                    {MODELS.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+
+                <Input
+                  label={t('transcription.temperatureLabel')}
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="1"
+                  placeholder="Auto"
+                  value={temperature}
+                  onChange={(e) => setTemperature(e.target.value)}
+                />
+              </>
+            )}
+          </div>
+
+          {asrProvider === 'speechmatics' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Select label="Speechmatics region" value={speechmaticsRegion} onChange={(e) => setSpeechmaticsRegion(e.target.value)}>
+                {SPEECHMATICS_REGIONS.map((region) => (
+                  <option key={region.value} value={region.value}>{region.label}</option>
+                ))}
+              </Select>
+              <Select label="Speechmatics model" value={speechmaticsModel} onChange={(e) => setSpeechmaticsModel(e.target.value)}>
+                {SPEECHMATICS_MODELS.map((model) => (
+                  <option key={model.value} value={model.value}>{model.label}</option>
+                ))}
+              </Select>
+              <Select label="Diarization" value={speechmaticsDiarization} onChange={(e) => setSpeechmaticsDiarization(e.target.value)}>
+                {SPEECHMATICS_DIARIZATION.map((mode) => (
+                  <option key={mode.value} value={mode.value}>{mode.label}</option>
                 ))}
               </Select>
             </div>
+          )}
 
-            <Input
-              label={t('transcription.temperatureLabel')}
-              type="number"
-              step="0.1"
-              min="0"
-              max="1"
-              placeholder="Auto"
-              value={temperature}
-              onChange={(e) => setTemperature(e.target.value)}
-            />
-          </div>
-
-          <div className="flex flex-col gap-3 mt-3">
-            <Checkbox
-              variant="toggle"
-              label={t('transcription.wordTimestampsLabel')}
-              checked={wordTimestamps}
-              onChange={(e) => setWordTimestamps(e.target.checked)}
-            />
-            <Checkbox
-              variant="toggle"
-              label={t('transcription.conditionLabel')}
-              checked={conditionOnPrevious}
-              onChange={(e) => setConditionOnPrevious(e.target.checked)}
-            />
-            <Checkbox
-              variant="toggle"
-              label={t('transcription.vadGuidedLabel')}
-              checked={vadGuided}
-              onChange={(e) => setVadGuided(e.target.checked)}
-            />
-          </div>
+          {asrProvider === 'local' && (
+            <div className="flex flex-col gap-3 mt-3">
+              <Checkbox
+                variant="toggle"
+                label={t('transcription.wordTimestampsLabel')}
+                checked={wordTimestamps}
+                onChange={(e) => setWordTimestamps(e.target.checked)}
+              />
+              <Checkbox
+                variant="toggle"
+                label={t('transcription.conditionLabel')}
+                checked={conditionOnPrevious}
+                onChange={(e) => setConditionOnPrevious(e.target.checked)}
+              />
+              <Checkbox
+                variant="toggle"
+                label={t('transcription.vadGuidedLabel')}
+                checked={vadGuided}
+                onChange={(e) => setVadGuided(e.target.checked)}
+              />
+            </div>
+          )}
         </Card>
 
         {/* Action column & audio track */}

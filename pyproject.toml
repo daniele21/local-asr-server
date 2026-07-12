@@ -35,6 +35,10 @@ app = [
 build = [
     "pyinstaller>=6.0",
 ]
+# Speechmatics Batch ASR — install with: uv pip install -e ".[speechmatics]"
+speechmatics = [
+    "speechmatics-batch>=0.5.0",
+]
 
 [project.scripts]
 local-asr = "local_asr_server.cli:main"

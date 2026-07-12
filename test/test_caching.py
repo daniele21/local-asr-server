@@ -31,10 +31,39 @@ class CachingTests(unittest.TestCase):
             generate_cache_key(**base, initial_prompt="contesto B"),
         )
 
+    def test_transcription_cache_key_includes_asr_provider_options(self) -> None:
+        base = {
+            "audio_hash": "same-audio",
+            "model": "standard",
+            "language": "it",
+            "task": "transcribe",
+            "word_timestamps": False,
+            "initial_prompt": None,
+            "temperature": 0.0,
+            "condition_on_previous_text": False,
+            "vad_guided": False,
+            "vad_post_filter": True,
+        }
+        local_key = generate_cache_key(**base, asr_provider="local", backend="mlx-whisper")
+        cloud_key = generate_cache_key(
+            **base,
+            asr_provider="speechmatics",
+            backend="speechmatics-batch",
+            provider_options={"region": "eu", "speechmatics_model": "standard", "speechmatics_diarization": "none"},
+        )
+        diarized_key = generate_cache_key(
+            **base,
+            asr_provider="speechmatics",
+            backend="speechmatics-batch",
+            provider_options={"region": "eu", "speechmatics_model": "standard", "speechmatics_diarization": "speaker"},
+        )
+        self.assertNotEqual(local_key, cloud_key)
+        self.assertNotEqual(cloud_key, diarized_key)
+
     def test_text_analysis_reuses_exact_result(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
-            app_state = SimpleNamespace(catalog_store=CatalogStore(Path(temp) / "catalog.db"))
-            service = AnalysisService(app_state)
+            services = SimpleNamespace(catalog=CatalogStore(Path(temp) / "catalog.db"))
+            service = AnalysisService(services)
             provider = Mock()
             provider.analyze.return_value = {"title": "Cached", "summary": "Result"}
             body = AnalysisRequest(text="Stesso testo", llm_provider="mock")

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ApiClient, Settings } from '../api/apiClient';
-import { MODELS, LANGUAGES, TASKS } from '../api/config';
+import { ASR_PROVIDERS, DEFAULTS, GEMINI_MODELS, LANGUAGES, LLM_PROVIDERS, MODELS, SPEECHMATICS_DIARIZATION, SPEECHMATICS_MODELS, SPEECHMATICS_REGIONS, TASKS } from '../api/config';
 import { useTranslation } from '../i18n/i18n';
 import { useToast } from '../context/ToastContext';
 import { Card } from '../components/ui/Card';
@@ -9,6 +9,8 @@ import { Select } from '../components/ui/Select';
 import { Checkbox } from '../components/ui/Checkbox';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
+import { asrConfigFromSettings, asrSettingsPatch } from '../features/config/asrConfig';
+import { llmConfigFromSettings, llmSettingsPatch } from '../features/config/llmConfig';
 
 export default function SettingsPage() {
   const { t } = useTranslation();
@@ -23,20 +25,30 @@ export default function SettingsPage() {
   const [defaultModel, setDefaultModel] = useState('');
   const [defaultLanguage, setDefaultLanguage] = useState('it');
   const [defaultTask, setDefaultTask] = useState('transcribe');
+  const [asrProvider, setAsrProvider] = useState(DEFAULTS.asrProvider);
+  const [speechmaticsApiKey, setSpeechmaticsApiKey] = useState('');
+  const [speechmaticsKeyConfigured, setSpeechmaticsKeyConfigured] = useState(false);
+  const [speechmaticsRegion, setSpeechmaticsRegion] = useState(DEFAULTS.speechmaticsRegion);
+  const [speechmaticsModel, setSpeechmaticsModel] = useState(DEFAULTS.speechmaticsModel);
+  const [speechmaticsDiarization, setSpeechmaticsDiarization] = useState(DEFAULTS.speechmaticsDiarization);
+  const [speechmaticsTimeout, setSpeechmaticsTimeout] = useState('900');
+  const [speechmaticsPollInterval, setSpeechmaticsPollInterval] = useState('5');
   const [defaultTemperature, setDefaultTemperature] = useState('');
   const [wordTimestamps, setWordTimestamps] = useState(false);
   const [conditionOnPrevious, setConditionOnPrevious] = useState(true);
-  const [llmProvider, setLlmProvider] = useState('mock');
+  const [llmProvider, setLlmProvider] = useState(DEFAULTS.llmProvider);
   const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [geminiModel, setGeminiModel] = useState(DEFAULTS.geminiModel);
+  const [customGeminiModel, setCustomGeminiModel] = useState('');
   const [localLlmUrl, setLocalLlmUrl] = useState('');
   const [localLlmMode, setLocalLlmMode] = useState<'auto' | 'external' | 'disabled'>('auto');
-  const [localLlmModel, setLocalLlmModel] = useState('nemotron-nano-4b-q8');
+  const [localLlmModel, setLocalLlmModel] = useState(DEFAULTS.localLlmModel);
   const [localLlmModelPath, setLocalLlmModelPath] = useState('');
-  const [localLlmQualityPreset, setLocalLlmQualityPreset] = useState<'precise' | 'balanced' | 'creative'>('balanced');
+  const [localLlmQualityPreset, setLocalLlmQualityPreset] = useState<'precise' | 'balanced' | 'creative'>(DEFAULTS.localLlmQualityPreset as 'precise' | 'balanced' | 'creative');
   const [localLlmTemperature, setLocalLlmTemperature] = useState('');
-  const [localLlmReasoning, setLocalLlmReasoning] = useState<'auto' | 'on' | 'off'>('auto');
+  const [localLlmReasoning, setLocalLlmReasoning] = useState<'auto' | 'on' | 'off'>(DEFAULTS.localLlmReasoning as 'auto' | 'on' | 'off');
   const [localLlmMaxOutputTokens, setLocalLlmMaxOutputTokens] = useState('');
-  const [localLlmJsonMode, setLocalLlmJsonMode] = useState(true);
+  const [localLlmJsonMode, setLocalLlmJsonMode] = useState(DEFAULTS.localLlmJsonMode);
   const [meetingAutoAnalysis, setMeetingAutoAnalysis] = useState(false);
   const [meetingDefaultPipeline, setMeetingDefaultPipeline] = useState('meeting_default');
   const [showAdvancedLlm, setShowAdvancedLlm] = useState(false);
@@ -56,37 +68,37 @@ export default function SettingsPage() {
     try {
       setLoading(true);
       const settings = await ApiClient.getSettings();
+      const asr = asrConfigFromSettings(settings);
+      const llm = llmConfigFromSettings(settings);
       setRecordingsDir(settings.recordings_dir || '');
       setTranscriptionsDir(settings.transcriptions_dir || '');
-      setDefaultModel(settings.default_model || '');
-      setDefaultLanguage(settings.default_language || 'it');
-      setDefaultTask(settings.default_task || 'transcribe');
-      setDefaultTemperature(
-        settings.default_temperature !== undefined && settings.default_temperature !== null
-          ? String(settings.default_temperature)
-          : ''
-      );
-      setWordTimestamps(settings.default_word_timestamps || false);
-      setConditionOnPrevious(settings.default_condition_on_previous ?? false);
-      setLlmProvider(settings.llm_provider || 'mock');
+      setDefaultModel(asr.model);
+      setDefaultLanguage(asr.language);
+      setDefaultTask(asr.task);
+      setAsrProvider(asr.provider);
+      setSpeechmaticsApiKey('');
+      setSpeechmaticsKeyConfigured(asr.speechmaticsKeyConfigured);
+      setSpeechmaticsRegion(asr.speechmaticsRegion);
+      setSpeechmaticsModel(asr.speechmaticsModel);
+      setSpeechmaticsDiarization(asr.speechmaticsDiarization);
+      setSpeechmaticsTimeout(asr.speechmaticsTimeout);
+      setSpeechmaticsPollInterval(asr.speechmaticsPollInterval);
+      setDefaultTemperature(asr.temperature);
+      setWordTimestamps(asr.wordTimestamps);
+      setConditionOnPrevious(asr.conditionOnPrevious);
+      setLlmProvider(llm.provider);
       setGeminiApiKey('');
-      setLocalLlmUrl(settings.local_llm_url || '');
-      setLocalLlmMode(settings.local_llm_mode || 'auto');
-      setLocalLlmModel(settings.local_llm_model || 'nemotron-nano-4b-q8');
-      setLocalLlmModelPath(settings.local_llm_model_path || '');
-      setLocalLlmQualityPreset(settings.local_llm_quality_preset || 'balanced');
-      setLocalLlmTemperature(
-        settings.local_llm_temperature !== undefined && settings.local_llm_temperature !== null
-          ? String(settings.local_llm_temperature)
-          : ''
-      );
-      setLocalLlmReasoning(settings.local_llm_reasoning || 'auto');
-      setLocalLlmMaxOutputTokens(
-        settings.local_llm_max_output_tokens !== undefined && settings.local_llm_max_output_tokens !== null
-          ? String(settings.local_llm_max_output_tokens)
-          : ''
-      );
-      setLocalLlmJsonMode(settings.local_llm_json_mode !== false);
+      setGeminiModel(llm.geminiModel);
+      setCustomGeminiModel(llm.customGeminiModel);
+      setLocalLlmUrl(llm.localUrl);
+      setLocalLlmMode(llm.localMode);
+      setLocalLlmModel(llm.localModel);
+      setLocalLlmModelPath(llm.localModelPath);
+      setLocalLlmQualityPreset(llm.qualityPreset);
+      setLocalLlmTemperature(llm.temperature);
+      setLocalLlmReasoning(llm.reasoning);
+      setLocalLlmMaxOutputTokens(llm.maxOutputTokens);
+      setLocalLlmJsonMode(llm.jsonMode);
       setMeetingAutoAnalysis(settings.meeting_auto_analysis || false);
       setMeetingDefaultPipeline(settings.meeting_default_pipeline || 'meeting_default');
       refreshLlmService();
@@ -165,26 +177,40 @@ export default function SettingsPage() {
       const payload: Partial<Settings> = {
         transcriptions_dir: transcriptionsDir.trim(),
         recordings_dir: recordingsDir.trim(),
-        default_model: defaultModel,
-        default_language: defaultLanguage,
-        default_task: defaultTask,
-        default_temperature: defaultTemperature === '' ? null : parseFloat(defaultTemperature),
-        default_word_timestamps: wordTimestamps,
-        default_condition_on_previous: conditionOnPrevious,
-        llm_provider: llmProvider,
-        local_llm_mode: localLlmMode,
-        local_llm_url: showAdvancedLlm ? localLlmUrl.trim() : undefined,
-        local_llm_model: localLlmModel,
-        local_llm_quality_preset: localLlmQualityPreset,
-        local_llm_temperature: localLlmTemperature === '' ? null : parseFloat(localLlmTemperature),
-        local_llm_reasoning: localLlmReasoning,
-        local_llm_max_output_tokens: localLlmMaxOutputTokens === '' ? null : parseInt(localLlmMaxOutputTokens, 10),
-        local_llm_json_mode: localLlmJsonMode,
-        local_llm_model_path: localLlmModelPath.trim(),
+        ...asrSettingsPatch({
+          provider: asrProvider,
+          model: defaultModel,
+          language: defaultLanguage,
+          task: defaultTask,
+          temperature: defaultTemperature,
+          wordTimestamps,
+          conditionOnPrevious,
+          speechmaticsRegion,
+          speechmaticsModel,
+          speechmaticsDiarization,
+          speechmaticsTimeout,
+          speechmaticsPollInterval,
+          speechmaticsKeyConfigured,
+        }),
+        ...llmSettingsPatch({
+          provider: llmProvider,
+          geminiModel,
+          customGeminiModel,
+          localMode: localLlmMode,
+          localUrl: localLlmUrl,
+          localModel: localLlmModel,
+          localModelPath: localLlmModelPath,
+          qualityPreset: localLlmQualityPreset,
+          temperature: localLlmTemperature,
+          reasoning: localLlmReasoning,
+          maxOutputTokens: localLlmMaxOutputTokens,
+          jsonMode: localLlmJsonMode,
+        }, showAdvancedLlm),
         meeting_auto_analysis: meetingAutoAnalysis,
         meeting_default_pipeline: meetingDefaultPipeline,
       };
       if (geminiApiKey.trim()) payload.gemini_api_key = geminiApiKey.trim();
+      if (speechmaticsApiKey.trim()) payload.speechmatics_api_key = speechmaticsApiKey.trim();
 
       await ApiClient.updateSettings(payload);
       showToast(t('settings.successSave'), 'success');
@@ -267,16 +293,30 @@ export default function SettingsPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Select
-              label={t('transcription.modelLabel')}
-              value={defaultModel}
-              onChange={(e) => setDefaultModel(e.target.value)}
+              label="Provider ASR"
+              value={asrProvider}
+              onChange={(e) => setAsrProvider(e.target.value)}
             >
-              {MODELS.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
+              {ASR_PROVIDERS.map((provider) => (
+                <option key={provider.value} value={provider.value}>
+                  {provider.label}
                 </option>
               ))}
             </Select>
+
+            {asrProvider === 'local' && (
+              <Select
+                label={t('transcription.modelLabel')}
+                value={defaultModel}
+                onChange={(e) => setDefaultModel(e.target.value)}
+              >
+                {MODELS.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </Select>
+            )}
 
             <Select
               label={t('transcription.languageLabel')}
@@ -290,44 +330,77 @@ export default function SettingsPage() {
               ))}
             </Select>
 
-            <Select
-              label={t('transcription.taskLabel')}
-              value={defaultTask}
-              onChange={(e) => setDefaultTask(e.target.value)}
-            >
-              {TASKS.map((tOpt) => (
-                <option key={tOpt.value} value={tOpt.value}>
-                  {tOpt.label}
-                </option>
-              ))}
-            </Select>
+            {asrProvider === 'local' && (
+              <>
+                <Select
+                  label={t('transcription.taskLabel')}
+                  value={defaultTask}
+                  onChange={(e) => setDefaultTask(e.target.value)}
+                >
+                  {TASKS.map((tOpt) => (
+                    <option key={tOpt.value} value={tOpt.value}>
+                      {tOpt.label}
+                    </option>
+                  ))}
+                </Select>
 
-            <Input
-              label={t('transcription.temperatureLabel')}
-              type="number"
-              step="0.1"
-              min="0"
-              max="1"
-              placeholder="Auto"
-              value={defaultTemperature}
-              onChange={(e) => setDefaultTemperature(e.target.value)}
-            />
+                <Input
+                  label={t('transcription.temperatureLabel')}
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="1"
+                  placeholder="Auto"
+                  value={defaultTemperature}
+                  onChange={(e) => setDefaultTemperature(e.target.value)}
+                />
+              </>
+            )}
           </div>
 
-          <div className="flex flex-col gap-3 mt-2">
-            <Checkbox
-              variant="toggle"
-              label={t('transcription.wordTimestampsLabel')}
-              checked={wordTimestamps}
-              onChange={(e) => setWordTimestamps(e.target.checked)}
-            />
-            <Checkbox
-              variant="toggle"
-              label={t('transcription.conditionLabel')}
-              checked={conditionOnPrevious}
-              onChange={(e) => setConditionOnPrevious(e.target.checked)}
-            />
-          </div>
+          {asrProvider === 'speechmatics' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-lg border border-border-subtle bg-bg-surface p-4">
+              <Select label="Speechmatics region" value={speechmaticsRegion} onChange={(e) => setSpeechmaticsRegion(e.target.value)}>
+                {SPEECHMATICS_REGIONS.map((region) => (
+                  <option key={region.value} value={region.value}>{region.label}</option>
+                ))}
+              </Select>
+              <Select label="Speechmatics model" value={speechmaticsModel} onChange={(e) => setSpeechmaticsModel(e.target.value)}>
+                {SPEECHMATICS_MODELS.map((model) => (
+                  <option key={model.value} value={model.value}>{model.label}</option>
+                ))}
+              </Select>
+              <Select label="Diarization" value={speechmaticsDiarization} onChange={(e) => setSpeechmaticsDiarization(e.target.value)}>
+                {SPEECHMATICS_DIARIZATION.map((mode) => (
+                  <option key={mode.value} value={mode.value}>{mode.label}</option>
+                ))}
+              </Select>
+              <Input
+                label={`API key${speechmaticsKeyConfigured ? ' configurata' : ''}`}
+                type="password"
+                value={speechmaticsApiKey}
+                onChange={(e) => setSpeechmaticsApiKey(e.target.value)}
+                placeholder={speechmaticsKeyConfigured ? 'Lascia vuoto per mantenere la chiave salvata' : 'Speechmatics API key'}
+              />
+            </div>
+          )}
+
+          {asrProvider === 'local' && (
+            <div className="flex flex-col gap-3 mt-2">
+              <Checkbox
+                variant="toggle"
+                label={t('transcription.wordTimestampsLabel')}
+                checked={wordTimestamps}
+                onChange={(e) => setWordTimestamps(e.target.checked)}
+              />
+              <Checkbox
+                variant="toggle"
+                label={t('transcription.conditionLabel')}
+                checked={conditionOnPrevious}
+                onChange={(e) => setConditionOnPrevious(e.target.checked)}
+              />
+            </div>
+          )}
         </Card>
 
         {/* AI Analysis settings */}
@@ -343,18 +416,30 @@ export default function SettingsPage() {
               onChange={(e) => {
                 const provider = e.target.value;
                 setLlmProvider(provider);
-                if (provider === 'nemotron_local') setLocalLlmModel('nemotron-nano-4b-q8');
+                if (provider === 'nemotron_local') setLocalLlmModel(DEFAULTS.localLlmModel);
                 if (provider === 'voxtral_local') setLocalLlmModel('voxtral-mini-3b');
               }}
             >
-              <option value="mock">{t('settings.providerMock')}</option>
-              <option value="gemini">{t('settings.providerGemini')}</option>
-              <option value="nemotron_local">{t('settings.providerNemotron')}</option>
-              <option value="voxtral_local">{t('settings.providerVoxtral')}</option>
+              {LLM_PROVIDERS.map((item) => (
+                <option key={item.value} value={item.value}>{t(item.settingsLabelKey)}</option>
+              ))}
             </Select>
 
             {llmProvider === 'gemini' && (
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-4">
+                <Select label="Modello Gemini" value={geminiModel} onChange={(e) => setGeminiModel(e.target.value)}>
+                  {GEMINI_MODELS.map((model) => (
+                    <option key={model.value} value={model.value}>{model.label}</option>
+                  ))}
+                </Select>
+                {geminiModel === 'custom' && (
+                  <Input
+                    label="Gemini model ID"
+                    value={customGeminiModel}
+                    onChange={(e) => setCustomGeminiModel(e.target.value)}
+                    placeholder="gemini-..."
+                  />
+                )}
                 <Input
                   label={t('settings.apiKeyLabel')}
                   type="password"

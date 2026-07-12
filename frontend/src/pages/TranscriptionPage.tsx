@@ -8,6 +8,7 @@ import ConfigureStep from './transcription/components/ConfigureStep';
 import ProcessingStep from './transcription/components/ProcessingStep';
 import ResultsStep from './transcription/components/ResultsStep';
 import { TourTranscriptionResult } from '../features/tour/TourTranscriptionResult';
+import { asrConfigFromSettings } from '../features/config/asrConfig';
 
 interface TranscriptionPageProps {
   detailPath: string | null;
@@ -104,6 +105,10 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
   const [targetLanguage, setTargetLanguage] = useState('');
   const [targetTask, setTargetTask] = useState('transcribe');
   const [targetModel, setTargetModel] = useState('');
+  const [asrProvider, setAsrProvider] = useState(DEFAULTS.asrProvider);
+  const [speechmaticsRegion, setSpeechmaticsRegion] = useState(DEFAULTS.speechmaticsRegion);
+  const [speechmaticsModel, setSpeechmaticsModel] = useState(DEFAULTS.speechmaticsModel);
+  const [speechmaticsDiarization, setSpeechmaticsDiarization] = useState(DEFAULTS.speechmaticsDiarization);
   const [temperature, setTemperature] = useState('');
   const [wordTimestamps, setWordTimestamps] = useState(false);
   const [conditionOnPrevious, setConditionOnPrevious] = useState(DEFAULTS.conditionOnPreviousText);
@@ -155,12 +160,17 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
       setProjectsList(projs);
       
       const settings = sourceData.settings || {};
+      const asr = asrConfigFromSettings(settings);
       setRecordingsFolder(settings.recordings_dir || '-');
-      if (!targetModel) setTargetModel(settings.default_model || '');
-      if (!targetLanguage) setTargetLanguage(settings.default_language || 'it');
-      if (!targetTask) setTargetTask(settings.default_task || 'transcribe');
-      setWordTimestamps(settings.default_word_timestamps || false);
-      setConditionOnPrevious(settings.default_condition_on_previous ?? DEFAULTS.conditionOnPreviousText);
+      if (!targetModel) setTargetModel(asr.model);
+      if (!targetLanguage) setTargetLanguage(asr.language);
+      if (!targetTask) setTargetTask(asr.task);
+      setAsrProvider(asr.provider);
+      setSpeechmaticsRegion(asr.speechmaticsRegion);
+      setSpeechmaticsModel(asr.speechmaticsModel);
+      setSpeechmaticsDiarization(asr.speechmaticsDiarization);
+      setWordTimestamps(asr.wordTimestamps);
+      setConditionOnPrevious(asr.conditionOnPrevious);
     } catch {}
   };
 
@@ -173,6 +183,10 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
   useEffect(() => {
     if (demoMode) return;
     const checkCache = async () => {
+      if (asrProvider !== 'local') {
+        setModelCacheStatus('Cloud ASR');
+        return;
+      }
       if (!targetModel) return;
       setModelCacheStatus('Verifica...');
       try {
@@ -187,7 +201,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
       }
     };
     checkCache();
-  }, [demoMode, targetModel]);
+  }, [asrProvider, demoMode, targetModel]);
 
   // Handle URL Preselections (e.g. from Recording detail action)
   useEffect(() => {
@@ -350,7 +364,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
         setProgressStatus(lang === 'it' ? 'Trascrizione tracce della registrazione...' : 'Transcribing recording tracks...');
         setProgressPercent(10);
         const job = await ApiClient.createTranscriptionJob(selectedRecordingId, {
-          model: targetModel || undefined,
+          model: asrProvider === 'local' ? targetModel || undefined : undefined,
           language: targetLanguage || undefined,
           task: targetTask,
           response_format: 'verbose_json',
@@ -358,6 +372,10 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
           condition_on_previous_text: conditionOnPrevious,
           temperature: temperature ? Number(temperature) : null,
           vad_guided: vadGuided,
+          asr_provider: asrProvider,
+          speechmatics_region: speechmaticsRegion,
+          speechmatics_model: speechmaticsModel,
+          speechmatics_diarization: speechmaticsDiarization,
         });
         let currentJob = job;
         while (!['completed', 'failed', 'cancelled'].includes(currentJob.status)) {
@@ -384,7 +402,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
       const formData = new FormData();
       formData.append('file', selectedFile);
       formData.append('stream', 'true');
-      if (targetModel) formData.append('model', targetModel);
+      if (asrProvider === 'local' && targetModel) formData.append('model', targetModel);
       // Send an empty value explicitly so the server can preserve the
       // automatic language-detection choice (including for Nemotron).
       formData.append('language', targetLanguage);
@@ -393,6 +411,10 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
       formData.append('word_timestamps', String(wordTimestamps));
       formData.append('condition_on_previous_text', String(conditionOnPrevious));
       formData.append('vad_guided', String(vadGuided));
+      formData.append('asr_provider', asrProvider);
+      formData.append('speechmatics_region', speechmaticsRegion);
+      formData.append('speechmatics_model', speechmaticsModel);
+      formData.append('speechmatics_diarization', speechmaticsDiarization);
       if (temperature) formData.append('temperature', temperature);
 
       const duration = audioDuration || audioRef.current?.duration || 0;
@@ -441,7 +463,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
                 }
               }
             } else if (event.type === 'error') {
-              throw new Error(event.message);
+              throw new Error(event.message || event.error);
             } else if (event.type === 'completed') {
               setProgressPercent(100);
               setTranscriptionResult(event.data);
@@ -560,6 +582,14 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
           setTargetTask={setTargetTask}
           targetModel={targetModel}
           setTargetModel={setTargetModel}
+          asrProvider={asrProvider}
+          setAsrProvider={setAsrProvider}
+          speechmaticsRegion={speechmaticsRegion}
+          setSpeechmaticsRegion={setSpeechmaticsRegion}
+          speechmaticsModel={speechmaticsModel}
+          setSpeechmaticsModel={setSpeechmaticsModel}
+          speechmaticsDiarization={speechmaticsDiarization}
+          setSpeechmaticsDiarization={setSpeechmaticsDiarization}
           modelCacheStatus={modelCacheStatus}
           temperature={temperature}
           setTemperature={setTemperature}

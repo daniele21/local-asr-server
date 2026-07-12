@@ -5,6 +5,7 @@ import hmac
 import secrets
 import tempfile
 from pathlib import Path
+from typing import cast
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from local_asr_server.analysis_jobs import AnalysisJobManager
+from local_asr_server.app_services import AppServices, install_compatibility_aliases
 from local_asr_server.app_identity import get_app_version
 from local_asr_server.audio_router import AudioRouter
 from local_asr_server.catalog import CatalogStore
@@ -29,7 +31,7 @@ from local_asr_server.routers.helpers import (
     _parse_allowed_origins,
     _extract_bearer_token,
 )
-from local_asr_server.routers import recordings, transcriptions, system
+from local_asr_server.routers import analysis, demo, recordings, settings, transcriptions, system, workspace
 
 PUBLIC_AUTH_PATHS = {
     "/",
@@ -66,9 +68,9 @@ def create_app(
         )
 
     app.state.default_model = default_model
-    app.state.capture_manager = NativeCaptureManager()
-    app.state.runtime_services = RuntimeServiceManager()
-    app.state.transcription_service = TranscriptionService()
+    capture_manager = NativeCaptureManager()
+    runtime_services = RuntimeServiceManager()
+    transcription_service = TranscriptionService()
     app.state.auth_enabled = _env_bool("LOCAL_ASR_REQUIRE_AUTH", True) if enable_auth is None else enable_auth
     app.state.api_token = os.environ.get("LOCAL_ASR_API_TOKEN") or secrets.token_urlsafe(32)
     
@@ -84,23 +86,35 @@ def create_app(
     else:
         catalog_path = CatalogStore.default_db_path()
         
-    app.state.catalog_store = CatalogStore(catalog_path)
+    catalog_store = CatalogStore(catalog_path)
     app.state.prompts_file = catalog_path.parent / "prompts.json" if temp_root in catalog_path.resolve().parents else None
-    app.state.job_store = JobStore(catalog_path)
-    interrupted_jobs = app.state.job_store.interrupt_incomplete()
-    app.state.catalog_store.interrupt_analysis_runs_for_jobs(
+    job_store = JobStore(catalog_path)
+    interrupted_jobs = job_store.interrupt_incomplete()
+    catalog_store.interrupt_analysis_runs_for_jobs(
         [job["id"] for job in interrupted_jobs if job["type"] == "analysis"],
         reason="Interrupted by server restart",
     )
-    app.state.transcription_jobs = TranscriptionJobManager(app.state.job_store)
-    app.state.analysis_jobs = AnalysisJobManager(app.state, app.state.job_store)
-    app.state.recording_store = RecordingStore(
+    transcription_jobs = TranscriptionJobManager(job_store)
+    recording_store = RecordingStore(
         recordings_dir or Path("~/Recordings/local-asr"),
         use_settings_dir=recordings_dir is None,
-        catalog=app.state.catalog_store,
+        catalog=catalog_store,
     )
     from local_asr_server.transcriptions import TranscriptionStore
-    app.state.transcription_store = TranscriptionStore(catalog=app.state.catalog_store)
+    transcription_store = TranscriptionStore(catalog=catalog_store)
+    services = AppServices(
+        capture=capture_manager,
+        runtime=runtime_services,
+        transcription=transcription_service,
+        catalog=catalog_store,
+        jobs=job_store,
+        transcription_jobs=transcription_jobs,
+        analysis_jobs=cast(AnalysisJobManager, None),
+        recordings=recording_store,
+        transcriptions=transcription_store,
+    )
+    services.analysis_jobs = AnalysisJobManager(services, job_store)
+    install_compatibility_aliases(app, services)
 
     # Clean up any orphan aggregate devices from previous runs/crashes
     AudioRouter.cleanup_orphans()
@@ -140,9 +154,13 @@ def create_app(
         )
 
     # Include routers
+    app.include_router(analysis.router)
+    app.include_router(demo.router)
     app.include_router(recordings.router)
+    app.include_router(settings.router)
     app.include_router(transcriptions.router)
     app.include_router(system.router)
+    app.include_router(workspace.router)
 
     # Mount root static files at the end so it doesn't override API routes
     app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="root_static")

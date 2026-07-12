@@ -128,7 +128,7 @@ The project is driven by a few principles:
 * View each meeting as a workspace.
 * Listen to the original audio.
 * Read the transcript.
-* Run fast or deep analysis pipelines.
+* Run fast or deep analysis pipelines, choosing provider, model, and local LLM setup before each run.
 * Inspect analysis history and job status.
 
 ### Today Workspace
@@ -255,6 +255,10 @@ This keeps the meeting application focused on product experience, while `local-l
 
   * [`local-llm-server`](https://github.com/daniele21/local-llm-server);
   * Nemotron Nano 4B / `nemotron-nano-4b` or compatible local model.
+* Optional cloud providers:
+
+  * Speechmatics Batch ASR, installed with the `speechmatics` extra;
+  * Gemini API key, only when cloud analysis is selected.
 
 ### Install with setup script
 
@@ -288,6 +292,21 @@ pip install -e ".[app]"
 ```bash
 pip install -e ".[build]"
 ```
+
+### Optional Speechmatics ASR dependency
+
+Speechmatics is opt-in. Install the optional extra only when you want cloud ASR:
+
+```bash
+pip install -e ".[speechmatics]"
+```
+
+Then open Settings, choose `Speechmatics Batch` as ASR provider, configure the
+API key, region, model and diarization mode. The default ASR provider remains
+local MLX.
+
+In development, ClosedRoom also reads a local `.env` file from the project root.
+Use `SPEECHMATICS_API_KEY=...` or configure the same key from Settings.
 
 ---
 
@@ -508,6 +527,8 @@ Open Questions
 Project Update
 ```
 
+When launching analysis from a meeting, ClosedRoom opens a setup dialog for the run. The saved settings remain defaults, but the request can override provider, Gemini model, local model, model path, quality preset, temperature, reasoning mode, max output tokens, and JSON mode.
+
 ### Integration with `local-llm-server`
 
 ClosedRoom can run `local-llm-server` as a managed local sidecar.
@@ -547,14 +568,28 @@ ClosedRoom can be configured through:
 | Setting                    | Description                                                 |
 | -------------------------- | ----------------------------------------------------------- |
 | `recordings_dir`           | Directory where local meeting recordings are stored         |
+| `asr_provider`             | `local` or `speechmatics`; defaults to local                |
 | `default_model`            | Default ASR model                                           |
 | `default_language`         | Default transcription language                              |
+| `default_temperature`      | Non-negative numeric ASR temperature                        |
+| `speechmatics_region`      | Speechmatics Batch region (`eu` or `us`)                    |
+| `speechmatics_model`       | Speechmatics model (`standard` or `enhanced`)               |
+| `speechmatics_diarization` | Speechmatics diarization mode (`none` or `speaker`)         |
 | `llm_provider`             | Analysis provider                                           |
+| `gemini_model`             | Gemini model used when `llm_provider=gemini`                |
 | `local_llm_mode`           | `auto`, `external`, or `disabled`                           |
 | `local_llm_url`            | External local LLM server URL                               |
 | `local_llm_model`          | Model used for local analysis                               |
+| `local_llm_quality_preset` | Default quality preset for local analysis                   |
+| `local_llm_reasoning`      | Default local reasoning mode (`auto`, `on`, or `off`)       |
 | `meeting_auto_analysis`    | Whether to start analysis automatically after transcription |
 | `meeting_default_pipeline` | Default meeting analysis pipeline                           |
+
+Settings updates are validated before the atomic write. Unknown providers,
+runtime modes, analysis pipelines and transcription tasks, as well as invalid
+timeouts or temperatures, are rejected without changing `settings.json`. When
+`local_llm_model_paths` contains the selected model, that model-specific path
+takes precedence over the legacy `local_llm_model_path` value.
 
 ### Local LLM Modes
 
@@ -570,6 +605,8 @@ ClosedRoom can be configured through:
 export LOCAL_ASR_RECORDINGS_DIR="$HOME/Recordings/local-asr"
 export LOCAL_ASR_REQUIRE_AUTH=1
 export LOCAL_LLM_URL="http://127.0.0.1:1235"
+export SPEECHMATICS_API_KEY="..."
+export GEMINI_API_KEY="..."
 ```
 
 ---
@@ -640,6 +677,12 @@ curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/analysis/templates
 curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/analysis/pipelines
 ```
 
+### ASR Providers
+
+```bash
+curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/asr/providers
+```
+
 ### Run Meeting Analysis Pipeline
 
 ```bash
@@ -648,7 +691,11 @@ curl -b /tmp/closedroom.cookies \
   -H "Content-Type: application/json" \
   -d '{
     "recording_id": "<recording-id>",
-    "pipeline_id": "meeting_default"
+    "pipeline_id": "meeting_default",
+    "llm_provider": "nemotron_local",
+    "local_llm_model": "nemotron-nano-4b-q8",
+    "local_llm_quality_preset": "balanced",
+    "local_llm_reasoning": "auto"
   }'
 ```
 
@@ -667,6 +714,21 @@ By default:
 * analysis runs locally through `local-llm-server`;
 * prompts and results are stored in the local catalog;
 * no cloud LLM API is required for the default local workflow.
+
+### Optional Cloud Providers
+
+Speechmatics and Gemini are explicit opt-in providers:
+
+* selecting Speechmatics sends the selected audio track to Speechmatics Batch
+  ASR for transcription;
+* selecting Gemini sends transcript text and prompt content to Gemini for
+  analysis;
+* `GET /v1/settings` never returns saved cloud API keys, only configured-state
+  booleans;
+* transcript metadata stores provider/backend/model options but not API keys,
+  raw request headers or authorization values;
+* Speechmatics transcripts report the effective Speechmatics model from
+  provider settings/options, never the local Whisper default model.
 
 ### Local Authentication
 

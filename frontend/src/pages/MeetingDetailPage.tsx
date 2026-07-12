@@ -23,7 +23,8 @@ import { renderMarkdown } from '../utils/markdown';
 import { formatBytes, formatProjectDate, getDurationSeconds } from '../utils/formatters';
 import { useTranslation } from '../i18n/i18n';
 import { getDemoMeetings } from '../features/demo/demoData';
-import { TranscriptionModelModal } from '../components/ui/TranscriptionModelModal';
+import { TranscriptionModelModal, TranscriptionModelSelection } from '../components/ui/TranscriptionModelModal';
+import { AnalysisSetupModal, AnalysisSetupSelection } from '../components/ui/AnalysisSetupModal';
 import { Sheet, SheetContent, SheetHeader, SheetBody } from '../components/ui/Sheet';
 import { cn } from '../utils/cn';
 
@@ -57,6 +58,8 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
   const [error, setError] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [modelModalOpen, setModelModalOpen] = useState(false);
+  const [analysisSetupOpen, setAnalysisSetupOpen] = useState(false);
+  const [analysisPipelineTarget, setAnalysisPipelineTarget] = useState('meeting_default');
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [showAudioPlayer, setShowAudioPlayer] = useState(false);
   const [transcriptExpanded, setTranscriptExpanded] = useState(false);
@@ -108,12 +111,18 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
     return () => window.clearInterval(timer);
   }, [meeting?.id, activeJobs.length, meeting?.analysis_runs.length]);
 
-  const startTranscription = async (model?: string) => {
+  const startTranscription = async (selection: TranscriptionModelSelection = {}) => {
     if (!meeting) return;
     if (demoMode) return;
     setBusyAction('transcription');
     try {
-      await ApiClient.createTranscriptionJob(meeting.id, { model: model || undefined });
+      await ApiClient.createTranscriptionJob(meeting.id, {
+        model: selection.model || undefined,
+        asr_provider: selection.asr_provider,
+        speechmatics_region: selection.speechmatics_region,
+        speechmatics_model: selection.speechmatics_model,
+        speechmatics_diarization: selection.speechmatics_diarization,
+      });
       window.setTimeout(load, 700);
     } catch (err: any) {
       setError(err?.message || t('meeting.errorTranscriptionNotStarted'));
@@ -122,7 +131,12 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
     }
   };
 
-  const startPipeline = async (pipelineId = 'meeting_default') => {
+  const openAnalysisSetup = (pipelineId = 'meeting_default') => {
+    setAnalysisPipelineTarget(pipelineId);
+    setAnalysisSetupOpen(true);
+  };
+
+  const startPipeline = async (pipelineId = 'meeting_default', selection: AnalysisSetupSelection = {}) => {
     if (!meeting) return;
     if (demoMode) return;
     setBusyAction(pipelineId);
@@ -131,6 +145,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
         recording_id: meeting.id,
         transcription_id: meeting.transcription?.id,
         pipeline_id: pipelineId,
+        ...selection,
       });
       window.setTimeout(load, 700);
     } catch (err: any) {
@@ -342,7 +357,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
             <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
               <Button
                 size="sm"
-                onClick={() => startPipeline('meeting_default')}
+                onClick={() => openAnalysisSetup('meeting_default')}
                 isLoading={busyAction === 'meeting_default'}
                 className="flex-1 sm:flex-none shadow-cta animate-pulse"
               >
@@ -352,7 +367,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               <Button
                 size="sm"
                 variant="secondary"
-                onClick={() => startPipeline('meeting_deep')}
+                onClick={() => openAnalysisSetup('meeting_deep')}
                 isLoading={busyAction === 'meeting_deep'}
                 className="flex-1 sm:flex-none"
               >
@@ -398,7 +413,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                           disabled={demoMode || isBusy}
                           onClick={() => {
                             setMoreOpen(false);
-                            startPipeline('meeting_default');
+                            openAnalysisSetup('meeting_default');
                           }}
                           className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50"
                         >
@@ -410,7 +425,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                           disabled={demoMode || isBusy}
                           onClick={() => {
                             setMoreOpen(false);
-                            startPipeline('meeting_deep');
+                            openAnalysisSetup('meeting_deep');
                           }}
                           className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50"
                         >
@@ -463,7 +478,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                     <Button
                       size="sm"
                       variant="secondary"
-                      onClick={() => startPipeline('meeting_default')}
+                      onClick={() => openAnalysisSetup('meeting_default')}
                       className="mt-4"
                     >
                       {lang === 'it' ? 'Avvia analisi ora' : 'Start analysis now'}
@@ -568,7 +583,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                   disabled={!canAnalyze || isBusy}
                   onClick={() => {
                     setDetailsOpen(false);
-                    startPipeline('meeting_default');
+                    openAnalysisSetup('meeting_default');
                   }}
                   className="w-full justify-start text-left text-xs"
                 >
@@ -581,7 +596,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                   disabled={!canAnalyze || isBusy}
                   onClick={() => {
                     setDetailsOpen(false);
-                    startPipeline('meeting_deep');
+                    openAnalysisSetup('meeting_deep');
                   }}
                   className="w-full justify-start text-left text-xs"
                 >
@@ -640,11 +655,20 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
 
       <TranscriptionModelModal
         isOpen={modelModalOpen}
-        onConfirm={(model) => {
+        onConfirm={(selection) => {
           setModelModalOpen(false);
-          startTranscription(model);
+          startTranscription(selection);
         }}
         onCancel={() => setModelModalOpen(false)}
+        demoMode={demoMode}
+      />
+      <AnalysisSetupModal
+        isOpen={analysisSetupOpen}
+        onConfirm={(selection) => {
+          setAnalysisSetupOpen(false);
+          startPipeline(analysisPipelineTarget, selection);
+        }}
+        onCancel={() => setAnalysisSetupOpen(false)}
         demoMode={demoMode}
       />
     </div>

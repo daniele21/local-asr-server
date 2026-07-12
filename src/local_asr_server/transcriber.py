@@ -29,6 +29,7 @@ from local_asr_server.asr_models import (
     is_nemotron_model,
     resolve_nemotron_language,
 )
+from local_asr_server.asr_provider import public_asr_metadata
 
 logger = logging.getLogger("uvicorn.error")
 CACHE_DIR = get_cache_dir()
@@ -174,6 +175,9 @@ def generate_cache_key(
     condition_on_previous_text: str | bool,
     vad_guided: str | bool = VAD_GUIDED_DEFAULT,
     vad_post_filter: str | bool = VAD_POST_FILTER_DEFAULT,
+    asr_provider: str = "local",
+    backend: str | None = None,
+    provider_options: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Generate a unique SHA-256 cache key based on the audio hash and run parameters."""
     params = {
@@ -188,6 +192,9 @@ def generate_cache_key(
         "condition_on_previous_text": str_to_bool(condition_on_previous_text),
         "vad_guided": str_to_bool(vad_guided, VAD_GUIDED_DEFAULT),
         "vad_post_filter": str_to_bool(vad_post_filter, VAD_POST_FILTER_DEFAULT),
+        "asr_provider": asr_provider or "local",
+        "backend": backend or "",
+        "provider_options": provider_options or {},
     }
     return hashlib.sha256(
         json.dumps(params, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -577,6 +584,9 @@ async def transcribe_stream_generator(
     started_at: float,
     vad_guided: str | bool = VAD_GUIDED_DEFAULT,
     vad_post_filter: str | bool = VAD_POST_FILTER_DEFAULT,
+    asr_provider: str = "local",
+    backend: str | None = None,
+    provider_options: Optional[Dict[str, Any]] = None,
 ) -> Generator[str, None, None]:
     """
     Stream transcription updates using NDJSON. Starts a background worker thread
@@ -727,17 +737,23 @@ async def transcribe_stream_generator(
     # Success payload formulation
     elapsed = time.perf_counter() - started_at
     logger.info(f"[Transcriber] Total processing time (streaming): {elapsed:.2f} seconds")
+    asr_metadata = public_asr_metadata(asr_provider, model, provider_options or {})
+    if backend:
+        asr_metadata["backend"] = backend
     
     payload = {
         "text": transcribe_result.get("text", ""),
         "language": transcribe_result.get("language", language),
         "segments": transcribe_result.get("segments", []),
         "metadata": transcribe_result.get("metadata", {}),
-        "model": model,
-        "backend": get_asr_backend(model),
+        "model": asr_metadata["model"],
+        "backend": asr_metadata["backend"],
+        "asr_provider": asr_metadata["asr_provider"],
+        "provider_options": asr_metadata["provider_options"],
         "recording_id": recording_id or "",
         "stats": {
             "time_total_seconds": elapsed,
+            **asr_metadata,
         },
     }
     payload = _clean_nan_values(payload)

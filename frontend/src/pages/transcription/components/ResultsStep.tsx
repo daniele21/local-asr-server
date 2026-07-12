@@ -3,7 +3,8 @@ import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
 import { ApiClient, Transcription, TranscriptionSegment } from '../../../api/apiClient';
 import { useTranslation } from '../../../i18n/i18n';
-import { formatTime, estimateTokenCount } from '../../../utils/formatters';
+import { formatTime } from '../../../utils/formatters';
+import { countTranscriptWords, getTranscriptionAsrMetadata } from '../../../utils/transcriptionMetadata';
 import { renderMarkdown } from '../../../utils/markdown';
 import { useToast } from '../../../context/ToastContext';
 import { ProjectPromptModal } from '../../../components/ui/ProjectPromptModal';
@@ -153,7 +154,8 @@ export default function ResultsStep({
     return '';
   };
 
-
+  const asrMetadata = getTranscriptionAsrMetadata(transcriptionResult);
+  const wordCount = countTranscriptWords(transcriptionResult.text);
 
   return (
     <div className="flex flex-col gap-5 animate-in fade-in duration-150">
@@ -210,7 +212,15 @@ export default function ResultsStep({
       </div>
 
       {/* Stats grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <Card className="flex flex-col py-3 px-4">
+          <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider mb-1">
+            {t('transcription.statProvider')}
+          </span>
+          <strong className="text-sm font-semibold text-text-primary truncate" title={asrMetadata.backend || asrMetadata.provider}>
+            {asrMetadata.providerLabel}
+          </strong>
+        </Card>
         <Card className="flex flex-col py-3 px-4">
           <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider mb-1">
             {t('transcription.statTime')}
@@ -226,23 +236,26 @@ export default function ResultsStep({
             {t('transcription.statLanguage')}
           </span>
           <strong className="text-sm font-semibold text-text-primary uppercase">
-            {transcriptionResult.language}
+            {transcriptionResult.language || 'N/A'}
           </strong>
         </Card>
         <Card className="flex flex-col py-3 px-4">
           <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider mb-1">
             {t('transcription.statModel')}
           </span>
-          <strong className="text-sm font-semibold text-text-primary truncate">
-            {transcriptionResult.model ? transcriptionResult.model.split('/').pop() : 'Default'}
+          <strong
+            className="text-sm font-semibold text-text-primary truncate"
+            title={asrMetadata.model || asrMetadata.modelLabel}
+          >
+            {asrMetadata.modelLabel}
           </strong>
         </Card>
         <Card className="flex flex-col py-3 px-4">
           <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider mb-1">
-            {t('transcription.statTokens') || 'Token stimati'}
+            {t('transcription.statWords')}
           </span>
           <strong className="text-sm font-semibold text-text-primary">
-            {estimateTokenCount(transcriptionResult.text)}
+            {wordCount}
           </strong>
         </Card>
       </div>

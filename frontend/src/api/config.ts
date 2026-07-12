@@ -10,6 +10,53 @@ export const LOCAL_LLM_MODELS = [
   { value: 'custom', label: 'File .gguf personalizzato...' },
 ];
 
+export const LLM_PROVIDERS = [
+  { value: 'mock', labelKey: 'analysis.providerMock', settingsLabelKey: 'settings.providerMock' },
+  { value: 'gemini', labelKey: 'analysis.providerGemini', settingsLabelKey: 'settings.providerGemini' },
+  { value: 'nemotron_local', labelKey: 'analysis.providerNemotron', settingsLabelKey: 'settings.providerNemotron' },
+  { value: 'voxtral_local', labelKey: 'analysis.providerVoxtral', settingsLabelKey: 'settings.providerVoxtral' },
+];
+
+export const LOCAL_LLM_QUALITY_PRESETS = [
+  { value: 'precise', labelKey: 'settings.localLlmQualityPrecise' },
+  { value: 'balanced', labelKey: 'settings.localLlmQualityBalanced' },
+  { value: 'creative', labelKey: 'settings.localLlmQualityCreative' },
+];
+
+export const LOCAL_LLM_REASONING_OPTIONS = [
+  { value: 'auto', labelKey: 'settings.localLlmReasoningAuto' },
+  { value: 'on', labelKey: 'settings.localLlmReasoningOn' },
+  { value: 'off', labelKey: 'settings.localLlmReasoningOff' },
+];
+
+export const ASR_PROVIDERS = [
+  { value: 'local', label: 'Locale MLX', cloud: false },
+  { value: 'speechmatics', label: 'Speechmatics Batch', cloud: true },
+];
+
+export const SPEECHMATICS_MODELS = [
+  { value: 'standard', label: 'Standard' },
+  { value: 'enhanced', label: 'Enhanced' },
+];
+
+export const SPEECHMATICS_REGIONS = [
+  { value: 'eu', label: 'EU' },
+  { value: 'us', label: 'US' },
+];
+
+export const SPEECHMATICS_DIARIZATION = [
+  { value: 'none', label: 'Disattivata' },
+  { value: 'speaker', label: 'Speaker diarization' },
+];
+
+export const GEMINI_MODELS = [
+  { value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
+  { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview' },
+  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+  { value: 'custom', label: 'Custom' },
+];
+
 export const LANGUAGES = [
   { value: 'it', label: 'Italiano' },
   { value: 'en', label: 'Inglese' },
@@ -38,6 +85,16 @@ export const DEFAULTS = {
   wordTimestamps: false,
   conditionOnPreviousText: false,
   vadGuided: false,
+  asrProvider: 'local',
+  speechmaticsModel: 'standard',
+  speechmaticsRegion: 'eu',
+  speechmaticsDiarization: 'none',
+  llmProvider: 'mock',
+  geminiModel: 'gemini-3.5-flash',
+  localLlmModel: 'nemotron-nano-4b-q8',
+  localLlmQualityPreset: 'balanced',
+  localLlmReasoning: 'auto',
+  localLlmJsonMode: true,
   theme: 'dark' as 'dark' | 'light',
 };
 

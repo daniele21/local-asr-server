@@ -18,6 +18,15 @@ from local_asr_server.runtime.models import (
     DEFAULT_LLM_QUALITY_PRESET,
     DEFAULT_LLM_REASONING,
 )
+from local_asr_server.asr_provider import (
+    ASR_PROVIDER_LOCAL,
+    DEFAULT_SPEECHMATICS_DIARIZATION,
+    DEFAULT_SPEECHMATICS_MODEL,
+    DEFAULT_SPEECHMATICS_REGION,
+)
+
+
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
 
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
@@ -25,7 +34,15 @@ from local_asr_server.runtime.models import (
 DEFAULT_SETTINGS: dict[str, any] = {
     "transcriptions_dir": str(Path(f"~/Transcriptions/{APP_NAME}").expanduser()),
     "recordings_dir": str(Path(f"~/Recordings/{APP_NAME}").expanduser()),
+    "asr_provider": ASR_PROVIDER_LOCAL,
+    "speechmatics_api_key": "",
+    "speechmatics_region": DEFAULT_SPEECHMATICS_REGION,
+    "speechmatics_model": DEFAULT_SPEECHMATICS_MODEL,
+    "speechmatics_diarization": DEFAULT_SPEECHMATICS_DIARIZATION,
+    "speechmatics_timeout_seconds": 900,
+    "speechmatics_poll_interval_seconds": 5,
     "gemini_api_key": "",
+    "gemini_model": DEFAULT_GEMINI_MODEL,
     "llm_provider": "mock",
     "default_model": "",
     "default_language": "it",

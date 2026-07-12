@@ -8,10 +8,12 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from local_asr_server.llm import LLMService
+from local_asr_server.app_services import AppServices
+from local_asr_server.llm import DEFAULT_GEMINI_MODEL, LLMService
+from local_asr_server.env import get_env_var
 from local_asr_server.runtime.llm_sidecar import LocalLLMSidecarError
-from local_asr_server.runtime.models import ANALYSIS_QUALITY_DEFAULTS
-from local_asr_server.schemas import AnalysisRequest
+from local_asr_server.runtime.models import ANALYSIS_QUALITY_DEFAULTS, resolve_local_llm_model_path
+from local_asr_server.schemas import ANALYSIS_SETTING_OVERRIDE_FIELDS, AnalysisRequest
 from local_asr_server.settings import load_settings
 
 logger = logging.getLogger("uvicorn.error")
@@ -21,13 +23,14 @@ ANALYSIS_CACHE_VERSION = "analysis-v1"
 class AnalysisService:
     """Application service that owns analysis workflow decisions."""
 
-    def __init__(self, app_state: Any) -> None:
-        self.app_state = app_state
+    def __init__(self, services: AppServices) -> None:
+        self.services = services
 
     def analyze(self, body: AnalysisRequest) -> dict[str, Any]:
-        settings = load_settings()
-        provider_name = body.llm_provider or settings.get("llm_provider", "mock")
-        api_key = body.gemini_api_key or settings.get("gemini_api_key", "")
+        settings = self.settings_with_request_overrides(load_settings(), body)
+        provider_name = settings.get("llm_provider", "mock")
+        api_key = body.gemini_api_key or settings.get("gemini_api_key", "") or get_env_var("GEMINI_API_KEY")
+        gemini_model = settings.get("gemini_model") or DEFAULT_GEMINI_MODEL
         local_llm_url = None
         local_llm_model = None
         temperature = self._resolve_temperature(settings)
@@ -35,9 +38,10 @@ class AnalysisService:
         if provider_name in {"nemotron_local", "voxtral_local"}:
             capability = "audio" if provider_name == "voxtral_local" and body.recording_id else "text"
             try:
-                runtime_options = self.app_state.runtime_services.ensure_llm_ready(
+                runtime_options = self.services.runtime.ensure_llm_ready(
                     capability=capability,
                     reasoning=settings.get("local_llm_reasoning") or "auto",
+                    overrides=settings,
                 )
                 local_llm_url = runtime_options.get("base_url")
                 local_llm_model = runtime_options.get("model")
@@ -46,7 +50,8 @@ class AnalysisService:
             except RuntimeError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        provider = LLMService.get_provider(provider_name, api_key, local_llm_url, local_llm_model)
+        effective_model = gemini_model if provider_name == "gemini" else local_llm_model
+        provider = LLMService.get_provider(provider_name, api_key, local_llm_url, local_llm_model, gemini_model)
 
         if provider_name == "voxtral_local" and body.recording_id:
             return self._analyze_audio(
@@ -54,9 +59,34 @@ class AnalysisService:
                 model=local_llm_model, settings=settings,
             )
         return self._analyze_text(
-            body, provider, provider_name=provider_name, model=local_llm_model,
+            body, provider, provider_name=provider_name, model=effective_model,
             settings=settings, api_key=api_key, temperature=temperature,
         )
+
+    @staticmethod
+    def request_setting_overrides(body: Any) -> dict[str, Any]:
+        overrides: dict[str, Any] = {}
+        provided_fields = getattr(body, "model_fields_set", None)
+        if provided_fields is None:
+            provided_fields = getattr(body, "__fields_set__", None)
+        tracks_provided_fields = provided_fields is not None
+        provided_fields = provided_fields or set()
+        for field in ANALYSIS_SETTING_OVERRIDE_FIELDS:
+            if tracks_provided_fields and field not in provided_fields:
+                continue
+            value = getattr(body, field, None)
+            if value is None:
+                if tracks_provided_fields:
+                    overrides[field] = None
+                continue
+            if isinstance(value, str) and not value.strip():
+                continue
+            overrides[field] = value
+        return overrides
+
+    @classmethod
+    def settings_with_request_overrides(cls, settings: dict[str, Any], body: Any) -> dict[str, Any]:
+        return {**settings, **cls.request_setting_overrides(body)}
 
     def _resolve_temperature(self, settings: dict[str, Any]) -> float:
         configured = settings.get("local_llm_temperature")
@@ -73,7 +103,7 @@ class AnalysisService:
         model: str | None, settings: dict[str, Any],
     ) -> dict[str, Any]:
         try:
-            audio_path = self.app_state.recording_store.audio_path(body.recording_id)
+            audio_path = self.services.recordings.audio_path(body.recording_id)
             if not hasattr(provider, "analyze_audio"):
                 raise ValueError("Il provider selezionato non supporta l'analisi audio.")
             cache_key = self._cache_key(
@@ -89,12 +119,12 @@ class AnalysisService:
                     question=body.question,
                 )
                 result = self._normalize_result(result)
-                self.app_state.catalog_store.save_analysis_cache(cache_key, result)
+                self.services.catalog.save_analysis_cache(cache_key, result)
             else:
                 result = self._normalize_result(result)
             if body.transcription_id:
                 try:
-                    self.app_state.transcription_store.save_analysis(body.transcription_id, result)
+                    self.services.transcriptions.save_analysis(body.transcription_id, result)
                 except Exception as exc:
                     logger.error("Errore nel salvataggio dell'analisi audio: %s", exc)
             return result
@@ -109,13 +139,13 @@ class AnalysisService:
         text_to_analyze = ""
         if body.transcription_id:
             try:
-                trans = self.app_state.transcription_store.get(body.transcription_id)
+                trans = self.services.transcriptions.get(body.transcription_id)
                 text_to_analyze = trans.get("text", "")
             except Exception as exc:
                 raise HTTPException(status_code=404, detail="Trascrizione non trovata.") from exc
         elif body.recording_id:
             try:
-                trans = self.app_state.transcription_store.find_for_recording(body.recording_id)
+                trans = self.services.transcriptions.find_for_recording(body.recording_id)
                 if not trans:
                     raise LookupError("Trascrizione non trovata.")
                 text_to_analyze = trans.get("text", "")
@@ -139,17 +169,17 @@ class AnalysisService:
             if result is None:
                 result = provider.analyze(text_to_analyze, prompt=body.prompt, temperature=temperature)
                 result = self._normalize_result(result)
-                self.app_state.catalog_store.save_analysis_cache(cache_key, result)
+                self.services.catalog.save_analysis_cache(cache_key, result)
             else:
                 result = self._normalize_result(result)
             if body.transcription_id:
-                self.app_state.transcription_store.save_analysis(body.transcription_id, result)
+                self.services.transcriptions.save_analysis(body.transcription_id, result)
             return result
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     def _get_cached_analysis(self, cache_key: str) -> dict[str, Any] | None:
-        result = self.app_state.catalog_store.get_analysis_cache(cache_key)
+        result = self.services.catalog.get_analysis_cache(cache_key)
         if result is not None:
             logger.info("[Analysis Cache] Hit for key %s", cache_key[:12])
         return result
@@ -176,13 +206,14 @@ class AnalysisService:
         provider_options = {
             "provider": provider_name,
             "model": model or settings.get("local_llm_model") or "",
+            "gemini_model": model if provider_name == "gemini" else "",
             "temperature": temperature,
             "quality_preset": settings.get("local_llm_quality_preset") or "balanced",
             "reasoning": settings.get("local_llm_reasoning") or "auto",
             "max_output_tokens": settings.get("local_llm_max_output_tokens"),
             "json_mode": settings.get("local_llm_json_mode", True),
             "backend": settings.get("local_llm_backend") or "",
-            "model_path": settings.get("local_llm_model_path") or "",
+            "model_path": resolve_local_llm_model_path(settings),
             "mmproj_path": settings.get("local_llm_mmproj_path") or "",
             "ctx_size": settings.get("local_llm_ctx_size"),
         }

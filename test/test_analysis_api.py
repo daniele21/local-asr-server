@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 from pathlib import Path
 import tempfile
+import os
 
 from local_asr_server.server import create_app
 from local_asr_server.llm import LLMService, MockProvider, NemotronLocalProvider, VoxtralLocalProvider
@@ -48,13 +49,29 @@ class AnalysisApiTests(unittest.TestCase):
         self.assertIn("key_points", data)
         self.assertIn("action_items", data)
 
-    @patch("local_asr_server.routers.system.load_settings")
+    @patch("local_asr_server.services.settings_service.load_settings")
     def test_settings_does_not_return_gemini_secret(self, mock_load) -> None:
-        mock_load.return_value = {"gemini_api_key": "secret-value", "llm_provider": "gemini"}
+        mock_load.return_value = {
+            "gemini_api_key": "secret-value",
+            "speechmatics_api_key": "speech-secret",
+            "llm_provider": "gemini",
+        }
         response = self.client.get("/v1/settings")
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("gemini_api_key", response.json())
+        self.assertNotIn("speechmatics_api_key", response.json())
         self.assertTrue(response.json()["gemini_api_key_configured"])
+        self.assertTrue(response.json()["speechmatics_api_key_configured"])
+
+    @patch("local_asr_server.services.settings_service.load_settings")
+    def test_settings_detects_speechmatics_key_from_env_case_insensitive(self, mock_load) -> None:
+        mock_load.return_value = {"gemini_api_key": "", "speechmatics_api_key": "", "llm_provider": "mock"}
+        with patch.dict(os.environ, {"SPeeCHMATICS_API_KEY": "from-env"}, clear=False):
+            response = self.client.get("/v1/settings")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["speechmatics_api_key_configured"])
+        self.assertNotIn("speechmatics_api_key", data)
 
     @patch("local_asr_server.routers.system.load_settings")
     @patch("local_asr_server.llm.urllib.request.urlopen")
@@ -74,12 +91,91 @@ class AnalysisApiTests(unittest.TestCase):
             json={
                 "text": "Hello Gemini",
                 "llm_provider": "gemini",
-                "gemini_api_key": "test_key"
+                "gemini_api_key": "test_key",
+                "gemini_model": "gemini-3.5-flash",
             }
         )
         self.assertEqual(response.status_code, 200)
+        requested_url = mock_urlopen.call_args[0][0].full_url
+        self.assertIn("/gemini-3.5-flash:generateContent", requested_url)
         data = response.json()
         self.assertEqual(data["title"], "Gemini Title")
+
+    @patch("local_asr_server.analysis_jobs.AnalysisJobManager._run", return_value=None)
+    @patch("local_asr_server.analysis_jobs.load_settings")
+    def test_analysis_job_records_local_llm_overrides(self, mock_load, _mock_run) -> None:
+        mock_load.return_value = {
+            "llm_provider": "mock",
+            "local_llm_model": "nemotron-nano-4b-q8",
+            "local_llm_quality_preset": "balanced",
+            "local_llm_temperature": 0.6,
+            "local_llm_reasoning": "auto",
+            "local_llm_json_mode": True,
+        }
+
+        response = self.client.post(
+            "/v1/analysis-jobs",
+            json={
+                "text": "Run with explicit local setup",
+                "llm_provider": "nemotron_local",
+                "local_llm_model": "voxtral-mini-3b",
+                "local_llm_model_path": "/tmp/voxtral-mini-3b.gguf",
+                "local_llm_quality_preset": "precise",
+                "local_llm_temperature": 0.2,
+                "local_llm_reasoning": "off",
+                "local_llm_max_output_tokens": 4096,
+                "local_llm_json_mode": False,
+            },
+        )
+
+        self.assertEqual(response.status_code, 202)
+        run = self.client.get(f"/v1/analysis-runs/{response.json()['analysis_run_id']}").json()
+        self.assertEqual(run["provider"], "nemotron_local")
+        self.assertEqual(run["model"], "voxtral-mini-3b")
+        self.assertEqual(run["temperature"], 0.2)
+        self.assertEqual(run["reasoning"], "off")
+        self.assertEqual(run["max_output_tokens"], 4096)
+        self.assertFalse(run["json_mode"])
+        self.assertEqual(run["llm_options"]["quality_preset"], "precise")
+        self.assertEqual(run["llm_options"]["model_path"], "/tmp/voxtral-mini-3b.gguf")
+
+    @patch("local_asr_server.analysis_jobs.AnalysisJobManager._run", return_value=None)
+    @patch("local_asr_server.analysis_jobs.load_settings")
+    def test_analysis_pipeline_carries_local_llm_overrides_to_jobs(self, mock_load, _mock_run) -> None:
+        mock_load.return_value = {
+            "llm_provider": "mock",
+            "local_llm_model": "nemotron-nano-4b-q8",
+            "local_llm_quality_preset": "balanced",
+            "local_llm_temperature": 0.6,
+            "local_llm_reasoning": "auto",
+            "local_llm_json_mode": True,
+        }
+
+        response = self.client.post(
+            "/v1/analysis-pipelines",
+            json={
+                "text": "Pipeline with explicit local setup",
+                "pipeline_id": "meeting_default",
+                "llm_provider": "nemotron_local",
+                "local_llm_model": "voxtral-mini-3b",
+                "local_llm_quality_preset": "creative",
+                "local_llm_temperature": None,
+                "local_llm_reasoning": "on",
+                "local_llm_max_output_tokens": 2048,
+                "local_llm_json_mode": False,
+            },
+        )
+
+        self.assertEqual(response.status_code, 202)
+        first_job = response.json()["jobs"][0]
+        run = self.client.get(f"/v1/analysis-runs/{first_job['analysis_run_id']}").json()
+        self.assertEqual(run["provider"], "nemotron_local")
+        self.assertEqual(run["model"], "voxtral-mini-3b")
+        self.assertIsNone(run["temperature"])
+        self.assertEqual(run["reasoning"], "on")
+        self.assertEqual(run["llm_options"]["quality_preset"], "creative")
+        self.assertEqual(run["llm_options"]["max_output_tokens"], 2048)
+        self.assertFalse(run["llm_options"]["json_mode"])
 
     @patch("local_llm_server.client.LocalLLMClient")
     def test_nemotron_local_provider_called(self, mock_client_cls) -> None:

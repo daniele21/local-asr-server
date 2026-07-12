@@ -6,11 +6,28 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Select } from '../components/ui/Select';
 import { Input } from '../components/ui/Input';
+import { Checkbox } from '../components/ui/Checkbox';
 import { TaskProcessingLoader } from '../components/workspace/TaskProcessingLoader';
+import {
+  DEFAULTS,
+  GEMINI_MODELS,
+  LLM_PROVIDERS,
+  LOCAL_LLM_MODELS,
+  LOCAL_LLM_QUALITY_PRESETS,
+  LOCAL_LLM_REASONING_OPTIONS,
+} from '../api/config';
 
 import { renderMarkdown } from '../utils/markdown';
 import { estimateTokenCount } from '../utils/formatters';
 import { TourAnalysisResult } from '../features/tour/TourAnalysisResult';
+import {
+  llmAnalysisPayload,
+  llmConfigFromSettings,
+  llmSettingsPatch,
+  type LlmConfigForm,
+  type LocalLlmQualityPreset,
+  type LocalLlmReasoning,
+} from '../features/config/llmConfig';
 
 interface AnalysisPageProps {
   detailId: string | null;
@@ -42,14 +59,21 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMo
   const [isDragOver, setIsDragOver] = useState(false);
 
   // Settings & Provider State
-  const [provider, setProvider] = useState('mock');
+  const [provider, setProvider] = useState(DEFAULTS.llmProvider);
   const [apiKey, setApiKey] = useState('');
+  const [geminiModel, setGeminiModel] = useState(DEFAULTS.geminiModel);
+  const [customGeminiModel, setCustomGeminiModel] = useState('');
   const [audioTask, setAudioTask] = useState('analysis');
   const [question, setQuestion] = useState('');
   const [promptType, setPromptType] = useState('meeting_brief');
   const [customPrompt, setCustomPrompt] = useState('');
-  const [localLlmModel, setLocalLlmModel] = useState('nemotron-nano-4b-q8');
+  const [localLlmModel, setLocalLlmModel] = useState(DEFAULTS.localLlmModel);
   const [localLlmModelPath, setLocalLlmModelPath] = useState('');
+  const [localLlmQualityPreset, setLocalLlmQualityPreset] = useState<LocalLlmQualityPreset>(DEFAULTS.localLlmQualityPreset as LocalLlmQualityPreset);
+  const [localLlmTemperature, setLocalLlmTemperature] = useState('');
+  const [localLlmReasoning, setLocalLlmReasoning] = useState<LocalLlmReasoning>(DEFAULTS.localLlmReasoning as LocalLlmReasoning);
+  const [localLlmMaxOutputTokens, setLocalLlmMaxOutputTokens] = useState('');
+  const [localLlmJsonMode, setLocalLlmJsonMode] = useState(DEFAULTS.localLlmJsonMode);
   const [llmService, setLlmService] = useState<any>(null);
 
   const [templates, setTemplates] = useState<AnalysisTemplate[]>([]);
@@ -77,16 +101,39 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMo
   const loadSettings = async () => {
     try {
       const settings = await ApiClient.getSettings();
-      setProvider(settings.llm_provider || 'mock');
+      const config = llmConfigFromSettings(settings);
+      setProvider(config.provider);
       setApiKey('');
-      setLocalLlmModel(settings.local_llm_model || 'nemotron-nano-4b-q8');
-      setLocalLlmModelPath(settings.local_llm_model_path || '');
+      setGeminiModel(config.geminiModel);
+      setCustomGeminiModel(config.customGeminiModel);
+      setLocalLlmModel(config.localModel);
+      setLocalLlmModelPath(config.localModelPath);
+      setLocalLlmQualityPreset(config.qualityPreset);
+      setLocalLlmTemperature(config.temperature);
+      setLocalLlmReasoning(config.reasoning);
+      setLocalLlmMaxOutputTokens(config.maxOutputTokens);
+      setLocalLlmJsonMode(config.jsonMode);
       try {
         const service = await ApiClient.getLlmService();
         setLlmService(service);
       } catch {}
     } catch {}
   };
+
+  const currentLlmConfig = (): LlmConfigForm => ({
+    provider,
+    geminiModel,
+    customGeminiModel,
+    localMode: 'auto',
+    localUrl: '',
+    localModel: localLlmModel,
+    localModelPath: localLlmModelPath,
+    qualityPreset: localLlmQualityPreset,
+    temperature: localLlmTemperature,
+    reasoning: localLlmReasoning,
+    maxOutputTokens: localLlmMaxOutputTokens,
+    jsonMode: localLlmJsonMode,
+  });
 
   useEffect(() => {
     if (demoMode) return;
@@ -139,10 +186,7 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMo
     setAnalysisResult(null);
 
     try {
-      let payload: any = {
-        llm_provider: provider,
-        gemini_api_key: apiKey.trim(),
-      };
+      const payload: any = llmAnalysisPayload(currentLlmConfig(), apiKey);
 
       if (provider === 'voxtral_local') {
         payload.audio_task = audioTask;
@@ -228,9 +272,7 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMo
 
       // Update provider settings in background
       await ApiClient.updateSettings({
-        llm_provider: provider,
-        local_llm_model: localLlmModel,
-        local_llm_model_path: localLlmModelPath.trim(),
+        ...llmSettingsPatch(currentLlmConfig(), false),
         ...(apiKey.trim() ? { gemini_api_key: apiKey.trim() } : {}),
       });
 
@@ -426,59 +468,124 @@ export default function AnalysisPage({ detailId, navigateTo: _navigateTo, demoMo
 
             <div className="flex flex-col gap-4">
               <Select label="Provider LLM" value={provider} onChange={(e) => setProvider(e.target.value)}>
-                <option value="mock">{t('analysis.providerMock')}</option>
-                <option value="gemini">{t('analysis.providerGemini')}</option>
-                <option value="nemotron_local">{t('analysis.providerNemotron')}</option>
-                <option value="voxtral_local">{t('analysis.providerVoxtral')}</option>
+                {LLM_PROVIDERS.map((item) => (
+                  <option key={item.value} value={item.value}>{t(item.labelKey)}</option>
+                ))}
               </Select>
 
               {(provider === 'nemotron_local' || provider === 'voxtral_local') && (
-                <div className="flex flex-col gap-2 p-3.5 rounded-xl border border-border-subtle bg-bg-surface text-xs text-text-secondary">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold">{t('settings.localLlmActiveModel')}:</span>
-                    <span className="font-mono text-text-primary">
-                      {llmService?.loaded_model || t('common.notAvailable')}
-                    </span>
+                <div className="flex flex-col gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Select label={t('settings.localLlmActiveModel')} value={localLlmModel} onChange={(e) => setLocalLlmModel(e.target.value)}>
+                      {LOCAL_LLM_MODELS.map((model) => (
+                        <option key={model.value} value={model.value}>{model.label}</option>
+                      ))}
+                    </Select>
+                  <Select label={t('settings.localLlmQuality')} value={localLlmQualityPreset} onChange={(e) => setLocalLlmQualityPreset(e.target.value as LocalLlmQualityPreset)}>
+                      {LOCAL_LLM_QUALITY_PRESETS.map((item) => (
+                        <option key={item.value} value={item.value}>{t(item.labelKey)}</option>
+                      ))}
+                    </Select>
+                    <Input
+                      label={t('settings.localLlmTemperature')}
+                      type="number"
+                      step="0.05"
+                      min="0"
+                      max="2"
+                      value={localLlmTemperature}
+                      onChange={(e) => setLocalLlmTemperature(e.target.value)}
+                      placeholder={lang === 'it' ? 'Default del preset' : 'Preset default'}
+                    />
+                  <Select label={t('settings.localLlmReasoning')} value={localLlmReasoning} onChange={(e) => setLocalLlmReasoning(e.target.value as LocalLlmReasoning)}>
+                      {LOCAL_LLM_REASONING_OPTIONS.map((item) => (
+                        <option key={item.value} value={item.value}>{t(item.labelKey)}</option>
+                      ))}
+                    </Select>
+                    <Input
+                      label={t('settings.localLlmMaxTokens')}
+                      type="number"
+                      min="1"
+                      value={localLlmMaxOutputTokens}
+                      onChange={(e) => setLocalLlmMaxOutputTokens(e.target.value)}
+                      placeholder={lang === 'it' ? 'Nessun limite specifico' : 'No specific limit'}
+                    />
+                    <div className="flex items-end pb-2">
+                      <Checkbox
+                        variant="toggle"
+                        label={t('settings.localLlmJsonMode')}
+                        checked={localLlmJsonMode}
+                        onChange={(e) => setLocalLlmJsonMode(e.target.checked)}
+                      />
+                    </div>
                   </div>
-                  {llmService?.loaded_model_id && (
+                  <Input
+                    label={lang === 'it' ? 'Percorso modello .gguf' : 'Model .gguf path'}
+                    value={localLlmModelPath}
+                    onChange={(e) => setLocalLlmModelPath(e.target.value)}
+                    placeholder={lang === 'it' ? 'Lascia vuoto per usare il path salvato' : 'Leave blank to use saved path'}
+                  />
+                  <div className="flex flex-col gap-2 p-3.5 rounded-xl border border-border-subtle bg-bg-surface text-xs text-text-secondary">
                     <div className="flex items-center justify-between">
-                      <span className="opacity-75">Model ID:</span>
-                      <span className="font-mono text-text-primary">{llmService.loaded_model_id}</span>
-                    </div>
-                  )}
-                  {llmService?.loaded_model_backend && (
-                    <div className="flex items-center justify-between">
-                      <span className="opacity-75">Backend:</span>
-                      <span className="font-mono text-text-primary">{llmService.loaded_model_backend}</span>
-                    </div>
-                  )}
-                  {llmService?.url && (
-                    <div className="flex flex-col gap-1 mt-1 pt-1.5 border-t border-border-subtle/50">
-                      <span className="font-semibold">{t('settings.localLlmWebUi')}:</span>
-                      <a
-                        href={llmService.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-accent hover:underline font-mono"
-                      >
-                        {llmService.url} ↗
-                      </a>
-                      <span className="text-[10px] text-text-muted italic mt-0.5">
-                        💡 {t('settings.localLlmChangeModelNote')}
+                      <span className="font-semibold">{t('settings.localLlmActiveModel')}:</span>
+                      <span className="font-mono text-text-primary">
+                        {llmService?.loaded_model || t('common.notAvailable')}
                       </span>
                     </div>
-                  )}
+                    {llmService?.loaded_model_id && (
+                      <div className="flex items-center justify-between">
+                        <span className="opacity-75">Model ID:</span>
+                        <span className="font-mono text-text-primary">{llmService.loaded_model_id}</span>
+                      </div>
+                    )}
+                    {llmService?.loaded_model_backend && (
+                      <div className="flex items-center justify-between">
+                        <span className="opacity-75">Backend:</span>
+                        <span className="font-mono text-text-primary">{llmService.loaded_model_backend}</span>
+                      </div>
+                    )}
+                    {llmService?.url && (
+                      <div className="flex flex-col gap-1 mt-1 pt-1.5 border-t border-border-subtle/50">
+                        <span className="font-semibold">{t('settings.localLlmWebUi')}:</span>
+                        <a
+                          href={llmService.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-accent hover:underline font-mono"
+                        >
+                          {llmService.url} ↗
+                        </a>
+                        <span className="text-[10px] text-text-muted italic mt-0.5">
+                          {t('settings.localLlmChangeModelNote')}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
               {provider === 'gemini' && (
-                <Input
-                  label={t('settings.apiKeyLabel')}
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="AIzaSy..."
-                />
+                <div className="flex flex-col gap-3">
+                  <Select label="Modello Gemini" value={geminiModel} onChange={(e) => setGeminiModel(e.target.value)}>
+                    {GEMINI_MODELS.map((model) => (
+                      <option key={model.value} value={model.value}>{model.label}</option>
+                    ))}
+                  </Select>
+                  {geminiModel === 'custom' && (
+                    <Input
+                      label="Gemini model ID"
+                      value={customGeminiModel}
+                      onChange={(e) => setCustomGeminiModel(e.target.value)}
+                      placeholder="gemini-..."
+                    />
+                  )}
+                  <Input
+                    label={t('settings.apiKeyLabel')}
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="AIzaSy..."
+                  />
+                </div>
               )}
 
               {provider === 'voxtral_local' && (

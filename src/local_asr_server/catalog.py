@@ -116,6 +116,9 @@ class CatalogStore:
                 analysis TEXT,
                 merged_sources TEXT,
                 source_tracks TEXT,
+                asr_provider TEXT,
+                backend TEXT,
+                provider_options TEXT,
                 hidden INTEGER DEFAULT 0,
                 merged_into TEXT,
                 file_name TEXT
@@ -181,6 +184,9 @@ class CatalogStore:
         self._ensure_column(conn, "recordings", "quality_report", "TEXT")
         self._ensure_column(conn, "recordings", "warnings", "TEXT")
         self._ensure_column(conn, "transcriptions", "source_tracks", "TEXT")
+        self._ensure_column(conn, "transcriptions", "asr_provider", "TEXT")
+        self._ensure_column(conn, "transcriptions", "backend", "TEXT")
+        self._ensure_column(conn, "transcriptions", "provider_options", "TEXT")
         self._ensure_column(conn, "analysis_runs", "analysis_type", "TEXT NOT NULL DEFAULT 'meeting_brief'")
         self._ensure_column(conn, "analysis_runs", "template_id", "TEXT")
         self._ensure_column(conn, "analysis_runs", "template_version", "TEXT")
@@ -267,8 +273,9 @@ class CatalogStore:
                 """
                 INSERT INTO transcriptions (
                     id, timestamp, audio_filename, recording_id, model, language, text,
-                    segments, stats, analysis, merged_sources, source_tracks, hidden, merged_into, file_name
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    segments, stats, analysis, merged_sources, source_tracks,
+                    asr_provider, backend, provider_options, hidden, merged_into, file_name
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     timestamp = excluded.timestamp,
                     audio_filename = excluded.audio_filename,
@@ -281,6 +288,9 @@ class CatalogStore:
                     analysis = excluded.analysis,
                     merged_sources = excluded.merged_sources,
                     source_tracks = excluded.source_tracks,
+                    asr_provider = excluded.asr_provider,
+                    backend = excluded.backend,
+                    provider_options = excluded.provider_options,
                     hidden = excluded.hidden,
                     merged_into = excluded.merged_into,
                     file_name = excluded.file_name
@@ -298,6 +308,9 @@ class CatalogStore:
                     _json_dump(data.get("analysis")) if data.get("analysis") is not None else None,
                     _json_dump(data.get("merged_sources")) if data.get("merged_sources") is not None else None,
                     _json_dump(data.get("source_tracks")) if data.get("source_tracks") is not None else None,
+                    data.get("asr_provider") or data.get("stats", {}).get("asr_provider"),
+                    data.get("backend") or data.get("stats", {}).get("backend"),
+                    _json_dump(data.get("provider_options") or data.get("stats", {}).get("provider_options") or {}),
                     1 if data.get("hidden") else 0,
                     data.get("merged_into"),
                     file_name or data.get("file_name"),
@@ -318,6 +331,9 @@ class CatalogStore:
             "analysis": _json_load(row["analysis"], None),
             "merged_sources": _json_load(row["merged_sources"], None),
             "source_tracks": _json_load(row["source_tracks"], None),
+            "asr_provider": row["asr_provider"],
+            "backend": row["backend"],
+            "provider_options": _json_load(row["provider_options"], {}),
             "hidden": bool(row["hidden"]),
             "merged_into": row["merged_into"],
         }

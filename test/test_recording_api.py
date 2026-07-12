@@ -279,6 +279,74 @@ class RecordingApiTests(unittest.TestCase):
         self.assertIn("[00:02] Tu: Ciao", data["text"])
         self.assertEqual({track["id"] for track in data["source_tracks"]}, {"mic", "system"})
 
+    @patch("local_asr_server.routers.transcriptions.load_settings")
+    @patch("local_asr_server.speechmatics_asr.SpeechmaticsBatchASRProvider.transcribe")
+    def test_transcribe_recording_uses_speechmatics_for_each_track(self, transcribe, load_settings) -> None:
+        load_settings.return_value = {
+            **self.mock_load_settings.return_value,
+            "asr_provider": "speechmatics",
+            "speechmatics_api_key": "secret",
+            "speechmatics_region": "eu",
+            "speechmatics_model": "standard",
+            "speechmatics_diarization": "speaker",
+            "speechmatics_timeout_seconds": 30,
+            "speechmatics_poll_interval_seconds": 1,
+        }
+        transcribe.side_effect = [
+            {
+                "text": "Mic",
+                "language": "it",
+                "model": "standard",
+                "backend": "speechmatics-batch",
+                "provider": "speechmatics",
+                "metadata": {"speechmatics_diarization": "speaker", "provider_speaker": "S1"},
+                "segments": [{"id": 0, "start": 0.0, "end": 1.0, "text": "Mic", "provider_speaker": "S1"}],
+            },
+            {
+                "text": "System",
+                "language": "it",
+                "model": "standard",
+                "backend": "speechmatics-batch",
+                "provider": "speechmatics",
+                "metadata": {"speechmatics_diarization": "speaker", "provider_speaker": "S2"},
+                "segments": [{"id": 0, "start": 1.0, "end": 2.0, "text": "System", "provider_speaker": "S2"}],
+            },
+        ]
+        created = self.client.post(
+            "/v1/recordings",
+            json={
+                "title": "Cloud Call",
+                "mime_type": "audio/webm;codecs=opus",
+                "language": "it",
+                "capture_mode": "both",
+            },
+        )
+        recording_id = created.json()["id"]
+        for track_id, content in {"mic": b"mic", "system": b"sys", "mixed": b"mix"}.items():
+            self.client.post(
+                f"/v1/recordings/{recording_id}/tracks/{track_id}/chunks",
+                data={"sequence": "0"},
+                files={"file": (f"{track_id}.webm", content, "audio/webm")},
+            )
+        self.client.post(f"/v1/recordings/{recording_id}/stop")
+
+        response = self.client.post(
+            f"/v1/recordings/{recording_id}/transcriptions",
+            json={"language": "it", "response_format": "verbose_json", "asr_provider": "speechmatics"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(transcribe.call_count, 2)
+        self.assertEqual(data["asr_provider"], "speechmatics")
+        self.assertEqual(data["backend"], "speechmatics-batch")
+        self.assertEqual(data["model"], "standard")
+        self.assertEqual(data["provider_options"]["speechmatics_model"], "standard")
+        self.assertEqual(data["stats"]["model"], "standard")
+        self.assertEqual(data["stats"]["asr_provider"], "speechmatics")
+        self.assertEqual({track["id"] for track in data["source_tracks"]}, {"mic", "system"})
+        self.assertNotIn("secret", str(data))
+
     @patch("local_asr_server.server.transcribe_file_sync")
     def test_transcribe_recording_saves_audio_intelligence_shadow_metadata(self, transcribe) -> None:
         transcribe.side_effect = [

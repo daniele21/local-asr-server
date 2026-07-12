@@ -5,9 +5,34 @@ from unittest.mock import Mock, patch
 
 from local_asr_server.runtime.models import DEFAULT_LOCAL_LLM_URL
 from local_asr_server.runtime.service_manager import RuntimeServiceManager
+from local_asr_server.runtime.models import resolve_local_llm_model_path
 
 
 class RuntimeServiceManagerTests(unittest.TestCase):
+    def test_model_specific_path_precedes_legacy_global_path(self) -> None:
+        settings = {
+            "local_llm_model": "selected",
+            "local_llm_model_path": "/models/legacy.gguf",
+            "local_llm_model_paths": {"selected": "/models/selected.gguf"},
+        }
+
+        self.assertEqual(
+            resolve_local_llm_model_path(settings),
+            "/models/selected.gguf",
+        )
+
+    def test_model_path_falls_back_to_legacy_global_path(self) -> None:
+        settings = {
+            "local_llm_model": "selected",
+            "local_llm_model_path": "/models/legacy.gguf",
+            "local_llm_model_paths": {},
+        }
+
+        self.assertEqual(
+            resolve_local_llm_model_path(settings),
+            "/models/legacy.gguf",
+        )
+
     def test_llm_status_defaults_to_managed_stopped(self) -> None:
         with patch("local_asr_server.runtime.service_manager.load_settings") as load:
             load.return_value = {

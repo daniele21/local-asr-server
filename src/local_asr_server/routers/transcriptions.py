@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from local_asr_server.app_services import get_services
+
 import asyncio
 import hashlib
 import json
@@ -12,10 +14,10 @@ from typing import Any, Optional
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
-from local_asr_server.recordings import RecordingConflict, RecordingNotFound, RecordingStore
-from local_asr_server.transcription_jobs import TranscriptionJob, TranscriptionJobManager
+from local_asr_server.recordings import RecordingConflict, RecordingNotFound
+from local_asr_server.transcription_jobs import TranscriptionJob
 from local_asr_server.settings import load_settings
-from local_asr_server.audio_intelligence import build_audio_intelligence
+from local_asr_server.services.transcription_service import TranscriptionService
 from local_asr_server.transcriber import (
     str_to_bool,
     generate_cache_key,
@@ -35,9 +37,8 @@ from local_asr_server.schemas import (
     MergeTranscriptionsRequest,
     AnalysisPipelineRequest,
 )
-from local_asr_server.routers.helpers import _build_projects, _merge_track_transcriptions
-from local_asr_server.transcription_quality import audio_stats, is_near_silent_track
-from local_asr_server.asr_models import get_asr_backend
+from local_asr_server.routers.helpers import _build_projects
+from local_asr_server.asr_provider import ASR_PROVIDER_LOCAL
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -63,33 +64,44 @@ def _transcribe_file(app: Any, **kwargs: Any) -> dict[str, Any]:
 
 
 def _cache_key_for_audio_file(audio_path: Path, **options: Any) -> str:
-    cache_options = {
-        name: options[name]
-        for name in (
-            "model",
-            "language",
-            "task",
-            "word_timestamps",
-            "initial_prompt",
-            "temperature",
-            "condition_on_previous_text",
-            "vad_guided",
-            "vad_post_filter",
-        )
-    }
-    return generate_cache_key(audio_hash=hash_audio_file(audio_path), **cache_options)
+    return TranscriptionService.cache_key(audio_path, **options)
 
 
 def _transcribe_audio_file_with_cache(app: Any, audio_path: Path, **options: Any) -> dict[str, Any]:
-    """Reuse the engine result for uploads, disk paths, and recording tracks."""
-    cache_key = _cache_key_for_audio_file(audio_path, **options)
-    cached = get_cached_result(cache_key)
-    if cached is not None:
-        logger.info("[ASR Cache] Hit for %s", audio_path.name)
-        return cached
-    result = _transcribe_file(app, audio_path=str(audio_path), **options)
-    save_cached_result(cache_key, result)
-    return result
+    service = getattr(getattr(app, "state", None), "transcription_service", None)
+    service = service or TranscriptionService()
+    return service.transcribe_cached(
+        audio_path,
+        engine=lambda **kwargs: _transcribe_file(app, **kwargs),
+        **options,
+    )
+
+
+def _effective_backend(provider: str, model: str) -> str:
+    return TranscriptionService.backend(provider, model)
+
+
+def _effective_asr(
+    settings: dict[str, Any],
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+    speechmatics_region: str | None = None,
+    speechmatics_model: str | None = None,
+    speechmatics_diarization: str | None = None,
+) -> tuple[str, str, dict[str, Any], dict[str, Any]]:
+    return TranscriptionService.resolve_asr(
+        settings,
+        provider=provider,
+        model=model,
+        speechmatics_region=speechmatics_region,
+        speechmatics_model=speechmatics_model,
+        speechmatics_diarization=speechmatics_diarization,
+    )
+
+
+def _asr_payload_metadata(provider: str, model: str, public_options: dict[str, Any]) -> dict[str, Any]:
+    return TranscriptionService.payload_metadata(provider, model, public_options)
 
 
 def run_recording_transcription(
@@ -98,123 +110,14 @@ def run_recording_transcription(
     body: TranscribeRecordingRequest,
     job: TranscriptionJob | None = None,
 ) -> dict:
-    started_at = time.perf_counter()
-    target_model = body.model or app.state.default_model
-    store: RecordingStore = app.state.recording_store
-    recording = store.get(recording_id, include_result=False)
-    track_paths = store.transcribable_tracks(recording_id)
-
-    def job_event(status: str, step: str, progress: int):
-        if job is None:
-            return
-        if hasattr(app.state, "transcription_jobs"):
-            app.state.transcription_jobs.update_progress(job.id, status, progress, step)
-        else:
-            job.status = status
-            job.current_step = step
-            job.progress = progress
-            job.updated_at = time.time()
-            job.events.put(job.public())
-
-    job_event("validating_audio", "validating_audio", 10)
-    track_results = []
-    total_tracks = max(1, len(track_paths))
-    for index, (track, audio_path) in enumerate(track_paths):
-        if job and job.cancel_requested:
-            raise RuntimeError("Transcription job cancelled")
-        step = "transcribing_system" if track.get("id") == "system" else "transcribing_mic"
-        job_event(step, step, 20 + int(index / total_tracks * 60))
-        result = _skip_near_silent_track(audio_path, track)
-        if result is None:
-            result = _transcribe_audio_file_with_cache(
-                app,
-                audio_path,
-                model=target_model,
-                language=body.language,
-                task=body.task,
-                word_timestamps=body.word_timestamps,
-                initial_prompt=body.initial_prompt,
-                temperature=body.temperature,
-                condition_on_previous_text=body.condition_on_previous_text,
-                verbose=body.verbose,
-                vad_guided=body.vad_guided,
-                vad_post_filter=body.vad_post_filter,
-            )
-        public_track = next(
-            (item for item in recording.get("audio_tracks", []) if item.get("id") == track["id"]),
-            track,
-        )
-        track_results.append({"track": public_track, "result": result})
-
-    job_event("merging", "merging", 85)
-    elapsed = time.perf_counter() - started_at
-    payload = _merge_track_transcriptions(
-        track_results,
-        model=target_model,
-        language=body.language,
-        elapsed=elapsed,
-        recording_id=recording_id,
+    service: TranscriptionService = get_services(app).transcription
+    return service.transcribe_recording(
+        app,
+        recording_id,
+        body,
+        job,
+        engine=lambda **kwargs: _transcribe_file(app, **kwargs),
     )
-    payload = _attach_audio_intelligence(store, recording_id, track_paths, payload)
-    payload = _clean_nan_values(payload)
-    job_event("saving", "saving", 95)
-    saved_meta = app.state.transcription_store.save(
-        payload,
-        audio_filename=recording.get("title") or Path(recording.get("audio_file") or "recording").name,
-        recording_id=recording_id,
-    )
-    payload["saved_id"] = saved_meta["id"]
-    payload["saved_file_path"] = str(app.state.transcription_store.root)
-    return payload
-
-
-def _skip_near_silent_track(audio_path: Path, track: dict[str, Any]) -> dict[str, Any] | None:
-    """Avoid asking Whisper to hallucinate text from a decodable silent channel."""
-    try:
-        from local_asr_server.audio_intelligence.audio_io import load_audio_samples
-
-        stats = audio_stats(load_audio_samples(audio_path))
-    except Exception as exc:
-        logger.info("[ASR Quality] Cannot inspect track %s; continuing with Whisper: %s", track.get("id"), exc)
-        return None
-    if not is_near_silent_track(stats):
-        return None
-    logger.warning("[ASR Quality] Skipping near-silent track %s: rms=%.6f peak=%.6f", track.get("id"), stats["rms"], stats["peak"])
-    return {
-        "text": "",
-        "segments": [],
-        "metadata": {"skipped": True, "skip_reason": "near_silent_track", "audio_stats": stats},
-    }
-
-
-def _attach_audio_intelligence(
-    store: RecordingStore,
-    recording_id: str,
-    track_paths: list[tuple[dict[str, Any], Path]],
-    payload: dict[str, Any],
-) -> dict[str, Any]:
-    try:
-        intelligence = build_audio_intelligence(track_paths, payload.get("segments", []))
-        store.save_intelligence(recording_id, intelligence)
-        payload["segments"] = intelligence.get("segments", payload.get("segments", []))
-        payload["insight_candidates"] = intelligence.get("insight_candidates", [])
-        payload.setdefault("stats", {})["audio_intelligence"] = {
-            "enabled": True,
-            "version": intelligence.get("version"),
-            "backend": intelligence.get("backend"),
-            "mode": intelligence.get("mode"),
-            "mock_insights": True,
-            "speaking_time_pct": intelligence.get("conversation_metrics", {}).get("speaking_time_pct", {}),
-            "long_pause_count": len(intelligence.get("conversation_metrics", {}).get("long_pauses", []) or []),
-            "overlap_count": len(intelligence.get("conversation_metrics", {}).get("overlaps", []) or []),
-        }
-    except Exception as exc:
-        logger.warning("Audio intelligence failed for recording %s: %s", recording_id, exc)
-        payload.setdefault("stats", {})["audio_intelligence"] = {
-            "enabled": False,
-            "error": str(exc)[:500],
-        }
-    return payload
 
 
 def _maybe_start_meeting_pipeline(app: Any, recording_id: str, transcription_id: str | None) -> dict[str, Any] | None:
@@ -223,7 +126,7 @@ def _maybe_start_meeting_pipeline(app: Any, recording_id: str, transcription_id:
         return None
     pipeline_id = settings.get("meeting_default_pipeline") or "meeting_default"
     try:
-        return app.state.analysis_jobs.create_pipeline(
+        return get_services(app).analysis_jobs.create_pipeline(
             AnalysisPipelineRequest(
                 recording_id=recording_id,
                 transcription_id=transcription_id,
@@ -238,7 +141,7 @@ def _maybe_start_meeting_pipeline(app: Any, recording_id: str, transcription_id:
 
 @router.get("/v1/transcription/source-data")
 def transcription_source_data(request: Request, limit: int = 100):
-    recordings = request.app.state.recording_store.list(limit=max(1, min(limit, 200)))
+    recordings = get_services(request.app).recordings.list(limit=max(1, min(limit, 200)))
     projects = _build_projects(request.app)
     settings = load_settings()
     return {
@@ -252,6 +155,11 @@ def transcription_source_data(request: Request, limit: int = 100):
             "default_task": settings.get("default_task", "transcribe"),
             "default_word_timestamps": settings.get("default_word_timestamps", False),
             "default_condition_on_previous": settings.get("default_condition_on_previous", False),
+            "asr_provider": settings.get("asr_provider", ASR_PROVIDER_LOCAL),
+            "speechmatics_region": settings.get("speechmatics_region", ""),
+            "speechmatics_model": settings.get("speechmatics_model", ""),
+            "speechmatics_diarization": settings.get("speechmatics_diarization", "none"),
+            "speechmatics_api_key_configured": bool(settings.get("speechmatics_api_key")),
         },
     }
 
@@ -273,10 +181,23 @@ async def transcribe_upload(
     recording_id: Optional[str] = Form(None),
     vad_guided: str = Form(str(VAD_GUIDED_DEFAULT).lower()),
     vad_post_filter: str = Form(str(VAD_POST_FILTER_DEFAULT).lower()),
+    asr_provider: Optional[str] = Form(None),
+    speechmatics_region: Optional[str] = Form(None),
+    speechmatics_model: Optional[str] = Form(None),
+    speechmatics_diarization: Optional[str] = Form(None),
 ):
     started_at = time.perf_counter()
     is_streaming = str_to_bool(stream)
-    target_model = model or request.app.state.default_model
+    settings = load_settings()
+    provider, provider_model, provider_options, public_options = _effective_asr(
+        settings,
+        provider=asr_provider,
+        model=model or request.app.state.default_model,
+        speechmatics_region=speechmatics_region,
+        speechmatics_model=speechmatics_model,
+        speechmatics_diarization=speechmatics_diarization,
+    )
+    target_model = provider_model or model or request.app.state.default_model
 
     logger.info(f"[/v1/audio/transcriptions] Received upload request. File: '{file.filename}', Size: {file.size if file.size else 'unknown'} bytes, Model: '{target_model}', Stream: {is_streaming}")
 
@@ -303,6 +224,9 @@ async def transcribe_upload(
                 condition_on_previous_text=condition_on_previous_text,
                 vad_guided=vad_guided,
                 vad_post_filter=vad_post_filter,
+                asr_provider=provider,
+                backend=_effective_backend(provider, target_model),
+                provider_options=public_options,
             )
 
             cached_res = get_cached_result(cache_key)
@@ -315,7 +239,9 @@ async def transcribe_upload(
                     **cached_res,
                     "language": cached_res.get("language", language),
                     "model": cached_res.get("model", target_model),
-                    "backend": cached_res.get("backend", get_asr_backend(target_model)),
+                    "backend": cached_res.get("backend", _effective_backend(provider, target_model)),
+                    "asr_provider": cached_res.get("asr_provider", provider),
+                    "provider_options": cached_res.get("provider_options", public_options),
                     "stats": cached_res.get("stats", {"time_total_seconds": 0.0}),
                 }
                 
@@ -329,9 +255,9 @@ async def transcribe_upload(
 
                 # Save to user's transcription folder as well
                 cached_res["recording_id"] = recording_id or cached_res.get("recording_id", "")
-                saved_meta = request.app.state.transcription_store.save(cached_res, audio_filename=file.filename, recording_id=recording_id)
+                saved_meta = get_services(request.app).transcriptions.save(cached_res, audio_filename=file.filename, recording_id=recording_id)
                 cached_res["saved_id"] = saved_meta["id"]
-                cached_res["saved_file_path"] = str(request.app.state.transcription_store.root)
+                cached_res["saved_file_path"] = str(get_services(request.app).transcriptions.root)
 
                 if is_streaming:
                     async def cached_event_generator():
@@ -355,6 +281,56 @@ async def transcribe_upload(
 
             # Cache miss, proceed as normal
             if is_streaming:
+                if provider != ASR_PROVIDER_LOCAL:
+                    async def cloud_event_generator():
+                        try:
+                            yield json.dumps({
+                                "type": "progress",
+                                "step": "submitting",
+                                "message": "Submitting cloud ASR job..."
+                            }) + "\n"
+                            result = await asyncio.to_thread(
+                                _transcribe_file,
+                                request.app,
+                                audio_path=tmp_path,
+                                model=target_model,
+                                language=language,
+                                task=task,
+                                word_timestamps=str_to_bool(word_timestamps),
+                                initial_prompt=initial_prompt,
+                                temperature=temperature,
+                                condition_on_previous_text=str_to_bool(condition_on_previous_text, False),
+                                verbose=None if verbose is None else str_to_bool(verbose),
+                                vad_guided=str_to_bool(vad_guided, VAD_GUIDED_DEFAULT),
+                                vad_post_filter=str_to_bool(vad_post_filter, VAD_POST_FILTER_DEFAULT),
+                                asr_provider=provider,
+                                provider_options=provider_options,
+                            )
+                            elapsed = time.perf_counter() - started_at
+                            payload = _clean_nan_values({
+                                "text": result.get("text", ""),
+                                "language": result.get("language", language),
+                                "segments": result.get("segments", []),
+                                "metadata": result.get("metadata", {}),
+                                "model": result.get("model", target_model),
+                                "backend": result.get("backend", _effective_backend(provider, target_model)),
+                                "asr_provider": provider,
+                                "provider_options": public_options,
+                                "recording_id": recording_id or "",
+                                "stats": {
+                                    "time_total_seconds": elapsed,
+                                    **_asr_payload_metadata(provider, target_model, public_options),
+                                },
+                            })
+                            save_cached_result(cache_key, payload)
+                            saved_meta = get_services(request.app).transcriptions.save(payload, audio_filename=file.filename, recording_id=recording_id)
+                            payload["saved_id"] = saved_meta["id"]
+                            payload["saved_file_path"] = str(get_services(request.app).transcriptions.root)
+                            yield json.dumps({"type": "completed", "data": payload}) + "\n"
+                        except Exception as exc:
+                            yield json.dumps({"type": "error", "error": str(exc)}) + "\n"
+                    return StreamingResponse(cloud_event_generator(), media_type="application/x-ndjson")
+
                 async def event_generator_wrapper():
                     try:
                         async for event in transcribe_stream_generator(
@@ -369,9 +345,13 @@ async def transcribe_upload(
                             cache_key=cache_key,
                             audio_filename=file.filename,
                             recording_id=recording_id,
-                            transcription_store=request.app.state.transcription_store,
+                            transcription_store=get_services(request.app).transcriptions,
                             started_at=started_at,
                             vad_guided=vad_guided,
+                            vad_post_filter=vad_post_filter,
+                            asr_provider=provider,
+                            backend=_effective_backend(provider, target_model),
+                            provider_options=public_options,
                         ):
                             yield event
                     finally:
@@ -394,6 +374,8 @@ async def transcribe_upload(
                     verbose=None if verbose is None else str_to_bool(verbose),
                     vad_guided=str_to_bool(vad_guided, VAD_GUIDED_DEFAULT),
                     vad_post_filter=str_to_bool(vad_post_filter, VAD_POST_FILTER_DEFAULT),
+                    asr_provider=provider,
+                    provider_options=provider_options,
                 )
 
                 elapsed = time.perf_counter() - started_at
@@ -404,19 +386,22 @@ async def transcribe_upload(
                     "language": result.get("language", language),
                     "segments": result.get("segments", []),
                     "metadata": result.get("metadata", {}),
-                    "model": target_model,
-                    "backend": get_asr_backend(target_model),
+                    "model": result.get("model", target_model),
+                    "backend": result.get("backend", _effective_backend(provider, target_model)),
+                    "asr_provider": provider,
+                    "provider_options": public_options,
                     "recording_id": recording_id or "",
                     "stats": {
                         "time_total_seconds": elapsed,
+                        **_asr_payload_metadata(provider, target_model, public_options),
                     },
                 }
                 payload = _clean_nan_values(payload)
                 save_cached_result(cache_key, payload)
 
-                saved_meta = request.app.state.transcription_store.save(payload, audio_filename=file.filename, recording_id=recording_id)
+                saved_meta = get_services(request.app).transcriptions.save(payload, audio_filename=file.filename, recording_id=recording_id)
                 payload["saved_id"] = saved_meta["id"]
-                payload["saved_file_path"] = str(request.app.state.transcription_store.root)
+                payload["saved_file_path"] = str(get_services(request.app).transcriptions.root)
 
                 if response_format == "text":
                     return PlainTextResponse(payload["text"])
@@ -448,7 +433,16 @@ async def transcribe_upload(
 @router.post("/v1/audio/transcriptions/path")
 def transcribe_path(request: Request, body: TranscribePathRequest):
     started_at = time.perf_counter()
-    target_model = body.model or request.app.state.default_model
+    settings = load_settings()
+    provider, provider_model, provider_options, public_options = _effective_asr(
+        settings,
+        provider=body.asr_provider,
+        model=body.model or request.app.state.default_model,
+        speechmatics_region=body.speechmatics_region,
+        speechmatics_model=body.speechmatics_model,
+        speechmatics_diarization=body.speechmatics_diarization,
+    )
+    target_model = provider_model or body.model or request.app.state.default_model
 
     audio_path = Path(body.file).expanduser()
     logger.info(f"[/v1/audio/transcriptions/path] Received request for file: '{audio_path}', Model: '{target_model}'")
@@ -474,6 +468,8 @@ def transcribe_path(request: Request, body: TranscribePathRequest):
             verbose=body.verbose,
             vad_guided=body.vad_guided,
             vad_post_filter=body.vad_post_filter,
+            asr_provider=provider,
+            provider_options=provider_options,
         )
 
         elapsed = time.perf_counter() - started_at
@@ -484,16 +480,19 @@ def transcribe_path(request: Request, body: TranscribePathRequest):
             "language": result.get("language", body.language),
             "segments": result.get("segments", []),
             "metadata": result.get("metadata", {}),
-            "model": target_model,
-            "backend": get_asr_backend(target_model),
+            "model": result.get("model", target_model),
+            "backend": result.get("backend", _effective_backend(provider, target_model)),
+            "asr_provider": provider,
+            "provider_options": public_options,
             "stats": {
                 "time_total_seconds": elapsed,
+                **_asr_payload_metadata(provider, target_model, public_options),
             },
         }
 
-        saved_meta = request.app.state.transcription_store.save(payload, audio_filename=audio_path.name)
+        saved_meta = get_services(request.app).transcriptions.save(payload, audio_filename=audio_path.name)
         payload["saved_id"] = saved_meta["id"]
-        payload["saved_file_path"] = str(request.app.state.transcription_store.root)
+        payload["saved_file_path"] = str(get_services(request.app).transcriptions.root)
 
         if body.response_format == "text":
             return PlainTextResponse(payload["text"])
@@ -537,7 +536,7 @@ def transcribe_recording(recording_id: str, request: Request, body: TranscribeRe
 @router.post("/v1/recordings/{recording_id}/transcription-jobs", status_code=202)
 def create_transcription_job(recording_id: str, request: Request, body: TranscriptionJobRequest):
     try:
-        request.app.state.recording_store.get(recording_id, include_result=False)
+        get_services(request.app).recordings.get(recording_id, include_result=False)
     except RecordingNotFound as exc:
         raise HTTPException(status_code=404, detail="Recording not found") from exc
 
@@ -551,7 +550,7 @@ def create_transcription_job(recording_id: str, request: Request, body: Transcri
         finally:
             pass
 
-    return request.app.state.transcription_jobs.create(recording_id, runner)
+    return get_services(request.app).transcription_jobs.create(recording_id, runner)
 
 
 @router.get("/v1/jobs")
@@ -563,7 +562,7 @@ def list_jobs(
     limit: int = Query(default=100, ge=1, le=500),
 ):
     return {
-        "items": request.app.state.transcription_jobs.list(
+        "items": get_services(request.app).transcription_jobs.list(
             job_type=type,
             scope_type=scope_type,
             scope_id=scope_id,
@@ -574,7 +573,7 @@ def list_jobs(
 
 @router.get("/v1/jobs/{job_id}")
 def get_job(job_id: str, request: Request):
-    job = request.app.state.transcription_jobs.get(job_id)
+    job = get_services(request.app).transcription_jobs.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
@@ -582,16 +581,16 @@ def get_job(job_id: str, request: Request):
 
 @router.get("/v1/jobs/{job_id}/events")
 def job_events(job_id: str, request: Request):
-    if request.app.state.transcription_jobs.get(job_id) is None:
+    if get_services(request.app).transcription_jobs.get(job_id) is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
     def event_stream():
         last_sequence = 0
         while True:
-            if hasattr(request.app.state.transcription_jobs, "events_after"):
-                events = request.app.state.transcription_jobs.events_after(job_id, last_sequence) or []
+            if hasattr(get_services(request.app).transcription_jobs, "events_after"):
+                events = get_services(request.app).transcription_jobs.events_after(job_id, last_sequence) or []
             else:
-                events = request.app.state.transcription_jobs.drain_events(job_id) or []
+                events = get_services(request.app).transcription_jobs.drain_events(job_id) or []
             for event in events:
                 last_sequence = max(last_sequence, int(event.get("sequence") or last_sequence))
                 yield f"data: {json.dumps(event)}\n\n"
@@ -604,10 +603,10 @@ def job_events(job_id: str, request: Request):
 
 @router.post("/v1/jobs/{job_id}/cancel")
 def cancel_job(job_id: str, request: Request):
-    existing = request.app.state.job_store.get(job_id)
+    existing = get_services(request.app).jobs.get(job_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    job = request.app.state.transcription_jobs.cancel(job_id) if existing["type"] == "transcription" else request.app.state.job_store.request_cancel(job_id)
+    job = get_services(request.app).transcription_jobs.cancel(job_id) if existing["type"] == "transcription" else get_services(request.app).jobs.request_cancel(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
@@ -616,7 +615,7 @@ def cancel_job(job_id: str, request: Request):
 @router.post("/v1/transcriptions/merge")
 def merge_transcriptions(request: Request, body: MergeTranscriptionsRequest):
     try:
-        return request.app.state.transcription_store.merge(
+        return get_services(request.app).transcriptions.merge(
             transcription_ids=body.transcription_ids,
             title=body.title
         )
@@ -630,21 +629,21 @@ def merge_transcriptions(request: Request, body: MergeTranscriptionsRequest):
 
 @router.get("/v1/transcriptions")
 def list_transcriptions(request: Request, page: int = 1, limit: int = 10):
-    items, total = request.app.state.transcription_store.list(page=page, limit=limit)
+    items, total = get_services(request.app).transcriptions.list(page=page, limit=limit)
     return {"items": items, "total": total, "page": page, "limit": limit}
 
 
 @router.get("/v1/transcriptions/{transcription_id}")
 def get_transcription(transcription_id: str, request: Request):
     try:
-        return request.app.state.transcription_store.get(transcription_id)
+        return get_services(request.app).transcriptions.get(transcription_id)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Transcription not found")
 
 
 @router.delete("/v1/transcriptions/{transcription_id}")
 def delete_transcription(transcription_id: str, request: Request):
-    success = request.app.state.transcription_store.delete(transcription_id)
+    success = get_services(request.app).transcriptions.delete(transcription_id)
     if not success:
         raise HTTPException(status_code=404, detail="Transcription not found")
     return {"ok": True}
@@ -653,7 +652,7 @@ def delete_transcription(transcription_id: str, request: Request):
 @router.post("/v1/transcriptions/{transcription_id}/split")
 def split_transcription(transcription_id: str, request: Request):
     try:
-        restored_ids = request.app.state.transcription_store.split(transcription_id)
+        restored_ids = get_services(request.app).transcriptions.split(transcription_id)
         return {"ok": True, "restored_ids": restored_ids}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

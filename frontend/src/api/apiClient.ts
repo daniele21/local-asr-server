@@ -325,20 +325,37 @@ export interface Transcription {
   text: string;
   segments?: TranscriptionSegment[];
   stats?: {
-    time_total_seconds: number;
+    time_total_seconds?: number;
+    asr_provider?: string;
+    backend?: string;
+    model?: string;
+    provider_options?: Record<string, unknown>;
+    [key: string]: unknown;
   };
   analysis?: any;
   saved_id?: string;
   recording_id?: string;
   merged_sources?: MergedSource[];
   source_tracks?: RecordingTrack[];
+  asr_provider?: 'local' | 'speechmatics' | string;
+  backend?: string;
+  provider_options?: Record<string, unknown>;
 }
 
 export interface Settings {
   transcriptions_dir: string;
   recordings_dir: string;
+  asr_provider?: 'local' | 'speechmatics' | string;
+  speechmatics_api_key?: string;
+  speechmatics_api_key_configured?: boolean;
+  speechmatics_region?: string;
+  speechmatics_model?: string;
+  speechmatics_diarization?: string;
+  speechmatics_timeout_seconds?: number | null;
+  speechmatics_poll_interval_seconds?: number | null;
   gemini_api_key?: string;
   gemini_api_key_configured?: boolean;
+  gemini_model?: string;
   llm_provider: string;
   local_llm_mode?: 'auto' | 'external' | 'disabled';
   local_llm_url?: string;
@@ -364,6 +381,26 @@ export interface Settings {
   default_temperature?: number | null;
   default_word_timestamps: boolean;
   default_condition_on_previous: boolean;
+}
+
+export interface AnalysisSetupPayload {
+  gemini_api_key?: string;
+  gemini_model?: string;
+  llm_provider?: string;
+  local_llm_mode?: 'auto' | 'external' | 'disabled' | string;
+  local_llm_url?: string;
+  local_llm_model?: string;
+  local_llm_quality_preset?: 'precise' | 'balanced' | 'creative' | string;
+  local_llm_temperature?: number | null;
+  local_llm_reasoning?: 'auto' | 'on' | 'off' | string;
+  local_llm_max_output_tokens?: number | null;
+  local_llm_json_mode?: boolean;
+  local_llm_model_path?: string;
+  local_llm_backend?: string;
+  local_llm_mmproj_path?: string;
+  local_llm_ctx_size?: number | null;
+  local_llm_startup_timeout?: number | null;
+  local_llm_llama_server_bin?: string;
 }
 
 let sessionPromise: Promise<void> | null = null;
@@ -465,6 +502,10 @@ export const ApiClient = {
     return (await request(`/v1/transcription/source-data?limit=${limit}`)).json();
   },
 
+  async asrProviders(): Promise<any> {
+    return (await request('/v1/asr/providers')).json();
+  },
+
   transcribe(formData: FormData): Promise<Response> {
     return request('/v1/audio/transcriptions', { method: 'POST', body: formData });
   },
@@ -550,6 +591,10 @@ export const ApiClient = {
     condition_on_previous_text?: boolean;
     vad_guided?: boolean;
     vad_post_filter?: boolean;
+    asr_provider?: string;
+    speechmatics_region?: string;
+    speechmatics_model?: string;
+    speechmatics_diarization?: string;
   }): Promise<Transcription> {
     return request(`/v1/recordings/${recordingId}/transcriptions`, {
       method: 'POST',
@@ -569,6 +614,10 @@ export const ApiClient = {
     condition_on_previous_text?: boolean;
     vad_guided?: boolean;
     vad_post_filter?: boolean;
+    asr_provider?: string;
+    speechmatics_region?: string;
+    speechmatics_model?: string;
+    speechmatics_diarization?: string;
   }): Promise<TranscriptionJob> {
     return (await request(`/v1/recordings/${recordingId}/transcription-jobs`, {
       method: 'POST',
@@ -653,7 +702,7 @@ export const ApiClient = {
     return (await request(`/v1/runtime/services/llm/logs?tail=${tail}`)).json();
   },
 
-  async analyze(payload: { transcription_id?: string; recording_id?: string; text?: string; gemini_api_key?: string; llm_provider?: string; audio_task?: string; question?: string }): Promise<any> {
+  async analyze(payload: AnalysisSetupPayload & { transcription_id?: string; recording_id?: string; text?: string; audio_task?: string; question?: string }): Promise<any> {
     return (await request('/v1/analysis', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -661,7 +710,7 @@ export const ApiClient = {
     })).json();
   },
 
-  async createAnalysisJob(payload: { transcription_id?: string; recording_id?: string; text?: string; gemini_api_key?: string; llm_provider?: string; audio_task?: string; question?: string; prompt?: string; analysis_type?: string; template_id?: string; pipeline_id?: string; pipeline_run_id?: string }): Promise<AnalysisJobCreated> {
+  async createAnalysisJob(payload: AnalysisSetupPayload & { transcription_id?: string; recording_id?: string; text?: string; audio_task?: string; question?: string; prompt?: string; analysis_type?: string; template_id?: string; pipeline_id?: string; pipeline_run_id?: string }): Promise<AnalysisJobCreated> {
     return (await request('/v1/analysis-jobs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -669,7 +718,7 @@ export const ApiClient = {
     })).json();
   },
 
-  async createAnalysisPipeline(payload: { transcription_id?: string; recording_id?: string; text?: string; gemini_api_key?: string; llm_provider?: string; pipeline_id?: string; analysis_types?: string[] }): Promise<AnalysisPipelineCreated> {
+  async createAnalysisPipeline(payload: AnalysisSetupPayload & { transcription_id?: string; recording_id?: string; text?: string; pipeline_id?: string; analysis_types?: string[] }): Promise<AnalysisPipelineCreated> {
     return (await request('/v1/analysis-pipelines', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

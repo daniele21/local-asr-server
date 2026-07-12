@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from local_asr_server.app_services import get_services
+
 import os
 from typing import Any, TYPE_CHECKING
 
 from local_asr_server.transcription_quality import dedupe_cross_track_segments
 from local_asr_server.asr_models import get_asr_backend
+from local_asr_server.asr_provider import ASR_PROVIDER_LOCAL, public_asr_metadata
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -17,7 +20,17 @@ def _format_time_label(seconds: float) -> str:
     return f"{minutes:02d}:{secs:02d}"
 
 
-def _merge_track_transcriptions(track_results: list[dict], *, model: str, language: str | None, elapsed: float, recording_id: str) -> dict:
+def _merge_track_transcriptions(
+    track_results: list[dict],
+    *,
+    model: str,
+    language: str | None,
+    elapsed: float,
+    recording_id: str,
+    asr_provider: str | None = None,
+    backend: str | None = None,
+    provider_options: dict[str, Any] | None = None,
+) -> dict:
     segments = []
     source_tracks = []
     text_lines = []
@@ -35,6 +48,10 @@ def _merge_track_transcriptions(track_results: list[dict], *, model: str, langua
         }
         if result.get("metadata"):
             source_track["transcription_metadata"] = result["metadata"]
+        if result.get("provider"):
+            source_track["asr_provider"] = result["provider"]
+        if result.get("backend"):
+            source_track["backend"] = result["backend"]
         if "raw_text" in result:
             source_track["raw_text"] = result["raw_text"]
         if "raw_segments" in result:
@@ -60,24 +77,33 @@ def _merge_track_transcriptions(track_results: list[dict], *, model: str, langua
         if text:
             text_lines.append(f"[{_format_time_label(float(seg.get('start') or 0.0))}] {label}: {text}")
 
+    resolved_provider = asr_provider or next((item["result"].get("asr_provider") or item["result"].get("provider") for item in track_results if item["result"].get("asr_provider") or item["result"].get("provider")), None) or ASR_PROVIDER_LOCAL
+    resolved_model = next((item["result"].get("model") for item in track_results if item["result"].get("model")), None) or model
+    asr_metadata = public_asr_metadata(resolved_provider, resolved_model, provider_options or {})
+    if backend:
+        asr_metadata["backend"] = backend
+
     return {
         "text": "\n".join(text_lines),
         "language": ", ".join(languages) if languages else (language or "it"),
         "segments": segments,
         "source_tracks": source_tracks,
-        "model": model,
-        "backend": get_asr_backend(model),
+        "model": asr_metadata["model"],
+        "backend": asr_metadata["backend"] or next((item["result"].get("backend") for item in track_results if item["result"].get("backend")), None) or get_asr_backend(model),
+        "asr_provider": asr_metadata["asr_provider"],
+        "provider_options": asr_metadata["provider_options"],
         "recording_id": recording_id,
         "stats": {
             "time_total_seconds": elapsed,
             "track_count": len(track_results),
             "cross_track_deduplication_enabled": True,
+            **asr_metadata,
         },
     }
 
 
 def _build_projects(app: FastAPI) -> dict:
-    recordings = app.state.recording_store.list(limit=999)
+    recordings = get_services(app).recordings.list(limit=999)
     projects: dict[str, dict] = {}
     unassigned_name = "Senza progetto"
     for recording in recordings:
@@ -87,10 +113,10 @@ def _build_projects(app: FastAPI) -> dict:
             "is_unassigned": project_name == unassigned_name,
             "items": [],
         })
-        transcription = app.state.transcription_store.find_for_recording(recording["id"])
-        runs = app.state.catalog_store.list_analysis_runs(recording_id=recording["id"], limit=50)
+        transcription = get_services(app).transcriptions.find_for_recording(recording["id"])
+        runs = get_services(app).catalog.list_analysis_runs(recording_id=recording["id"], limit=50)
         if transcription:
-            transcription_runs = app.state.catalog_store.list_analysis_runs(transcription_id=transcription["id"], limit=50)
+            transcription_runs = get_services(app).catalog.list_analysis_runs(transcription_id=transcription["id"], limit=50)
             existing = {run["id"] for run in runs}
             runs.extend(run for run in transcription_runs if run["id"] not in existing)
         latest_analysis = next((run for run in sorted(runs, key=lambda item: item.get("created_at") or 0, reverse=True) if run.get("status") == "completed"), None)
@@ -176,10 +202,10 @@ def _compact_analysis_run(run: dict[str, Any]) -> dict[str, Any]:
 
 
 def _build_meeting(app: FastAPI, recording: dict[str, Any], *, compact: bool = False) -> dict[str, Any]:
-    transcription = app.state.transcription_store.find_for_recording(recording["id"])
-    runs = app.state.catalog_store.list_analysis_runs(recording_id=recording["id"], limit=200)
+    transcription = get_services(app).transcriptions.find_for_recording(recording["id"])
+    runs = get_services(app).catalog.list_analysis_runs(recording_id=recording["id"], limit=200)
     if transcription:
-        transcription_runs = app.state.catalog_store.list_analysis_runs(
+        transcription_runs = get_services(app).catalog.list_analysis_runs(
             transcription_id=transcription["id"],
             limit=200,
         )
@@ -187,7 +213,7 @@ def _build_meeting(app: FastAPI, recording: dict[str, Any], *, compact: bool = F
         runs.extend(run for run in transcription_runs if run["id"] not in existing)
     jobs = [
         _compact_job(job)
-        for job in app.state.transcription_jobs.list(scope_type="recording", scope_id=recording["id"], limit=50)
+        for job in get_services(app).transcription_jobs.list(scope_type="recording", scope_id=recording["id"], limit=50)
     ]
     latest_by_type: dict[str, dict[str, Any]] = {}
     for run in sorted(runs, key=lambda item: item.get("created_at") or 0, reverse=True):
@@ -214,7 +240,7 @@ def _build_meeting(app: FastAPI, recording: dict[str, Any], *, compact: bool = F
 
 
 def _build_meetings(app: FastAPI, limit: int = 50) -> dict[str, Any]:
-    recordings = app.state.recording_store.list(limit=max(1, min(limit, 200)))
+    recordings = get_services(app).recordings.list(limit=max(1, min(limit, 200)))
     return {"items": [_build_meeting(app, recording, compact=True) for recording in recordings]}
 
 

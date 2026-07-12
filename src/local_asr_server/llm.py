@@ -22,6 +22,15 @@ from local_asr_server.prompts import load_prompts
 
 logger = logging.getLogger("uvicorn.error")
 
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
+GEMINI_MODELS = (
+    "gemini-3.5-flash",
+    "gemini-3.1-pro-preview",
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "custom",
+)
+
 
 # ── Base class ────────────────────────────────────────────────────────────────
 
@@ -69,8 +78,9 @@ class MockProvider(BaseLLMProvider):
 class GeminiProvider(BaseLLMProvider):
     """Google Gemini cloud API provider."""
 
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, model: str = DEFAULT_GEMINI_MODEL) -> None:
         self.api_key = api_key
+        self.model = model or DEFAULT_GEMINI_MODEL
 
     def analyze(self, text: str, prompt: Optional[str] = None, temperature: Optional[float] = None) -> dict:
         if not self.api_key:
@@ -78,7 +88,7 @@ class GeminiProvider(BaseLLMProvider):
 
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"gemini-2.5-flash:generateContent?key={self.api_key}"
+            f"{self.model}:generateContent?key={self.api_key}"
         )
 
         if not prompt:
@@ -260,6 +270,8 @@ class VoxtralLocalProvider(BaseLLMProvider):
 
 # ── Service factory ───────────────────────────────────────────────────────────
 
+LLM_PROVIDER_NAMES = frozenset({"mock", "gemini", "nemotron_local", "voxtral_local"})
+
 class LLMService:
     """Factory that instantiates the correct provider from a name string."""
 
@@ -269,6 +281,7 @@ class LLMService:
         api_key: Optional[str] = None,
         local_llm_url: Optional[str] = None,
         local_llm_model: Optional[str] = None,
+        gemini_model: Optional[str] = None,
     ) -> BaseLLMProvider:
         """
         Return an LLM provider instance.
@@ -284,7 +297,7 @@ class LLMService:
         url = (local_llm_url or DEFAULT_LOCAL_LLM_URL).rstrip("/")
 
         if provider_name == "gemini":
-            return GeminiProvider(api_key or "")
+            return GeminiProvider(api_key or "", gemini_model or DEFAULT_GEMINI_MODEL)
         if provider_name == "nemotron_local":
             return NemotronLocalProvider(base_url=url, model=local_llm_model)
         if provider_name == "voxtral_local":

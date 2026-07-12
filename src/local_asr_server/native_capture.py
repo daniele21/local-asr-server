@@ -94,6 +94,12 @@ class NativeCaptureManager:
         self._lock = threading.Lock()
         self._sessions: dict[str, CaptureSession] = {}
 
+    def get_session(self, recording_id: str) -> CaptureSession | None:
+        """Return the active capture session without exposing mutable storage."""
+
+        with self._lock:
+            return self._sessions.get(recording_id)
+
     def capabilities(self) -> dict[str, Any]:
         if sys.platform != "darwin":
             return {

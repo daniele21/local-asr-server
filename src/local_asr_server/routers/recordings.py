@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from local_asr_server.app_services import get_services
+
 import logging
 from pathlib import Path
 from typing import Optional
@@ -22,7 +24,7 @@ router = APIRouter()
 
 @router.post("/v1/recordings", status_code=201)
 def create_recording(request: Request, body: CreateRecordingRequest):
-    store: RecordingStore = request.app.state.recording_store
+    store: RecordingStore = get_services(request.app).recordings
     try:
         res = store.create(
             title=body.title,
@@ -50,7 +52,7 @@ async def append_recording_chunk(
     client_chunk_start_ms: Optional[float] = Form(None),
     client_chunk_end_ms: Optional[float] = Form(None),
 ):
-    store: RecordingStore = request.app.state.recording_store
+    store: RecordingStore = get_services(request.app).recordings
     try:
         content = await file.read()
         res = store.append_chunk(
@@ -86,7 +88,7 @@ async def append_recording_track_chunk(
     client_chunk_start_ms: Optional[float] = Form(None),
     client_chunk_end_ms: Optional[float] = Form(None),
 ):
-    store: RecordingStore = request.app.state.recording_store
+    store: RecordingStore = get_services(request.app).recordings
     try:
         content = await file.read()
         res = store.append_track_chunk(
@@ -113,7 +115,7 @@ async def append_recording_track_chunk(
 @router.get("/v1/recordings/{recording_id}/tracks/{track_id}/expected-sequence")
 def expected_recording_track_sequence(recording_id: str, track_id: str, request: Request):
     try:
-        return request.app.state.recording_store.expected_sequence(recording_id, track_id)
+        return get_services(request.app).recordings.expected_sequence(recording_id, track_id)
     except RecordingNotFound as exc:
         raise HTTPException(status_code=404, detail="Recording not found") from exc
     except RecordingConflict as exc:
@@ -123,7 +125,7 @@ def expected_recording_track_sequence(recording_id: str, track_id: str, request:
 @router.post("/v1/recordings/{recording_id}/recover")
 def recover_recording(recording_id: str, request: Request):
     try:
-        return request.app.state.recording_store.recover(recording_id)
+        return get_services(request.app).recordings.recover(recording_id)
     except RecordingNotFound as exc:
         raise HTTPException(status_code=404, detail="Recording not found") from exc
     except RecordingConflict as exc:
@@ -133,7 +135,7 @@ def recover_recording(recording_id: str, request: Request):
 @router.post("/v1/recordings/{recording_id}/discard", status_code=204)
 def discard_recording(recording_id: str, request: Request):
     try:
-        request.app.state.recording_store.discard(recording_id)
+        get_services(request.app).recordings.discard(recording_id)
         return Response(status_code=204)
     except RecordingNotFound as exc:
         raise HTTPException(status_code=404, detail="Recording not found") from exc
@@ -143,7 +145,7 @@ def discard_recording(recording_id: str, request: Request):
 
 @router.post("/v1/recordings/{recording_id}/stop", status_code=202)
 def stop_recording(recording_id: str, request: Request):
-    store: RecordingStore = request.app.state.recording_store
+    store: RecordingStore = get_services(request.app).recordings
     try:
         metadata, _ = store.finalize(recording_id)
         try:
@@ -162,13 +164,13 @@ def stop_recording(recording_id: str, request: Request):
 
 @router.get("/v1/recordings/active")
 def get_active_recording(request: Request):
-    active = request.app.state.recording_store.active_recording()
+    active = get_services(request.app).recordings.active_recording()
     if not active:
         return {"active": False}
     
     recording_id = active["id"]
     # Check if native capture session is active to fetch volume and real status
-    session = request.app.state.capture_manager._sessions.get(recording_id)
+    session = get_services(request.app).capture.get_session(recording_id)
     
     mic_db = -120.0
     system_db = -120.0
@@ -205,14 +207,14 @@ def get_active_recording(request: Request):
 @router.get("/v1/recordings/{recording_id}")
 def get_recording(recording_id: str, request: Request):
     try:
-        return request.app.state.recording_store.get(recording_id)
+        return get_services(request.app).recordings.get(recording_id)
     except RecordingNotFound as exc:
         raise HTTPException(status_code=404, detail="Recording not found") from exc
 
 
 @router.get("/v1/recordings/{recording_id}/audio")
 def get_recording_audio(recording_id: str, request: Request):
-    store: RecordingStore = request.app.state.recording_store
+    store: RecordingStore = get_services(request.app).recordings
     try:
         metadata = store.get(recording_id, include_result=False)
         return FileResponse(
@@ -229,7 +231,7 @@ def get_recording_audio(recording_id: str, request: Request):
 @router.get("/v1/recordings/{recording_id}/intelligence")
 def get_recording_intelligence(recording_id: str, request: Request):
     try:
-        return request.app.state.recording_store.get_intelligence(recording_id)
+        return get_services(request.app).recordings.get_intelligence(recording_id)
     except RecordingNotFound as exc:
         raise HTTPException(status_code=404, detail="Recording not found") from exc
     except FileNotFoundError as exc:
@@ -238,7 +240,7 @@ def get_recording_intelligence(recording_id: str, request: Request):
 
 @router.get("/v1/recordings/{recording_id}/tracks/{track_id}/audio")
 def get_recording_track_audio(recording_id: str, track_id: str, request: Request):
-    store: RecordingStore = request.app.state.recording_store
+    store: RecordingStore = get_services(request.app).recordings
     try:
         metadata = store.get(recording_id, include_result=False)
         track = next((item for item in metadata.get("audio_tracks", []) if item.get("id") == track_id), None)
@@ -257,12 +259,12 @@ def get_recording_track_audio(recording_id: str, track_id: str, request: Request
 
 @router.get("/v1/recordings")
 def list_recordings(request: Request, limit: int = 20):
-    return {"items": request.app.state.recording_store.list(limit)}
+    return {"items": get_services(request.app).recordings.list(limit)}
 
 
 @router.patch("/v1/recordings/{recording_id}")
 def update_recording(recording_id: str, request: Request, body: UpdateRecordingRequest):
-    store: RecordingStore = request.app.state.recording_store
+    store: RecordingStore = get_services(request.app).recordings
     try:
         return store.update(
             recording_id,
@@ -276,10 +278,10 @@ def update_recording(recording_id: str, request: Request, body: UpdateRecordingR
 @router.get("/v1/recordings/{recording_id}/project")
 def get_recording_project(recording_id: str, request: Request):
     try:
-        recording = request.app.state.recording_store.get(recording_id)
+        recording = get_services(request.app).recordings.get(recording_id)
     except RecordingNotFound as exc:
         raise HTTPException(status_code=404, detail="Recording not found") from exc
-    transcription = request.app.state.transcription_store.find_for_recording(recording_id)
+    transcription = get_services(request.app).transcriptions.find_for_recording(recording_id)
     return {
         "recording": recording,
         "transcription": transcription,
@@ -292,11 +294,11 @@ def get_recording_project(recording_id: str, request: Request):
 
 @router.post("/v1/recordings/{recording_id}/control/stop", status_code=202)
 def control_stop_recording(recording_id: str, request: Request):
-    recording = request.app.state.recording_store.get(recording_id, include_result=False)
+    recording = get_services(request.app).recordings.get(recording_id, include_result=False)
     backend = recording.get("capture_backend", "browser")
     
     # Check if there is an active native session to be absolutely sure
-    if request.app.state.capture_manager._sessions.get(recording_id):
+    if get_services(request.app).capture.get_session(recording_id):
         backend = "native"
         
     if backend == "native":
@@ -310,7 +312,7 @@ def control_stop_recording(recording_id: str, request: Request):
 
 @router.get("/v1/recordings/{recording_id}/overlay/events")
 def overlay_events(recording_id: str, request: Request):
-    store = request.app.state.recording_store
+    store = get_services(request.app).recordings
     try:
         store.get(recording_id, include_result=False)
     except RecordingNotFound as exc:
@@ -326,7 +328,7 @@ def overlay_events(recording_id: str, request: Request):
                 yield f"data: {json.dumps({'active': False})}\n\n"
                 return
 
-            session = request.app.state.capture_manager._sessions.get(recording_id)
+            session = get_services(request.app).capture.get_session(recording_id)
             
             mic_db = -120.0
             system_db = -120.0
