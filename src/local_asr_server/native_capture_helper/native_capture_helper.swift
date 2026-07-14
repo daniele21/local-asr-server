@@ -505,7 +505,7 @@ final class VisualWindowCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     func start() async throws {
-        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
         
         let filter: SCContentFilter
         let frameWidth: CGFloat

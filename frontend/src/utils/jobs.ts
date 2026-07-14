@@ -16,6 +16,15 @@ const LOCALIZED_JOB_STEPS = new Set([
 ]);
 
 export function localizeJobStep(step: string, translate: (key: string) => string): string {
+  if (step.startsWith('visual_processing:')) {
+    const parts = step.split(':');
+    if (parts.length === 3) {
+      const current = parts[1];
+      const total = parts[2];
+      const localizedBase = translate('jobSteps.visual_processing');
+      return `${localizedBase} (${current}/${total})`;
+    }
+  }
   return LOCALIZED_JOB_STEPS.has(step) ? translate(`jobSteps.${step}`) : step;
 }
 

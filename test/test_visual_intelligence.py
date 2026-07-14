@@ -167,6 +167,62 @@ class VisualIntelligenceTests(unittest.TestCase):
                 self.assertEqual(result["stats"]["visual_intelligence"]["status"], expected)
                 self.assertEqual(store.list_visual_frames(recording["id"]), [])
 
+    def test_frame_deduplication_skips_identical_frames(self) -> None:
+        from PIL import Image, ImageDraw
+        import io
+        
+        def make_jpeg(color, with_pattern=False):
+            img = Image.new("RGB", (100, 100), color=color)
+            if with_pattern:
+                draw = ImageDraw.Draw(img)
+                draw.rectangle([10, 10, 90, 90], fill="white")
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG")
+            return buf.getvalue()
+
+        red_frame = make_jpeg("red", with_pattern=False)
+        blue_frame = make_jpeg("blue", with_pattern=True)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = RecordingStore(root, use_settings_dir=False, catalog=CatalogStore(root / "catalog.db"))
+            recording = store.create(
+                title="Dedupe Test", mime_type="audio/wav", model="test", language="it",
+                capture_mode="pc_only", capture_backend="native",
+            )
+            store.stage_visual_frame(recording["id"], 0, 1.0, red_frame)
+            store.stage_visual_frame(recording["id"], 1, 2.0, red_frame)
+            store.stage_visual_frame(recording["id"], 2, 3.0, blue_frame)
+
+            payload = {
+                "segments": [{
+                    "id": 0, "start": 0.0, "end": 4.0, "text": "Test",
+                    "speaker_label": "Computer", "provider_speaker": "S1",
+                }],
+                "stats": {},
+            }
+            services = SimpleNamespace(recordings=store, runtime=_Runtime())
+            settings = {
+                "visual_intelligence_enabled": True, "visual_llm_model": "qwen3-vl-4b",
+                "visual_minimum_observations": 3, "visual_minimum_margin": 0.2,
+            }
+            client = _Client()
+            service = PostMeetingVisualService(client_factory=lambda **_: client)
+            
+            progress_calls = []
+            def progress_cb(curr, tot):
+                progress_calls.append((curr, tot))
+
+            with patch("local_asr_server.visual_intelligence.service.load_settings", return_value=settings), \
+                 patch.object(service, "_image_message", return_value=[]):
+                result = service.process(services, recording["id"], payload, progress_callback=progress_cb)
+
+            self.assertEqual(len(client.calls), 2)
+            self.assertEqual(progress_calls, [(1, 3), (2, 3), (3, 3)])
+            
+            persisted = store.get_visual_intelligence(recording["id"])
+            self.assertEqual(len(persisted["observations"]), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

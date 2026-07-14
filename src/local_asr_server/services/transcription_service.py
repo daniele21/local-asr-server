@@ -248,8 +248,16 @@ class TranscriptionService:
         }
         payload["speaker_diarization"] = diarization_summary
         payload.setdefault("stats", {})["speaker_diarization"] = diarization_summary
+        def visual_progress(current: int, total: int) -> None:
+            val = 88
+            if total > 0:
+                val = 88 + int((current / total) * 2)
+            job_event("visual_processing", f"visual_processing:{current}:{total}", val)
+
         job_event("visual_processing", "visual_processing", 88)
-        payload = self.visual.process(get_services(app), recording_id, payload)
+        payload = self.visual.process(
+            get_services(app), recording_id, payload, progress_callback=visual_progress
+        )
         visual_outcome = payload.get("stats", {}).get("visual_intelligence")
         if visual_outcome:
             job_event("visual_processing", "visual_processing", 90, component_outcome=visual_outcome)

@@ -20,11 +20,36 @@ platform, layout, participants (array), active_speakers (array), evidence (array
 Se un dato non è leggibile usa un valore unknown o un array vuoto. Non inventare nomi."""
 
 
+def calculate_dhash(image_path: Path) -> int:
+    """Calculate a 64-bit dHash of the image for similarity checks."""
+    from PIL import Image
+    with Image.open(image_path) as img:
+        resample = getattr(Image, "Resampling", Image).BILINEAR
+        img = img.convert("L").resize((9, 8), resample)
+        pixels = list(img.getdata())
+        difference = []
+        for row in range(8):
+            for col in range(8):
+                pixel_left = pixels[row * 9 + col]
+                pixel_right = pixels[row * 9 + col + 1]
+                difference.append(pixel_left > pixel_right)
+        decimal_value = 0
+        for bit in difference:
+            decimal_value = (decimal_value << 1) | int(bit)
+        return decimal_value
+
+
 class PostMeetingVisualService:
     def __init__(self, client_factory: Callable[..., Any] | None = None) -> None:
         self._client_factory = client_factory
 
-    def process(self, services: Any, recording_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def process(
+        self,
+        services: Any,
+        recording_id: str,
+        payload: dict[str, Any],
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> dict[str, Any]:
         settings = load_settings()
         frames = services.recordings.list_visual_frames(recording_id)
         if not frames:
@@ -61,7 +86,40 @@ class PostMeetingVisualService:
                 overrides={"local_llm_model": model},
             )
             client = self._client(ready["base_url"], model)
-            for frame in frames:
+            total_frames = len(frames)
+            last_hash = None
+            last_parsed = None
+            for i, frame in enumerate(frames):
+                if progress_callback:
+                    try:
+                        progress_callback(i + 1, total_frames)
+                    except Exception as cb_exc:
+                        logger.warning("Visual intelligence progress callback failed: %s", cb_exc)
+                
+                is_duplicate = False
+                frame_hash = None
+                try:
+                    frame_hash = calculate_dhash(Path(frame["path"]))
+                    if last_hash is not None:
+                        distance = bin(frame_hash ^ last_hash).count("1")
+                        if distance <= 2:
+                            is_duplicate = True
+                except Exception as hash_exc:
+                    logger.warning("Failed to calculate dhash for frame %s: %s", frame.get("sequence"), hash_exc)
+
+                if is_duplicate and last_parsed is not None:
+                    observations.append(VisualObservation(
+                        sequence=int(frame["sequence"]), timestamp=float(frame["timestamp"]),
+                        platform=str(last_parsed.get("platform") or "unknown"),
+                        layout=str(last_parsed.get("layout") or "unknown"),
+                        participants=self._strings(last_parsed.get("participants")),
+                        active_speakers=self._strings(last_parsed.get("active_speakers")),
+                        evidence=self._strings(last_parsed.get("evidence")),
+                        confidence=self._confidence(last_parsed.get("confidence")),
+                        model=model, prompt_version=PROMPT_VERSION,
+                    ).public())
+                    continue
+
                 try:
                     raw = client.chat(
                         self._image_message(frame["path"]),
@@ -69,6 +127,9 @@ class PostMeetingVisualService:
                         max_tokens=512,
                     )
                     parsed = self._parse(raw)
+                    last_parsed = parsed
+                    if frame_hash is not None:
+                        last_hash = frame_hash
                     observations.append(VisualObservation(
                         sequence=int(frame["sequence"]), timestamp=float(frame["timestamp"]),
                         platform=str(parsed.get("platform") or "unknown"),

@@ -152,7 +152,7 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
   const userQualityWarnings = (recording?: Recording | null) => {
     const warnings = recording?.warnings || [];
     return warnings
-      .filter((warning) => !/^track_.*_invalid$/.test(warning))
+      .filter((warning) => !/^track_.*_invalid$/.test(warning) && !warning.startsWith('Visual') && !warning.includes('ScreenCaptureKit'))
       .map((warning) => {
         if (warning === 'track_mic_empty') return t('recording.qualityMicEmpty');
         if (warning === 'track_system_empty') return t('recording.qualitySystemEmpty');
