@@ -407,6 +407,21 @@ class RecordingStore:
         session_dir, _ = self._load(recording_id)
         shutil.rmtree(session_dir / ".visual-staging", ignore_errors=True)
 
+    def reset_visual_observations(self, recording_id: str) -> None:
+        with self._lock_for(recording_id):
+            session_dir, _ = self._load(recording_id)
+            observations_path = session_dir / "visual_observations.jsonl"
+            if observations_path.exists():
+                observations_path.unlink()
+
+    def append_visual_observation(self, recording_id: str, observation: dict[str, Any]) -> None:
+        with self._lock_for(recording_id):
+            session_dir, _ = self._load(recording_id)
+            observations_path = session_dir / "visual_observations.jsonl"
+            # Append observation
+            with observations_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(observation, ensure_ascii=False) + "\n")
+
     def save_visual_intelligence(
         self, recording_id: str, observations: list[dict[str, Any]], summary: dict[str, Any],
     ) -> None:

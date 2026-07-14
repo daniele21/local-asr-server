@@ -81,6 +81,7 @@ class PostMeetingVisualService:
         observations, parse_errors = [], 0
         started = time.perf_counter()
         try:
+            services.recordings.reset_visual_observations(recording_id)
             ready = services.runtime.ensure_llm_ready(
                 capability="image", reasoning="off",
                 overrides={"local_llm_model": model},
@@ -108,7 +109,7 @@ class PostMeetingVisualService:
                     logger.warning("Failed to calculate dhash for frame %s: %s", frame.get("sequence"), hash_exc)
 
                 if is_duplicate and last_parsed is not None:
-                    observations.append(VisualObservation(
+                    obs = VisualObservation(
                         sequence=int(frame["sequence"]), timestamp=float(frame["timestamp"]),
                         platform=str(last_parsed.get("platform") or "unknown"),
                         layout=str(last_parsed.get("layout") or "unknown"),
@@ -117,7 +118,9 @@ class PostMeetingVisualService:
                         evidence=self._strings(last_parsed.get("evidence")),
                         confidence=self._confidence(last_parsed.get("confidence")),
                         model=model, prompt_version=PROMPT_VERSION,
-                    ).public())
+                    ).public()
+                    observations.append(obs)
+                    services.recordings.append_visual_observation(recording_id, obs)
                     continue
 
                 try:
@@ -130,7 +133,7 @@ class PostMeetingVisualService:
                     last_parsed = parsed
                     if frame_hash is not None:
                         last_hash = frame_hash
-                    observations.append(VisualObservation(
+                    obs = VisualObservation(
                         sequence=int(frame["sequence"]), timestamp=float(frame["timestamp"]),
                         platform=str(parsed.get("platform") or "unknown"),
                         layout=str(parsed.get("layout") or "unknown"),
@@ -139,7 +142,9 @@ class PostMeetingVisualService:
                         evidence=self._strings(parsed.get("evidence")),
                         confidence=self._confidence(parsed.get("confidence")),
                         model=model, prompt_version=PROMPT_VERSION,
-                    ).public())
+                    ).public()
+                    observations.append(obs)
+                    services.recordings.append_visual_observation(recording_id, obs)
                 except Exception as exc:
                     parse_errors += 1
                     logger.warning("Visual frame %s failed: %s", frame.get("sequence"), exc)
