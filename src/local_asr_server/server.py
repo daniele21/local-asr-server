@@ -25,6 +25,7 @@ from local_asr_server.paths import get_static_dir
 from local_asr_server.runtime.service_manager import RuntimeServiceManager
 from local_asr_server.services.transcription_service import TranscriptionService
 from local_asr_server.transcriber import transcribe_file_sync
+from local_asr_server.app_logging import configure_application_logging
 
 from local_asr_server.routers.helpers import (
     _env_bool,
@@ -85,6 +86,7 @@ def create_app(
         catalog_path = recordings_dir.expanduser().resolve() / "closedroom.db"
     else:
         catalog_path = CatalogStore.default_db_path()
+    app.state.app_log_file = configure_application_logging(fallback_dir=catalog_path.parent)
         
     catalog_store = CatalogStore(catalog_path)
     app.state.prompts_file = catalog_path.parent / "prompts.json" if temp_root in catalog_path.resolve().parents else None

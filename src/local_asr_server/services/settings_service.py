@@ -20,6 +20,7 @@ from local_asr_server.runtime.models import (
 PRIVATE_SETTING_KEYS = frozenset({"gemini_api_key", "speechmatics_api_key"})
 EXPLICITLY_NULLABLE_SETTING_KEYS = frozenset(
     {
+        "default_temperature",
         "speechmatics_timeout_seconds",
         "speechmatics_poll_interval_seconds",
         "local_llm_temperature",
@@ -124,6 +125,16 @@ class SettingsService:
             value = settings.get(key)
             if value is not None and value <= 0:
                 raise InvalidSettings(f"{key} must be greater than zero")
+
+        minimum_observations = settings.get("visual_minimum_observations")
+        if not isinstance(minimum_observations, int) or minimum_observations < 1:
+            raise InvalidSettings("visual_minimum_observations must be a positive integer")
+        minimum_margin = settings.get("visual_minimum_margin")
+        if not isinstance(minimum_margin, (int, float)) or not 0 <= float(minimum_margin) <= 1:
+            raise InvalidSettings("visual_minimum_margin must be between zero and one")
+        diarization_overlap = settings.get("speaker_diarization_minimum_overlap")
+        if not isinstance(diarization_overlap, (int, float)) or not 0 <= float(diarization_overlap) <= 1:
+            raise InvalidSettings("speaker_diarization_minimum_overlap must be between zero and one")
 
         temperature = settings.get("default_temperature")
         if temperature is not None and (

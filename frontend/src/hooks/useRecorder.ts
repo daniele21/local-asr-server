@@ -34,6 +34,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
   const [progressText, setProgressText] = useState(t('recording.progressNone'));
   const [statusText, setStatusText] = useState(t('recording.statusReady'));
   const [statusState, setStatusState] = useState<'ready' | 'recording' | 'paused' | 'working' | 'error' | 'success'>('ready');
+  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   
   // Audio devices and routing state managed by custom hook
   const {
@@ -398,19 +399,25 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     }
   };
 
-  const startRecording = useCallback(async (title: string, projectName = '', language = '', mode: 'both' | 'mic_only' | 'pc_only' = 'both') => {
+  const startRecording = useCallback(async (title: string, projectName = '', language = '', mode: 'both' | 'mic_only' | 'pc_only' = 'both', visualWindowId?: number) => {
     if (!window.MediaRecorder || !navigator.mediaDevices?.getUserMedia) {
       showToast(t('recording.unsupportedBrowser'), 'error');
       return;
     }
 
     setPermissionsErrorDetails(null);
+    setFallbackNotice(null);
     setStatusText(t('recording.audioSetupTitle'));
     setStatusState('working');
     try {
-      const capabilities = captureCapabilities || await ApiClient.captureCapabilities().catch(() => null);
+      let capabilityCheckFailed = false;
+      const capabilities = captureCapabilities || await ApiClient.captureCapabilities().catch(() => {
+        capabilityCheckFailed = true;
+        return null;
+      });
       if (capabilities?.default_backend === 'native' && capabilities.native.available) {
-        const permissionResult = await ApiClient.ensureCapturePermissions(mode);
+        const permissionMode = visualWindowId !== undefined && mode === 'mic_only' ? 'both' : mode;
+        const permissionResult = await ApiClient.ensureCapturePermissions(permissionMode);
         setCapturePermissions(permissionResult.permissions);
 
         if (!permissionResult.ok) {
@@ -453,7 +460,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
         sessionIdRef.current = session.id;
         localStorage.setItem('asr-active-recording-id', session.id);
         
-        await ApiClient.startNativeCapture(session.id, mode);
+        await ApiClient.startNativeCapture(session.id, mode, visualWindowId);
         
         // Connect EventSource to receive real-time levels and capture status
         currentMicDbRef.current = -120;
@@ -491,9 +498,13 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
               // Request showing the native overlay panel
               ApiClient.toggleOverlay(true).then((res) => {
                 if (!res || !res.success) {
+                  setFallbackNotice(t('recording.overlayFallbackNotice'));
+                  showToast(t('recording.overlayFallbackNotice'), 'warning');
                   openBrowserPopup();
                 }
               }).catch(() => {
+                setFallbackNotice(t('recording.overlayFallbackNotice'));
+                showToast(t('recording.overlayFallbackNotice'), 'warning');
                 openBrowserPopup();
               });
 
@@ -575,6 +586,12 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
         drawAudioMeter();
         return;
       }
+
+      const captureFallbackMessage = capabilityCheckFailed
+        ? t('recording.captureCapabilityFallbackNotice')
+        : t('recording.captureBrowserFallbackNotice');
+      setFallbackNotice(captureFallbackMessage);
+      showToast(captureFallbackMessage, 'warning');
 
       // 1. Audio Routing
       if (mode !== 'mic_only') {
@@ -773,9 +790,13 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
       // Request showing the native overlay panel, fallback to browser window.open if unavailable
       ApiClient.toggleOverlay(true).then((res) => {
         if (!res || !res.success) {
+          setFallbackNotice(t('recording.overlayFallbackNotice'));
+          showToast(t('recording.overlayFallbackNotice'), 'warning');
           openBrowserPopup();
         }
       }).catch(() => {
+        setFallbackNotice(t('recording.overlayFallbackNotice'));
+        showToast(t('recording.overlayFallbackNotice'), 'warning');
         openBrowserPopup();
       });
 
@@ -866,6 +887,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     capturePermissions,
     refreshCapturePermissions,
     permissionsErrorDetails,
+    fallbackNotice,
     statusText,
     statusState,
     microphones,

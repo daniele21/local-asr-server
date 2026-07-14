@@ -155,6 +155,12 @@ class SettingsRequest(BaseModel):
     local_llm_llama_server_bin: Optional[str] = None
     meeting_auto_analysis: Optional[bool] = None
     meeting_default_pipeline: Optional[str] = None
+    speaker_diarization_enabled: Optional[bool] = None
+    speaker_diarization_minimum_overlap: Optional[float] = None
+    visual_intelligence_enabled: Optional[bool] = None
+    visual_llm_model: Optional[str] = None
+    visual_minimum_observations: Optional[int] = None
+    visual_minimum_margin: Optional[float] = None
 
 class MergeTranscriptionsRequest(BaseModel):
     transcription_ids: list[str]
@@ -187,6 +193,8 @@ class OverlayResizeRequest(BaseModel):
 
 class CaptureStartRequest(BaseModel):
     mode: str = "both"
+    visual_window_id: Optional[int] = None
+    visual_fps: float = 0.5
 
 
 class CaptureEnsurePermissionsRequest(BaseModel):

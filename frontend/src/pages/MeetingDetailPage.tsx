@@ -14,7 +14,7 @@ import {
   Sparkles,
   XCircle,
 } from 'lucide-react';
-import { ApiClient, AnalysisRun, Meeting, TranscriptionJob } from '../api/apiClient';
+import { ApiClient, AnalysisRun, Meeting, MeetingDiagnostics } from '../api/apiClient';
 import { ANALYSIS_TYPE_LABELS, ANALYSIS_TYPE_ORDER } from '../api/config';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
@@ -27,6 +27,7 @@ import { TranscriptionModelModal, TranscriptionModelSelection } from '../compone
 import { AnalysisSetupModal, AnalysisSetupSelection } from '../components/ui/AnalysisSetupModal';
 import { Sheet, SheetContent, SheetHeader, SheetBody } from '../components/ui/Sheet';
 import { cn } from '../utils/cn';
+import { formatJobProgress } from '../utils/jobs';
 
 interface MeetingDetailPageProps {
   recordingId: string | null;
@@ -44,14 +45,10 @@ function analysisLabel(type: string): string {
   return ANALYSIS_TYPE_LABELS[type] || type;
 }
 
-function jobProgress(job: TranscriptionJob): string {
-  const step = job.current_step || job.status;
-  return `${step} · ${job.progress || 0}%`;
-}
-
 export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = false }: MeetingDetailPageProps) {
   const { t, lang } = useTranslation();
   const [meeting, setMeeting] = useState<Meeting | null>(null);
+  const [diagnosticReport, setDiagnosticReport] = useState<MeetingDiagnostics | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [selectedAnalysisType, setSelectedAnalysisType] = useState('meeting_brief');
@@ -77,8 +74,14 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
           throw new Error(t('meeting.errorNotFound'));
         }
         data = matched;
+        setDiagnosticReport(null);
       } else {
-        data = await ApiClient.getMeeting(recordingId);
+        const [meetingData, diagnosticsData] = await Promise.all([
+          ApiClient.getMeeting(recordingId),
+          ApiClient.getMeetingDiagnostics(recordingId),
+        ]);
+        data = meetingData;
+        setDiagnosticReport(diagnosticsData);
       }
       setMeeting(data);
       const availableTypes = Object.keys(data.latest_analysis || {});
@@ -201,6 +204,23 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
   const selectedHistory = meeting.analysis_runs.filter((run) => run.analysis_type === selectedAnalysisType);
   const recordingDuration = getDurationSeconds(meeting.recording);
   const canAnalyze = Boolean(meeting.transcription) && !demoMode;
+  const diarization = meeting.transcription?.stats?.speaker_diarization;
+  const visualIntelligence = meeting.transcription?.stats?.visual_intelligence;
+  const diagnostics = diagnosticReport?.diagnostics || meeting.transcription?.stats?.diagnostics || [];
+  const outcomeStatus = diagnosticReport?.outcome_status || meeting.transcription?.stats?.outcome_status;
+  const diagnosticWarnings = diagnostics.filter((item) =>
+    item.status === 'failed' || item.status === 'degraded' || item.fallback_used,
+  );
+  const acceptedSpeakerMappings = (meeting.transcription?.stats?.speaker_attribution?.mappings || [])
+    .filter((mapping) => mapping.status === 'accepted' && mapping.display_name);
+
+  const enrichmentBadge = (status?: string) => {
+    if (status === 'completed') return <Badge variant="success">{t('meeting.enrichmentCompleted')}</Badge>;
+    if (status === 'failed' || status === 'degraded' || status === 'completed_with_warnings') {
+      return <Badge variant="warning">{t('meeting.enrichmentFailed')}</Badge>;
+    }
+    return <Badge variant="idle">{t('meeting.enrichmentUnavailable')}</Badge>;
+  };
 
   return (
     <div className="flex flex-col gap-5">
@@ -279,6 +299,20 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
         )}
       </section>
 
+      {outcomeStatus === 'completed_with_warnings' && (
+        <section className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-xs text-text-secondary">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="font-semibold text-warning">{t('meeting.completedWithWarnings')}</p>
+              <p className="mt-1">{t('meeting.completedWithWarningsDesc')}</p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setDetailsOpen(true)}>
+              {t('meeting.showDiagnostics')}
+            </Button>
+          </div>
+        </section>
+      )}
+
       {/* Busy / Processing State */}
       {(activeJobs.length > 0 || meeting.analysis_runs.some((run) => activeJobStatuses.has(run.status))) && (
         <section className="border border-warning/30 bg-warning/5 rounded-xl px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs animate-in fade-in duration-200">
@@ -287,10 +321,63 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               <Clock3 className="w-4 h-4 text-warning" />
               <span>{t('meeting.processingTitle')}</span>
             </div>
+
+            {diagnostics.length > 0 && (
+              <div className="rounded-xl border border-border-subtle bg-bg-surface p-4">
+                <h4 className="text-[10px] font-bold text-text-muted uppercase tracking-wider mb-3">
+                  {t('meeting.diagnosticsTitle')}
+                </h4>
+                <div className="flex flex-col gap-3">
+                  {diagnostics.map((item, index) => (
+                    <div key={`${item.component}-${index}`} className="border-b border-border-subtle pb-3 last:border-0 last:pb-0 text-xs">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-semibold text-text-primary">{item.component}</span>
+                        {enrichmentBadge(item.status)}
+                      </div>
+                      {(item.requested_backend || item.actual_backend) && (
+                        <p className="mt-1 text-text-muted font-mono break-all">
+                          {item.requested_backend || '—'} → {item.actual_backend || '—'}
+                        </p>
+                      )}
+                      {(item.fallback_used || item.fallback_reason) && (
+                        <p className="mt-1 text-warning">{t('meeting.fallbackLabel')}: {item.fallback_reason || 'fallback'}</p>
+                      )}
+                      {item.error && <p className="mt-1 text-danger break-words">{item.error}</p>}
+                      {Boolean(item.details?.model_path) && (
+                        <p className="mt-1 text-text-muted font-mono break-all">
+                          {t('meeting.modelPathLabel')}: {String(item.details?.model_path)}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {diagnosticWarnings.length === 0 && (
+                  <p className="mt-3 text-xs text-text-muted">{t('meeting.noDiagnosticWarnings')}</p>
+                )}
+                {diagnosticReport?.log_file && (
+                  <div className="mt-4 border-t border-border-subtle pt-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">{t('meeting.logFileLabel')}</p>
+                    <button
+                      type="button"
+                      className="mt-1 text-left text-xs font-mono text-accent hover:underline break-all"
+                      onClick={() => navigator.clipboard?.writeText(diagnosticReport.log_file || '')}
+                      title={t('meeting.copyLogPath')}
+                    >
+                      {diagnosticReport.log_file}
+                    </button>
+                    {diagnosticReport.log_lines.length > 0 && (
+                      <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-md bg-bg-elevated p-2 text-[10px] text-text-muted">
+                        {diagnosticReport.log_lines.join('\n')}
+                      </pre>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-text-secondary">
               {activeJobs.map((job) => (
                 <div key={job.id} className="flex items-center gap-2">
-                  <span className="font-medium text-text-primary">{job.type}: {jobProgress(job)}</span>
+                  <span className="font-medium text-text-primary">{job.type}: {formatJobProgress(job, t)}</span>
                   <button
                     type="button"
                     onClick={() => handleCancelJob(job.id)}
@@ -555,8 +642,36 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                     {Object.keys(meeting.latest_analysis || {}).length}
                   </Badge>
                 </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span>{t('meeting.diarizationLabel')}</span>
+                  {enrichmentBadge(diarization?.status)}
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span>{t('meeting.visualEvidenceLabel')}</span>
+                  {enrichmentBadge(visualIntelligence?.status)}
+                </div>
               </div>
             </div>
+
+            {meeting.transcription && (
+              <div className="rounded-xl border border-border-subtle bg-bg-surface p-4">
+                <h4 className="text-[10px] font-bold text-text-muted uppercase tracking-wider mb-3">
+                  {t('meeting.speakerAttributionLabel')}
+                </h4>
+                {acceptedSpeakerMappings.length > 0 ? (
+                  <div className="flex flex-col gap-2">
+                    {acceptedSpeakerMappings.map((mapping) => (
+                      <div key={mapping.speaker_cluster} className="flex items-center justify-between gap-3 text-xs">
+                        <span className="font-mono text-text-muted">{mapping.speaker_cluster}</span>
+                        <span className="font-semibold text-text-primary">{mapping.display_name}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-text-muted">{t('meeting.noSpeakerAttribution')}</p>
+                )}
+              </div>
+            )}
 
             {/* 2. Available Actions Card */}
             <div className="rounded-xl border border-border-subtle bg-bg-surface p-4">

@@ -21,6 +21,7 @@ APP_NAME = "ClosedRoom"
 APP_BUNDLE_ID = "com.closedroom.app"
 NATIVE_CAPTURE_HELPER_APP_NAME = "ClosedRoomNativeCapture.app"
 NATIVE_CAPTURE_HELPER_EXECUTABLE = "ClosedRoomNativeCapture"
+SPEAKER_DIARIZATION_HELPER_EXECUTABLE = "speaker-diarization-helper"
 
 
 # ── Bundle detection ──────────────────────────────────────────────────────────
@@ -254,4 +255,21 @@ def get_native_capture_helper_path() -> Path:
         return candidates[0]
 
     from local_asr_server.native_capture_helper.compile import _BINARY_PATH  # type: ignore
+    return _BINARY_PATH
+
+
+def get_speaker_diarization_helper_path() -> Path:
+    """Return the FluidAudio batch diarization helper in dev or bundle mode."""
+    if is_bundled():
+        contents_dir = get_app_contents_dir()
+        candidates = []
+        if contents_dir is not None:
+            candidates.extend([
+                contents_dir / "Frameworks" / SPEAKER_DIARIZATION_HELPER_EXECUTABLE,
+                contents_dir / "Resources" / SPEAKER_DIARIZATION_HELPER_EXECUTABLE,
+            ])
+        candidates.append(get_bundle_dir() / SPEAKER_DIARIZATION_HELPER_EXECUTABLE)
+        return next((path for path in candidates if path.exists()), candidates[0])
+
+    from local_asr_server.speaker_diarization_helper.compile import _BINARY_PATH  # type: ignore
     return _BINARY_PATH

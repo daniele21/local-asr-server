@@ -4,6 +4,7 @@ import argparse
 import shutil
 import subprocess
 import sys
+import json
 from pathlib import Path
 
 import uvicorn
@@ -89,7 +90,50 @@ def _build_parser() -> argparse.ArgumentParser:
         "app",
         help="Launch ClosedRoom in menu bar mode (macOS only).",
     )
+    inspect_meeting = subparsers.add_parser(
+        "inspect-meeting",
+        help="Print persisted diagnostics for a recording.",
+    )
+    inspect_meeting.add_argument("recording_id")
+    inspect_meeting.add_argument("--json", action="store_true", dest="as_json")
     return parser
+
+
+def _inspect_meeting(recording_id: str, *, as_json: bool = False) -> bool:
+    from local_asr_server.catalog import CatalogStore
+    from local_asr_server.jobs import JobStore
+
+    catalog = CatalogStore()
+    transcriptions, _ = catalog.list_transcriptions(page=1, limit=500)
+    transcription = next(
+        (item for item in transcriptions if item.get("recording_id") == recording_id),
+        None,
+    )
+    jobs = JobStore(catalog.db_path).list_jobs(
+        job_type="transcription", scope_type="recording", scope_id=recording_id, limit=20
+    )
+    from local_asr_server.paths import get_service_log_file
+    from local_asr_server.meeting_diagnostics import build_meeting_diagnostic_report
+    log_file = get_service_log_file("closedroom", create_parent=False)
+    report = build_meeting_diagnostic_report(
+        recording_id,
+        transcription,
+        JobStore(catalog.db_path),
+        log_file=log_file,
+    )
+    if as_json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        print(f"Meeting {recording_id}: {report['outcome_status']}")
+        for item in report["diagnostics"]:
+            backend = item.get("actual_backend") or item.get("requested_backend") or "n/a"
+            print(f"- {item.get('component')}: {item.get('status')} [{backend}]")
+            if item.get("fallback_used") or item.get("fallback_reason"):
+                print(f"  fallback: {item.get('fallback_reason') or 'used'}")
+            if item.get("error"):
+                print(f"  error: {item['error']}")
+        print(f"Jobs: {len(report['jobs'])}; events: {len(report['events'])}; log: {log_file}")
+    return transcription is not None or bool(report["jobs"])
 
 
 def _resolve_serve_port(args: argparse.Namespace) -> int:
@@ -191,6 +235,10 @@ def main() -> None:
     if args.command == "app":
         from local_asr_server.menubar import main as menubar_main
         menubar_main()
+        return
+    if args.command == "inspect-meeting":
+        if not _inspect_meeting(args.recording_id, as_json=args.as_json):
+            raise SystemExit(1)
         return
     if args.command != "serve":
         parser.print_help()

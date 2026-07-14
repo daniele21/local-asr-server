@@ -3,7 +3,11 @@ from __future__ import annotations
 import unittest
 from unittest.mock import Mock, patch
 
-from local_asr_server.runtime.llm_sidecar import LocalLLMSidecar, LocalLLMProcessConfig
+from local_asr_server.runtime.llm_sidecar import (
+    LocalLLMSidecar,
+    LocalLLMSidecarError,
+    LocalLLMProcessConfig,
+)
 
 
 class LocalLLMSidecarTests(unittest.TestCase):
@@ -55,6 +59,20 @@ class LocalLLMSidecarTests(unittest.TestCase):
             startup_timeout=None,
             llama_server_bin="",
         )
+
+    def test_ensure_ready_reports_missing_vision_extra_before_starting(self) -> None:
+        sidecar = LocalLLMSidecar()
+        with (
+            patch.object(sidecar, "_runtime_available", return_value=True),
+            patch.object(sidecar, "_vision_runtime_available", return_value=False),
+            patch.object(sidecar, "start") as start,
+            self.assertRaises(LocalLLMSidecarError) as raised,
+        ):
+            sidecar.ensure_ready(model="qwen3-vl-4b", capability="image")
+
+        self.assertEqual(raised.exception.code, "local_llm_vision_dependency_missing")
+        self.assertEqual(raised.exception.status, 503)
+        start.assert_not_called()
 
 
 if __name__ == "__main__":

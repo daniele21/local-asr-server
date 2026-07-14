@@ -25,6 +25,7 @@ from local_asr_server.runtime.asr_worker import ASRWorkerRunner, InProcessASRWor
 from local_asr_server.schemas import TranscribeRecordingRequest
 from local_asr_server.settings import load_settings
 from local_asr_server.speechmatics_asr import SpeechmaticsBatchASRProvider
+from local_asr_server.speaker_diarization import LocalSpeakerDiarizationService
 from local_asr_server.transcriber import (
     _clean_nan_values,
     generate_cache_key,
@@ -33,6 +34,8 @@ from local_asr_server.transcriber import (
     save_cached_result,
 )
 from local_asr_server.transcription_quality import audio_stats, is_near_silent_track
+from local_asr_server.visual_intelligence import PostMeetingVisualService
+from local_asr_server.diagnostics import attach_diagnostics, diagnostic, log_diagnostic
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -43,6 +46,8 @@ class TranscriptionService:
 
     def __init__(self, runner: ASRWorkerRunner | None = None) -> None:
         self.runner = runner or InProcessASRWorkerRunner()
+        self.visual = PostMeetingVisualService()
+        self.diarization = LocalSpeakerDiarizationService()
 
     def transcribe_file(self, **kwargs: Any) -> dict[str, Any]:
         provider_name = normalize_asr_provider(kwargs.pop("asr_provider", ASR_PROVIDER_LOCAL))
@@ -167,11 +172,24 @@ class TranscriptionService:
         recording = store.get(recording_id, include_result=False)
         track_paths = store.transcribable_tracks(recording_id)
 
-        def job_event(status: str, step: str, progress: int) -> None:
+        def job_event(
+            status: str,
+            step: str,
+            progress: int,
+            *,
+            component_outcome: dict[str, Any] | None = None,
+        ) -> None:
             if job is None:
                 return
             if hasattr(app.state, "transcription_jobs"):
-                get_services(app).transcription_jobs.update_progress(job.id, status, progress, step)
+                get_services(app).transcription_jobs.update_progress(
+                    job.id,
+                    status,
+                    progress,
+                    step,
+                    message=component_outcome.get("status") if component_outcome else None,
+                    event_payload=component_outcome,
+                )
                 return
             job.status = status
             job.current_step = step
@@ -211,6 +229,9 @@ class TranscriptionService:
             )
             track_results.append({"track": public_track, "result": result})
 
+        job_event("diarizing", "diarizing", 82)
+        diarization = self.diarization.process(store, recording_id, track_paths, track_results)
+        job_event("diarizing", "diarizing", 83, component_outcome=diarization)
         job_event("merging", "merging", 85)
         payload = _merge_track_transcriptions(
             track_results,
@@ -222,7 +243,32 @@ class TranscriptionService:
             backend=self.backend(provider, target_model),
             provider_options=public_options,
         )
+        diarization_summary = {
+            key: value for key, value in diarization.items() if key != "tracks"
+        }
+        payload["speaker_diarization"] = diarization_summary
+        payload.setdefault("stats", {})["speaker_diarization"] = diarization_summary
+        job_event("visual_processing", "visual_processing", 88)
+        payload = self.visual.process(get_services(app), recording_id, payload)
+        visual_outcome = payload.get("stats", {}).get("visual_intelligence")
+        if visual_outcome:
+            job_event("visual_processing", "visual_processing", 90, component_outcome=visual_outcome)
+        if payload.get("speaker_attribution"):
+            payload.setdefault("stats", {})["speaker_attribution"] = payload["speaker_attribution"]
+        job_event("audio_intelligence", "audio_intelligence", 92)
         payload = self._attach_audio_intelligence(store, recording_id, track_paths, payload)
+        audio_outcome = payload.get("stats", {}).get("audio_intelligence")
+        if audio_outcome:
+            job_event("audio_intelligence", "audio_intelligence", 93, component_outcome=audio_outcome)
+        diagnostics = self._collect_diagnostics(track_results, payload)
+        for item in diagnostics:
+            log_diagnostic(
+                logger,
+                item,
+                recording_id=recording_id,
+                job_id=getattr(job, "id", None),
+            )
+        payload = attach_diagnostics(payload, diagnostics)
         payload = _clean_nan_values(payload)
         job_event("saving", "saving", 95)
         saved_meta = get_services(app).transcriptions.save(
@@ -278,6 +324,12 @@ class TranscriptionService:
             store.save_intelligence(recording_id, intelligence)
             payload["segments"] = intelligence.get("segments", payload.get("segments", []))
             payload["insight_candidates"] = intelligence.get("insight_candidates", [])
+            unavailable_channels = [
+                channel
+                for channel, details in (intelligence.get("channels") or {}).items()
+                if not details.get("available", True)
+            ]
+            audio_degraded = bool(intelligence.get("fallback_used") or unavailable_channels)
             payload.setdefault("stats", {})["audio_intelligence"] = {
                 "enabled": True,
                 "version": intelligence.get("version"),
@@ -287,11 +339,67 @@ class TranscriptionService:
                 "speaking_time_pct": intelligence.get("conversation_metrics", {}).get("speaking_time_pct", {}),
                 "long_pause_count": len(intelligence.get("conversation_metrics", {}).get("long_pauses", []) or []),
                 "overlap_count": len(intelligence.get("conversation_metrics", {}).get("overlaps", []) or []),
+                **diagnostic(
+                    "audio_intelligence",
+                    "degraded" if audio_degraded else "completed",
+                    requested_backend=intelligence.get("requested_backend"),
+                    actual_backend=intelligence.get("actual_backend"),
+                    fallback_used=bool(intelligence.get("fallback_used")),
+                    fallback_reason=intelligence.get("fallback_reason")
+                    or (f"unavailable_channels: {', '.join(unavailable_channels)}" if unavailable_channels else None),
+                    counts={
+                        "channels": len(intelligence.get("channels", {})),
+                        "unavailable_channels": len(unavailable_channels),
+                    },
+                ),
             }
         except Exception as exc:
             logger.warning("Audio intelligence failed for recording %s: %s", recording_id, exc)
             payload.setdefault("stats", {})["audio_intelligence"] = {
                 "enabled": False,
-                "error": str(exc)[:500],
+                **diagnostic(
+                    "audio_intelligence",
+                    "failed",
+                    requested_backend="silero-vad-v4",
+                    error=str(exc),
+                ),
             }
         return payload
+
+    @staticmethod
+    def _collect_diagnostics(
+        track_results: list[dict[str, Any]],
+        payload: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for item in track_results:
+            track_id = str(item.get("track", {}).get("id") or "audio")
+            metadata = item.get("result", {}).get("metadata", {}) or {}
+            if metadata.get("skipped"):
+                items.append(
+                    diagnostic(
+                        f"asr:{track_id}",
+                        "skipped",
+                        fallback_reason=metadata.get("skip_reason"),
+                        counts={"segments": 0},
+                    )
+                )
+            elif metadata.get("vad_fallback") or metadata.get("vad_filter_fallback"):
+                items.append(
+                    diagnostic(
+                        f"asr:{track_id}",
+                        "degraded",
+                        requested_backend="vad_guided",
+                        actual_backend="full_track_asr",
+                        fallback_used=True,
+                        fallback_reason=metadata.get("vad_fallback_reason")
+                        or metadata.get("vad_filter_fallback"),
+                        counts={"segments": len(item.get("result", {}).get("segments", []) or [])},
+                    )
+                )
+        stats = payload.get("stats", {}) or {}
+        for key in ("speaker_diarization", "visual_intelligence", "audio_intelligence"):
+            value = stats.get(key)
+            if isinstance(value, dict) and value.get("component"):
+                items.append(value)
+        return items

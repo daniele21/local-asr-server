@@ -519,6 +519,16 @@ class ClosedRoomApp(rumps.App):
 
     def _start_shortcuts_listener(self) -> None:
         """Start the global keyboard shortcuts listener using pynput."""
+        from local_asr_server.macos_permissions import accessibility_status
+
+        permission = accessibility_status()
+        if not permission.get("trusted"):
+            logger.warning(
+                "Global shortcuts disabled: macOS Accessibility permission is required "
+                "(System Settings > Privacy & Security > Accessibility)."
+            )
+            return
+
         def run_listener():
             try:
                 from pynput import keyboard
@@ -690,6 +700,10 @@ class ClosedRoomApp(rumps.App):
 
 def main() -> None:
     """Run the ClosedRoom menu bar application."""
+    from local_asr_server.bundled_module_dispatch import dispatch_bundled_module
+
+    if dispatch_bundled_module():
+        return
     if not _RUMPS_AVAILABLE:
         raise SystemExit(
             "rumps is not installed. Install it with:\n"

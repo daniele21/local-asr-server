@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ApiClient, Settings } from '../api/apiClient';
+import { AccessibilityStatus, ApiClient, Settings } from '../api/apiClient';
 import { ASR_PROVIDERS, DEFAULTS, GEMINI_MODELS, LANGUAGES, LLM_PROVIDERS, MODELS, SPEECHMATICS_DIARIZATION, SPEECHMATICS_MODELS, SPEECHMATICS_REGIONS, TASKS } from '../api/config';
 import { useTranslation } from '../i18n/i18n';
 import { useToast } from '../context/ToastContext';
@@ -51,10 +51,13 @@ export default function SettingsPage() {
   const [localLlmJsonMode, setLocalLlmJsonMode] = useState(DEFAULTS.localLlmJsonMode);
   const [meetingAutoAnalysis, setMeetingAutoAnalysis] = useState(false);
   const [meetingDefaultPipeline, setMeetingDefaultPipeline] = useState('meeting_default');
+  const [speakerDiarizationEnabled, setSpeakerDiarizationEnabled] = useState(false);
+  const [visualIntelligenceEnabled, setVisualIntelligenceEnabled] = useState(false);
   const [showAdvancedLlm, setShowAdvancedLlm] = useState(false);
   const [llmService, setLlmService] = useState<any>(null);
   const [llmAction, setLlmAction] = useState('');
   const [llmLogs, setLlmLogs] = useState('');
+  const [accessibility, setAccessibility] = useState<AccessibilityStatus | null>(null);
 
   // System Info
   const [sysInfo, setSysInfo] = useState({
@@ -101,7 +104,18 @@ export default function SettingsPage() {
       setLocalLlmJsonMode(llm.jsonMode);
       setMeetingAutoAnalysis(settings.meeting_auto_analysis || false);
       setMeetingDefaultPipeline(settings.meeting_default_pipeline || 'meeting_default');
+      setSpeakerDiarizationEnabled(Boolean(settings.speaker_diarization_enabled));
+      setVisualIntelligenceEnabled(Boolean(settings.visual_intelligence_enabled));
       refreshLlmService();
+      ApiClient.accessibilityStatus()
+        .then(setAccessibility)
+        .catch((err) => setAccessibility({
+          available: false,
+          trusted: false,
+          required_for: ['global_hotkeys'],
+          reason: 'accessibility_status_unavailable',
+          error: err instanceof Error ? err.message : String(err),
+        }));
 
       setSysInfo({
         server: '127.0.0.1:1236',
@@ -208,6 +222,8 @@ export default function SettingsPage() {
         }, showAdvancedLlm),
         meeting_auto_analysis: meetingAutoAnalysis,
         meeting_default_pipeline: meetingDefaultPipeline,
+        speaker_diarization_enabled: speakerDiarizationEnabled,
+        visual_intelligence_enabled: visualIntelligenceEnabled,
       };
       if (geminiApiKey.trim()) payload.gemini_api_key = geminiApiKey.trim();
       if (speechmaticsApiKey.trim()) payload.speechmatics_api_key = speechmaticsApiKey.trim();
@@ -451,7 +467,7 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {(llmProvider === 'nemotron_local' || llmProvider === 'voxtral_local') && (
+            {(llmProvider === 'nemotron_local' || llmProvider === 'voxtral_local' || visualIntelligenceEnabled) && (
               <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-3 rounded-lg border border-border-subtle bg-bg-surface p-4">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -562,6 +578,20 @@ export default function SettingsPage() {
               checked={meetingAutoAnalysis}
               onChange={(e) => setMeetingAutoAnalysis(e.target.checked)}
             />
+            <Checkbox
+              variant="toggle"
+              label={t('settings.speakerDiarization')}
+              checked={speakerDiarizationEnabled}
+              onChange={(e) => setSpeakerDiarizationEnabled(e.target.checked)}
+            />
+            <p className="text-xs text-text-muted">{t('settings.speakerDiarizationDesc')}</p>
+            <Checkbox
+              variant="toggle"
+              label={t('settings.visualIntelligence')}
+              checked={visualIntelligenceEnabled}
+              onChange={(e) => setVisualIntelligenceEnabled(e.target.checked)}
+            />
+            <p className="text-xs text-text-muted">{t('settings.visualIntelligenceDesc')}</p>
             <Select
               label={t('settings.meetingDefaultPipeline')}
               value={meetingDefaultPipeline}
@@ -599,6 +629,15 @@ export default function SettingsPage() {
           <span className="text-text-muted">{t('settings.sysMacosMenu')}</span>
           <span className="text-text-primary font-medium text-success">{sysInfo.menubar}</span>
         </div>
+
+        {accessibility && !accessibility.trusted && (
+          <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-text-secondary" role="alert">
+            <strong className="text-warning">{t('settings.accessibilityWarningTitle')}</strong>
+            <p className="mt-1">{t('settings.accessibilityWarningDesc')}</p>
+            <p className="mt-2 font-medium text-text-primary">{t('settings.accessibilityWarningAction')}</p>
+            {accessibility.error && <p className="mt-2 text-danger">{accessibility.error}</p>}
+          </div>
+        )}
       </Card>
     </div>
   );

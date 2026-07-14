@@ -9,6 +9,8 @@ import ProcessingStep from './transcription/components/ProcessingStep';
 import ResultsStep from './transcription/components/ResultsStep';
 import { TourTranscriptionResult } from '../features/tour/TourTranscriptionResult';
 import { asrConfigFromSettings } from '../features/config/asrConfig';
+import { localizeJobStep } from '../utils/jobs';
+import { transcriptionHasWarnings } from '../utils/diagnostics';
 
 interface TranscriptionPageProps {
   detailPath: string | null;
@@ -19,6 +21,13 @@ interface TranscriptionPageProps {
 export default function TranscriptionPage({ detailPath, navigateTo, demoMode = false }: TranscriptionPageProps) {
   const { t, lang } = useTranslation();
   const { showToast } = useToast();
+  const showTranscriptionOutcome = (result: Transcription) => {
+    if (transcriptionHasWarnings(result)) {
+      showToast(t('transcription.completedWithWarningsToast'), 'warning');
+      return;
+    }
+    showToast(t('transcription.successTitle'), 'success');
+  };
 
   const [projectItemsMap, setProjectItemsMap] = useState<Map<string, { transcription: any; analysis: any }>>(new Map());
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
@@ -380,7 +389,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
         let currentJob = job;
         while (!['completed', 'failed', 'cancelled'].includes(currentJob.status)) {
           setProgressPercent(currentJob.progress || 10);
-          setProgressStatus(currentJob.current_step || currentJob.status);
+          setProgressStatus(localizeJobStep(currentJob.current_step || currentJob.status, t));
           await new Promise((resolve) => setTimeout(resolve, 800));
           currentJob = await ApiClient.getJob(job.id);
         }
@@ -392,7 +401,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
         setTranscriptionResult(result);
         setStep('results');
         setResultTab('text');
-        showToast(t('transcription.successTitle'), 'success');
+        showTranscriptionOutcome(result);
         if (result.saved_id) {
           navigateTo('transcription', result.saved_id);
         }
@@ -469,7 +478,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
               setTranscriptionResult(event.data);
               setStep('results');
               setResultTab('text');
-              showToast(t('transcription.successTitle'), 'success');
+              showTranscriptionOutcome(event.data);
               if (event.data.saved_id) {
                 navigateTo('transcription', event.data.saved_id);
               }

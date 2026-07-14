@@ -168,6 +168,15 @@ The project is driven by a few principles:
 
 ## 3. Architecture & Ecosystem Integration
 
+For the complete system design, including high-level context, low-level module
+responsibilities, data model, runtime flows, failure handling, security,
+packaging, and extension rules, see
+[`docs/architecture.md`](docs/architecture.md).
+
+End-to-end readiness for the combined visual intelligence and speaker
+diarization workflow is tracked in
+[`docs/visual-diarization-e2e-readiness.md`](docs/visual-diarization-e2e-readiness.md).
+
 ClosedRoom is composed of three main layers:
 
 ```text
@@ -235,6 +244,19 @@ This keeps the meeting application focused on product experience, while `local-l
 * local model configuration;
 * reasoning/JSON mode;
 * logs and diagnostics.
+
+ClosedRoom persists its main rotating application log in
+`~/Library/Logs/ClosedRoom/closedroom.log`. To inspect effective backends,
+fallbacks and errors for a meeting from a terminal:
+
+```bash
+local-asr inspect-meeting <recording-id>
+local-asr inspect-meeting <recording-id> --json
+```
+
+The same canonical report is available to the authenticated UI at
+`GET /v1/meetings/<recording-id>/diagnostics`; it includes component outcomes,
+job events, artifact presence and redacted log lines correlated to the meeting.
 
 ---
 
@@ -352,12 +374,14 @@ local-asr serve \
 
 From the local web app you can:
 
-1. record a meeting;
-2. save the audio locally;
-3. transcribe it;
-4. open the meeting workspace;
-5. run analysis;
-6. review actions, decisions, risks, and project updates.
+1. choose speaker diarization, visual intelligence and the exact meeting window
+   to observe from the Recording page;
+2. record a meeting;
+3. save the audio locally;
+4. transcribe it;
+5. open the meeting workspace;
+6. run analysis;
+7. review actions, decisions, risks, and project updates.
 
 ---
 
@@ -375,6 +399,7 @@ A recording session is stored under:
 ├── mic.webm            # local microphone track, when captured
 ├── system.webm         # computer audio track, when captured
 ├── metadata.json
+├── speaker-diarization.json # optional FluidAudio speaker timeline
 ├── transcript.json
 └── transcript.txt
 ```
@@ -389,6 +414,82 @@ The native helper records:
 * computer/system audio through ScreenCaptureKit;
 * separate source tracks;
 * a mixed playback track.
+
+### Local post-meeting speaker diarization
+
+ClosedRoom can identify distinct speakers locally after a recording using
+FluidAudio's offline Community-1 pipeline (Core ML segmentation, WeSpeaker
+embeddings and VBx clustering). The Swift helper runs on Apple Silicon and
+returns timestamped clusters such as `system:0` and `system:1`; ASR segments are
+matched by temporal overlap. Provider-owned clusters, such as Speechmatics
+`S1`/`S2`, are preserved rather than overwritten.
+
+The feature is opt-in from the Recording page (and remains configurable in
+Settings) and requires macOS 14+. FluidAudio is
+compiled into the app bundle, while its Core ML models are downloaded on first
+use under `~/Library/Application Support/ClosedRoom/models/fluidaudio-speaker-diarization/`.
+A failure is recorded in `speaker-diarization.json` but does not fail the
+transcription. When visual intelligence is also enabled, Qwen uses these local
+clusters as the stable diarization source for conservative name attribution.
+
+### Post-meeting visual intelligence foundation
+
+ClosedRoom can stage timestamped JPEG frames while a recording is active and
+analyze them with `qwen3-vl-4b` when the transcription job runs after the
+meeting. Qwen produces visual identity evidence; it does not replace
+diarization and does not use face recognition. Automatic names are applied only
+to existing provider speaker clusters when the configured support thresholds
+are met.
+
+The feature is disabled by default. The Recording page exposes the toggle next
+to diarization and, when enabled, lists the
+shareable macOS windows and requires an explicit window selection; leaving the
+selector disabled records no images. A separate ScreenCaptureKit stream samples
+only that window at low frequency without changing the audio capture stream.
+Staged frames are private temporary data in the recording directory and are
+removed after processing, including failed Qwen runs. Only structured
+observations and a compact summary persist.
+
+The transcription result always shows the effective outcome of FluidAudio,
+Qwen and speaker attribution. Missing frames, partial frame failures, runtime
+errors and ASR/VAD fallbacks produce a persistent “completed with warnings”
+panel with the requested backend, effective backend and reason; they are never
+reported only as a green success toast.
+
+Global shortcuts additionally require macOS Accessibility permission. If it is
+missing, Settings shows an actionable warning and the app does not start the
+keyboard listener; recording, transcription and visual intelligence are not
+disabled by this permission.
+
+For a repeatable development smoke test, start `local-llm-server` with the
+existing LM Studio MLX model and then run the combined harness with a
+two-speaker WAV and a JPEG containing one visible active-speaker label:
+
+```bash
+.venv/bin/local-llm serve \
+  --model qwen3-vl-4b \
+  --model-path ~/.lmstudio/models/lmstudio-community/Qwen3-VL-4B-Instruct-MLX-4bit \
+  --host 127.0.0.1 --port 1245
+
+.venv/bin/python scripts/smoke_visual_diarization_e2e.py \
+  --audio /path/to/two-speakers.wav \
+  --frame /path/to/active-speaker.jpg \
+  --base-url http://127.0.0.1:1245 \
+  --output-dir /private/tmp/closedroom-combo-e2e
+```
+
+The harness uses real FluidAudio and Qwen inference but deterministic timed ASR
+segments, so it does not download or execute Whisper. It fails unless the
+speaker mapping, persisted artifacts, catalog rows and visual staging cleanup
+all pass.
+
+The macOS bundle is built with Python 3.10 by default, matching the supported
+MLX runtime used in development. Override it only for an explicit compatibility
+test with `CLOSEDROOM_BUILD_PYTHON_VERSION`; selecting the newest interpreter
+implicitly can produce a bundle that passes health checks but fails inside the
+MLX-VLM generation thread.
+The macOS dependency graph also pins `mlx 0.31.2`: a clean resolution to
+`mlx 0.32.0` currently breaks GPU stream ownership in the frozen MLX-VLM worker.
 
 ### Browser + BlackHole Fallback
 
@@ -584,6 +685,12 @@ ClosedRoom can be configured through:
 | `local_llm_reasoning`      | Default local reasoning mode (`auto`, `on`, or `off`)       |
 | `meeting_auto_analysis`    | Whether to start analysis automatically after transcription |
 | `meeting_default_pipeline` | Default meeting analysis pipeline                           |
+| `speaker_diarization_enabled` | Enable local FluidAudio diarization after transcription; default `false` |
+| `speaker_diarization_minimum_overlap` | Minimum ASR-segment overlap required to assign a local cluster; default `0.25` |
+| `visual_intelligence_enabled` | Enable post-meeting Qwen visual evidence processing; default `false` |
+| `visual_llm_model` | Vision model routed through `local-llm-server`; default `qwen3-vl-4b` |
+| `visual_minimum_observations` | Minimum matching observations before automatic attribution |
+| `visual_minimum_margin` | Minimum normalized lead over the second identity candidate |
 
 Settings updates are validated before the atomic write. Unknown providers,
 runtime modes, analysis pipelines and transcription tasks, as well as invalid
@@ -632,6 +739,26 @@ curl http://127.0.0.1:1236/health
 ```bash
 curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/capture/capabilities
 ```
+
+### Visual frame staging and observations
+
+```bash
+curl -b /tmp/closedroom.cookies \
+  -F 'file=@frame.jpg;type=image/jpeg' \
+  -F 'sequence=0' \
+  -F 'timestamp=1.25' \
+  http://127.0.0.1:1236/v1/recordings/<recording-id>/visual-frames
+
+curl -b /tmp/closedroom.cookies \
+  http://127.0.0.1:1236/v1/recordings/<recording-id>/visual-intelligence
+
+curl -b /tmp/closedroom.cookies \
+  http://127.0.0.1:1236/v1/capture/windows
+```
+
+Frame sequence and meeting-relative timestamp must be monotonic. Each frame
+must be a JPEG no larger than 5 MB and can only be staged while the recording
+is active.
 
 ### Runtime Service Status
 
@@ -786,13 +913,37 @@ local-asr serve --reload
 
 During development, `./run.sh` starts ClosedRoom and follows the managed LLM sidecar log in the same terminal.
 
+### Update the local LLM runtime
+
+ClosedRoom pins `local-llm-server` to a local wheel. The updater discovers the
+latest stable semantic-version tag on GitHub, downloads the matching wheel from
+that GitHub Release, and updates both `pyproject.toml` and `uv.lock`:
+
+```bash
+python3 scripts/update_local_llm_server.py --check
+python3 scripts/update_local_llm_server.py
+```
+
+The script never builds `local-llm-server` from source. It reuses an exact
+version wheel already present in the sibling `local-llm-server/dist/` directory,
+or downloads `local_llm_server-<version>-py3-none-any.whl` through GitHub CLI.
+The dependency enables the wheel's `vision` extra so the Qwen MLX backend is
+installed reproducibly. If lock generation fails, the dependency files are
+restored.
+
 ### Build macOS App
 
 ```bash
 ./build.sh
 ```
 
-The packaged app includes the native capture helper and validates the helper bundle during build. The final app bundle and visible bundle name are versioned from `pyproject.toml`, for example `dist/ClosedRoom-0.1.0.app`, so local builds can be installed side by side instead of overwriting or visually colliding with `ClosedRoom.app`. The build also removes stale unversioned app bundles from `dist/`.
+The packaged app includes the native capture helper and the arm64 FluidAudio
+batch-diarization helper. Swift Package Manager resolves the pinned FluidAudio
+dependency during the first build. The final app bundle and visible bundle name
+are versioned from `pyproject.toml`, for example `dist/ClosedRoom-0.1.0.app`, so
+local builds can be installed side by side instead of overwriting or visually
+colliding with `ClosedRoom.app`. The build also removes stale unversioned app
+bundles from `dist/`.
 
 If an older `ClosedRoom.app` is still running on the standard app port, the versioned bundle starts its own local server on the next available app port instead of silently reusing the old server. Quit the old menu bar app if you want the versioned build to use the default port.
 

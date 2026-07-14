@@ -1,5 +1,6 @@
 import AVFoundation
 import CoreGraphics
+import CoreImage
 import CoreMedia
 import Foundation
 import ScreenCaptureKit
@@ -133,6 +134,34 @@ func requireArg(_ name: String, in args: [String]) -> String? {
     return args[index + 1]
 }
 
+func runWindows() {
+    guard #available(macOS 13.0, *) else {
+        JSONEmitter.shared.emitAndExit(["windows": [], "reason": "macos_13_required"], exitCode: 0)
+    }
+    Task {
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+            let ownPID = ProcessInfo.processInfo.processIdentifier
+            let windows: [[String: Any]] = content.windows.compactMap { window in
+                guard window.owningApplication?.processID != ownPID,
+                      window.frame.width >= 160, window.frame.height >= 120 else { return nil }
+                return [
+                    "id": Int(window.windowID),
+                    "title": window.title ?? "",
+                    "application_name": window.owningApplication?.applicationName ?? "",
+                    "bundle_identifier": window.owningApplication?.bundleIdentifier ?? "",
+                    "width": Int(window.frame.width),
+                    "height": Int(window.frame.height),
+                ]
+            }
+            JSONEmitter.shared.emitAndExit(["windows": windows], exitCode: 0)
+        } catch {
+            JSONEmitter.shared.emitAndExit(["windows": [], "reason": "window_listing_failed", "error": error.localizedDescription], exitCode: 3)
+        }
+    }
+    RunLoop.main.run()
+}
+
 func micStatusString(_ status: AVAuthorizationStatus) -> String {
     switch status {
     case .authorized:
@@ -170,6 +199,7 @@ func capabilityPayload() -> [String: Any] {
         "reason": reason,
         "modes": available ? ["both", "mic_only", "pc_only"] : [],
         "minimum_macos": "13.0",
+        "visual_window_capture": available,
         "screen_recording_permission": screenCaptureAllowed ? "granted" : "required",
         "microphone_permission": micStatusString(micStatus),
     ]
@@ -438,6 +468,95 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 }
 
+@available(macOS 13.0, *)
+final class VisualWindowCapture: NSObject, SCStreamOutput, SCStreamDelegate {
+    var onFatalError: ((String) -> Void)?
+    private let windowID: CGWindowID
+    private let outputDir: URL
+    private let fps: Double
+    private let epochUptime: Double
+    private let queue = DispatchQueue(label: "closedroom.native.visual-window")
+    private let context = CIContext(options: [.cacheIntermediates: false])
+    private var stream: SCStream?
+    private var sequence = 0
+
+    init(windowID: CGWindowID, outputDir: URL, fps: Double, epochUptime: Double) {
+        self.windowID = windowID
+        self.outputDir = outputDir
+        self.fps = min(2.0, max(0.1, fps))
+        self.epochUptime = epochUptime
+    }
+
+    func start() async throws {
+        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
+            throw NSError(domain: "ClosedRoomNativeCapture", code: 41, userInfo: [
+                NSLocalizedDescriptionKey: "Selected visual capture window is no longer available"
+            ])
+        }
+        try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let filter = SCContentFilter(desktopIndependentWindow: window)
+        let configuration = SCStreamConfiguration()
+        let scale = min(1.0, 1280.0 / max(window.frame.width, 1.0))
+        configuration.width = max(2, Int(window.frame.width * scale))
+        configuration.height = max(2, Int(window.frame.height * scale))
+        configuration.minimumFrameInterval = CMTime(seconds: 1.0 / fps, preferredTimescale: 600)
+        configuration.queueDepth = 2
+        configuration.showsCursor = false
+        configuration.capturesAudio = false
+        let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
+        try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
+        try await stream.startCapture()
+        self.stream = stream
+    }
+
+    func stop() async {
+        if let stream = stream { try? await stream.stopCapture() }
+        stream = nil
+    }
+
+    func stream(_ stream: SCStream, didStopWithError error: Error) {
+        onFatalError?("Visual ScreenCaptureKit session error: \(error.localizedDescription)")
+    }
+
+    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        guard type == .screen, CMSampleBufferDataIsReady(sampleBuffer),
+              let pixelBuffer = sampleBuffer.imageBuffer else { return }
+        let image = CIImage(cvPixelBuffer: pixelBuffer)
+        let qualityKey = CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String)
+        guard let data = context.jpegRepresentation(
+            of: image, colorSpace: CGColorSpaceCreateDeviceRGB(), options: [qualityKey: 0.75]
+        ) else { return }
+        let currentSequence = sequence
+        sequence += 1
+        let timestamp = max(0.0, ProcessInfo.processInfo.systemUptime - epochUptime)
+        let name = String(format: "frame-%08d.jpg", currentSequence)
+        let path = outputDir.appendingPathComponent(name)
+        do {
+            try data.write(to: path, options: .atomic)
+            let manifest = outputDir.appendingPathComponent("manifest.jsonl")
+            let payload: [String: Any] = [
+                "sequence": currentSequence, "timestamp": timestamp, "file": name,
+                "pts": CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds,
+                "observed_uptime": ProcessInfo.processInfo.systemUptime,
+            ]
+            let line = try JSONSerialization.data(withJSONObject: payload)
+            if !FileManager.default.fileExists(atPath: manifest.path) {
+                FileManager.default.createFile(atPath: manifest.path, contents: nil)
+            }
+            let handle = try FileHandle(forWritingTo: manifest)
+            try handle.seekToEnd()
+            try handle.write(contentsOf: line)
+            try handle.write(contentsOf: Data([0x0A]))
+            try handle.synchronize()
+            try handle.close()
+        } catch {
+            try? FileManager.default.removeItem(at: path)
+            JSONEmitter.shared.emit(["type": "warning", "source": "visual", "message": error.localizedDescription])
+        }
+    }
+}
+
 final class MicrophoneCapture: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
     var onSample: ((CMSampleBuffer) -> Void)?
     var onFatalError: ((String) -> Void)?
@@ -514,7 +633,10 @@ final class NativeCaptureRun {
     private let recordingID: String
     private let outputDir: URL
     private let mode: String
+    private let visualWindowID: CGWindowID?
+    private let visualFPS: Double
     private var systemCapture: AnyObject?
+    private var visualCapture: AnyObject?
     private var microphoneCapture: MicrophoneCapture?
     private var sinks: [SampleBufferWavSink] = []
     
@@ -533,10 +655,12 @@ final class NativeCaptureRun {
     private var lastSystemEmitTime: Double = 0
     private let emitInterval: Double = 0.1
 
-    init(recordingID: String, outputDir: String, mode: String) {
+    init(recordingID: String, outputDir: String, mode: String, visualWindowID: CGWindowID?, visualFPS: Double) {
         self.recordingID = recordingID
         self.outputDir = URL(fileURLWithPath: outputDir, isDirectory: true)
         self.mode = mode
+        self.visualWindowID = visualWindowID
+        self.visualFPS = visualFPS
     }
 
     func start() async throws {
@@ -601,12 +725,33 @@ final class NativeCaptureRun {
             }
         }
 
+        let readyUptime = ProcessInfo.processInfo.systemUptime
+        if let visualWindowID = visualWindowID {
+            guard #available(macOS 13.0, *) else {
+                throw NSError(domain: "ClosedRoomNativeCapture", code: 40, userInfo: [
+                    NSLocalizedDescriptionKey: "Visual window capture requires macOS 13.0 or later"
+                ])
+            }
+            let capture = VisualWindowCapture(
+                windowID: visualWindowID,
+                outputDir: outputDir.appendingPathComponent(".visual-staging", isDirectory: true),
+                fps: visualFPS,
+                epochUptime: readyUptime
+            )
+            capture.onFatalError = { [weak self] message in
+                JSONEmitter.shared.emit(["type": "warning", "source": "visual", "message": message])
+                self?.visualCapture = nil
+            }
+            try await capture.start()
+            visualCapture = capture
+        }
+
         lock.lock()
         isReady = true
         lock.unlock()
 
         let now = Date().timeIntervalSince1970
-        let uptime = ProcessInfo.processInfo.systemUptime
+        let uptime = readyUptime
         JSONEmitter.shared.emit([
             "type": "ready",
             "recording_id": recordingID,
@@ -616,6 +761,8 @@ final class NativeCaptureRun {
             "mode": mode,
             "sample_rate": 16000,
             "channels": 1,
+            "visual_capture": visualWindowID != nil,
+            "visual_window_id": visualWindowID.map { Int($0) } ?? NSNull(),
         ])
     }
 
@@ -727,9 +874,10 @@ final class NativeCaptureRun {
         lock.unlock()
 
         microphoneCapture?.stop()
-        if #available(macOS 13.0, *), let capture = systemCapture as? SystemAudioCapture {
+        if #available(macOS 13.0, *) {
             Task {
-                await capture.stop()
+                if let capture = visualCapture as? VisualWindowCapture { await capture.stop() }
+                if let capture = systemCapture as? SystemAudioCapture { await capture.stop() }
                 finishSinks(cancelled: cancelled, errorMsg: errorMsg)
             }
         } else {
@@ -750,6 +898,11 @@ final class NativeCaptureRun {
                 for sink in self.sinks {
                     try? FileManager.default.removeItem(at: sink.url)
                 }
+                try? FileManager.default.removeItem(at: self.outputDir.appendingPathComponent(".visual-staging"))
+            } else if cancelled {
+                try? FileManager.default.removeItem(at: self.outputDir.appendingPathComponent(".visual-staging"))
+            }
+            if let errorMsg = errorMsg {
                 JSONEmitter.shared.emitAndExit([
                     "type": "error",
                     "recording_id": self.recordingID,
@@ -766,7 +919,7 @@ final class NativeCaptureRun {
     }
 }
 
-func runStart(recordingID: String, outputDir: String, mode: String) {
+func runStart(recordingID: String, outputDir: String, mode: String, visualWindowID: CGWindowID?, visualFPS: Double) {
     guard ["both", "mic_only", "pc_only"].contains(mode) else {
         JSONEmitter.shared.emitAndExit(["type": "error", "message": "Invalid capture mode: \(mode)"], exitCode: 2)
     }
@@ -793,7 +946,7 @@ func runStart(recordingID: String, outputDir: String, mode: String) {
             missing.append("microphone")
         }
     }
-    if mode == "both" || mode == "pc_only" {
+    if mode == "both" || mode == "pc_only" || visualWindowID != nil {
         if !screenCaptureAllowed {
             missing.append("screen_capture")
         }
@@ -817,7 +970,10 @@ func runStart(recordingID: String, outputDir: String, mode: String) {
         ], exitCode: 3)
     }
 
-    let run = NativeCaptureRun(recordingID: recordingID, outputDir: outputDir, mode: mode)
+    let run = NativeCaptureRun(
+        recordingID: recordingID, outputDir: outputDir, mode: mode,
+        visualWindowID: visualWindowID, visualFPS: visualFPS
+    )
     signal(SIGTERM, SIG_IGN)
     signal(SIGINT, SIG_IGN)
     let termSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
@@ -851,13 +1007,20 @@ case "request-permissions":
     requestPermissions()
 case "diagnostics":
     JSONEmitter.shared.emitAndExit(diagnosticsPayload(), exitCode: 0)
+case "windows":
+    runWindows()
 case "start":
     guard let recordingID = requireArg("--recording-id", in: args),
           let outputDir = requireArg("--output-dir", in: args),
           let mode = requireArg("--mode", in: args) else {
         JSONEmitter.shared.emitAndExit(["type": "error", "message": "Missing required start arguments"], exitCode: 2)
     }
-    runStart(recordingID: recordingID, outputDir: outputDir, mode: mode)
+    let visualWindowID = requireArg("--visual-window-id", in: args).flatMap { UInt32($0) }
+    let visualFPS = requireArg("--visual-fps", in: args).flatMap { Double($0) } ?? 0.5
+    runStart(
+        recordingID: recordingID, outputDir: outputDir, mode: mode,
+        visualWindowID: visualWindowID, visualFPS: visualFPS
+    )
 default:
     JSONEmitter.shared.emitAndExit(["type": "error", "message": "Unknown command: \(command)"], exitCode: 1)
 }

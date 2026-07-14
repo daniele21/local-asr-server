@@ -26,6 +26,8 @@ elif cmd == 'request-permissions':
     print(json.dumps({'ok': True, 'requested': True}))
 elif cmd == 'diagnostics':
     print(json.dumps({'bundle_identifier': 'com.closedroom.nativecapture', 'code_signature': 'signed', 'screen_capture': 'granted'}))
+elif cmd == 'windows':
+    print(json.dumps({'windows': [{'id': 42, 'title': 'Meet', 'application_name': 'Chrome', 'bundle_identifier': 'com.google.Chrome'}]}))
 elif cmd == 'start':
     print(json.dumps({'type': 'ready'}), flush=True)
     time.sleep(0.05)
@@ -50,6 +52,12 @@ else:
 
         self.assertEqual(started["backend"], "native")
         self.assertEqual([event["type"] for event in events], ["ready", "stopped"])
+
+    def test_lists_windows_and_starts_visual_capture(self) -> None:
+        manager = NativeCaptureManager(helper_path=self.helper)
+        self.assertEqual(manager.windows()["windows"][0]["id"], 42)
+        started = manager.start("rec-visual", self.root, "both", visual_window_id=42, visual_fps=1.0)
+        self.assertEqual(started["status"], "starting")
 
     def test_validate_audio_file_behavior(self) -> None:
         from local_asr_server.native_capture import validate_audio_file

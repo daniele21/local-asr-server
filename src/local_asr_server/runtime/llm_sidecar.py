@@ -142,6 +142,12 @@ class LocalLLMSidecar:
                 "local-llm-server non è installato o non è importabile.",
                 503,
             )
+        if capability == "image" and not self._vision_runtime_available():
+            raise LocalLLMSidecarError(
+                "local_llm_vision_dependency_missing",
+                "Il backend visuale locale non è installato. Installa local-llm-server con l'extra vision.",
+                503,
+            )
         config = LocalLLMProcessConfig(model, model_path, backend, mmproj_path, ctx_size, startup_timeout, llama_server_bin)
         if self._process is None or self._process.poll() is not None:
             self.start(**config.__dict__)
@@ -252,6 +258,10 @@ class LocalLLMSidecar:
 
     def _runtime_available(self) -> bool:
         return bool(shutil.which("local-llm-server")) or importlib.util.find_spec("local_llm_server") is not None
+
+    @staticmethod
+    def _vision_runtime_available() -> bool:
+        return importlib.util.find_spec("mlx_vlm") is not None
 
     def _build_command(
         self,

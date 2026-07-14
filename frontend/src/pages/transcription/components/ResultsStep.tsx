@@ -8,6 +8,8 @@ import { countTranscriptWords, getTranscriptionAsrMetadata } from '../../../util
 import { renderMarkdown } from '../../../utils/markdown';
 import { useToast } from '../../../context/ToastContext';
 import { ProjectPromptModal } from '../../../components/ui/ProjectPromptModal';
+import { Badge } from '../../../components/ui/Badge';
+import { diagnosticWarnings, transcriptionDiagnostics, transcriptionHasWarnings } from '../../../utils/diagnostics';
 
 function energyLabel(energy?: string | null) {
   if (!energy) return null;
@@ -156,6 +158,12 @@ export default function ResultsStep({
 
   const asrMetadata = getTranscriptionAsrMetadata(transcriptionResult);
   const wordCount = countTranscriptWords(transcriptionResult.text);
+  const diagnostics = transcriptionDiagnostics(transcriptionResult);
+  const warnings = diagnosticWarnings(diagnostics);
+  const hasWarnings = transcriptionHasWarnings(transcriptionResult);
+  const diarization = transcriptionResult.stats?.speaker_diarization;
+  const visualIntelligence = transcriptionResult.stats?.visual_intelligence;
+  const speakerMappings = transcriptionResult.stats?.speaker_attribution?.mappings || [];
 
   return (
     <div className="flex flex-col gap-5 animate-in fade-in duration-150">
@@ -210,6 +218,65 @@ export default function ResultsStep({
           </Button>
         </div>
       </div>
+
+      {hasWarnings && (
+        <section className="rounded-xl border border-warning/40 bg-warning/10 p-4 flex flex-col gap-3" role="alert">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">{t('transcription.completedWithWarningsTitle')}</h3>
+              <p className="text-xs text-text-secondary mt-1">{t('transcription.diagnosticsDesc')}</p>
+            </div>
+            <Badge variant="warning">{t('meeting.completedWithWarnings')}</Badge>
+          </div>
+          <div className="divide-y divide-warning/20 border-t border-warning/20">
+            {warnings.map((item, index) => (
+              <div key={`${item.component}-${index}`} className="py-3 text-xs flex flex-col gap-1">
+                <strong className="text-text-primary">{item.component}</strong>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-text-secondary">
+                  {item.requested_backend && <span>{t('transcription.requestedBackend')}: <b>{item.requested_backend}</b></span>}
+                  {item.actual_backend && <span>{t('transcription.actualBackend')}: <b>{item.actual_backend}</b></span>}
+                  {item.fallback_reason && <span>{t('transcription.fallbackReason')}: <b>{item.fallback_reason}</b></span>}
+                  {item.error && <span className="text-danger">{item.error}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {(diarization || visualIntelligence || transcriptionResult.stats?.speaker_attribution) && (
+        <section className="rounded-xl border border-border-subtle p-4">
+          <h3 className="text-sm font-semibold text-text-primary mb-3">{t('recording.intelligenceTitle')}</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+            <div className="flex flex-col gap-1">
+              <span className="text-text-muted">{t('transcription.diarizationResult')}</span>
+              <strong className="text-text-primary">{diarization?.status || t('transcription.enrichmentNotRun')}</strong>
+              {typeof diarization?.assigned_segments === 'number' && (
+                <span>{t('transcription.assignedSegmentCount', { count: diarization.assigned_segments })}</span>
+              )}
+              {diarization?.error && <span className="text-danger">{diarization.error}</span>}
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-text-muted">{t('transcription.visualResult')}</span>
+              <strong className="text-text-primary">{visualIntelligence?.status || t('transcription.enrichmentNotRun')}</strong>
+              {visualIntelligence?.model && <span>{visualIntelligence.model}</span>}
+              {typeof visualIntelligence?.observation_count === 'number' && (
+                <span>{t('transcription.observationCount', { count: visualIntelligence.observation_count })}</span>
+              )}
+              {visualIntelligence?.error && <span className="text-danger">{visualIntelligence.error}</span>}
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-text-muted">{t('transcription.speakerAttributionResult')}</span>
+              <strong className="text-text-primary">
+                {t('transcription.acceptedMappingCount', { count: speakerMappings.filter((item) => item.status === 'accepted').length })}
+              </strong>
+              {speakerMappings.filter((item) => item.status === 'accepted').map((item) => (
+                <span key={item.speaker_cluster}>{item.speaker_cluster} → {item.display_name}</span>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">

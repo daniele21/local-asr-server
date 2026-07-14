@@ -138,6 +138,11 @@ class NativeCaptureManager:
             return {"ok": False, "reason": "helper_missing"}
         return self._run_json(["diagnostics"], fallback_reason="diagnostics_failed")
 
+    def windows(self) -> dict[str, Any]:
+        if not self.helper_path.exists():
+            return {"windows": [], "reason": "helper_missing"}
+        return self._run_json(["windows"], fallback_reason="window_listing_failed")
+
     def ensure_permissions(self, mode: str) -> dict[str, Any]:
         if mode not in VALID_NATIVE_MODES:
             raise ValueError(f"Invalid native capture mode: {mode}")
@@ -178,7 +183,10 @@ class NativeCaptureManager:
             "requested": False,
         }
 
-    def start(self, recording_id: str, output_dir: Path, mode: str) -> dict[str, Any]:
+    def start(
+        self, recording_id: str, output_dir: Path, mode: str, *,
+        visual_window_id: int | None = None, visual_fps: float = 0.5,
+    ) -> dict[str, Any]:
         if mode not in VALID_NATIVE_MODES:
             raise ValueError(f"Invalid native capture mode: {mode}")
         if not self.capabilities().get("available"):
@@ -186,8 +194,7 @@ class NativeCaptureManager:
         with self._lock:
             if recording_id in self._sessions:
                 raise RuntimeError("Native capture session already active")
-            process = subprocess.Popen(
-                [
+            command = [
                     str(self.helper_path),
                     "start",
                     "--recording-id",
@@ -196,7 +203,11 @@ class NativeCaptureManager:
                     str(output_dir),
                     "--mode",
                     mode,
-                ],
+                ]
+            if visual_window_id is not None:
+                command.extend(["--visual-window-id", str(visual_window_id), "--visual-fps", str(visual_fps)])
+            process = subprocess.Popen(
+                command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

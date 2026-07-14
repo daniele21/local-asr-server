@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from local_asr_server.paths import (
     get_native_capture_helper_path,
+    get_speaker_diarization_helper_path,
     get_runtime_state_file,
     get_service_log_file,
 )
@@ -71,6 +72,22 @@ class BundlePathTests(unittest.TestCase):
                 patch("local_asr_server.paths.sys.executable", str(executable)),
             ):
                 self.assertEqual(get_native_capture_helper_path(), legacy.resolve())
+
+    def test_speaker_diarization_helper_resolves_from_bundle_frameworks(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            contents_dir = Path(temp) / "ClosedRoom.app" / "Contents"
+            executable = contents_dir / "MacOS" / "ClosedRoom"
+            helper = contents_dir / "Frameworks" / "speaker-diarization-helper"
+            executable.parent.mkdir(parents=True)
+            executable.touch()
+            helper.parent.mkdir(parents=True)
+            helper.touch()
+            with (
+                patch("local_asr_server.paths.is_bundled", return_value=True),
+                patch("local_asr_server.paths.get_bundle_dir", return_value=helper.parent),
+                patch("local_asr_server.paths.sys.executable", str(executable)),
+            ):
+                self.assertEqual(get_speaker_diarization_helper_path(), helper.resolve())
 
 
 if __name__ == "__main__":

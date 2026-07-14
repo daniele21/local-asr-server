@@ -122,11 +122,20 @@ class TranscriptionJobManager:
         self._emit(job, "cancelling", job.progress, "cancelling")
         return job.public()
 
-    def update_progress(self, job_id: str, status: str, progress: int, step: str | None = None) -> None:
+    def update_progress(
+        self,
+        job_id: str,
+        status: str,
+        progress: int,
+        step: str | None = None,
+        *,
+        message: str | None = None,
+        event_payload: dict[str, Any] | None = None,
+    ) -> None:
         with self._lock:
             job = self._jobs.get(job_id)
         if job is not None:
-            self._emit(job, status, progress, step)
+            self._emit(job, status, progress, step, message=message, event_payload=event_payload)
 
     def drain_events(self, job_id: str) -> list[dict[str, Any]] | None:
         with self._lock:
@@ -159,7 +168,16 @@ class TranscriptionJobManager:
                 self._emit(job, "cancelled", job.progress)
                 return
             job.result = result
-            self._emit(job, "completed", 100)
+            self._emit(
+                job,
+                "completed",
+                100,
+                message=result.get("outcome_status"),
+                event_payload={
+                    "outcome_status": result.get("outcome_status", "completed"),
+                    "diagnostics": result.get("diagnostics", []),
+                },
+            )
         except Exception as exc:
             if job.cancel_requested:
                 self._emit(job, "cancelled", job.progress)
@@ -167,7 +185,16 @@ class TranscriptionJobManager:
             job.error = str(exc)[:2000]
             self._emit(job, "failed", job.progress)
 
-    def _emit(self, job: TranscriptionJob, status: str, progress: int, step: str | None = None) -> None:
+    def _emit(
+        self,
+        job: TranscriptionJob,
+        status: str,
+        progress: int,
+        step: str | None = None,
+        *,
+        message: str | None = None,
+        event_payload: dict[str, Any] | None = None,
+    ) -> None:
         job.status = status
         job.current_step = step or status
         job.progress = progress
@@ -182,6 +209,8 @@ class TranscriptionJobManager:
                 result=job.result,
                 error=job.error,
                 cancel_requested=job.cancel_requested,
+                message=message,
+                event_payload=event_payload,
             )
 
     def _stored_public(self, stored: dict[str, Any] | None) -> dict[str, Any]:

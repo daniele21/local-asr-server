@@ -67,6 +67,12 @@ DEFAULT_SETTINGS: dict[str, any] = {
     "local_llm_llama_server_bin": "",
     "meeting_auto_analysis": False,
     "meeting_default_pipeline": "meeting_default",
+    "speaker_diarization_enabled": False,
+    "speaker_diarization_minimum_overlap": 0.25,
+    "visual_intelligence_enabled": False,
+    "visual_llm_model": "qwen3-vl-4b",
+    "visual_minimum_observations": 3,
+    "visual_minimum_margin": 0.2,
 }
 
 
@@ -86,7 +92,20 @@ def load_settings() -> dict[str, any]:
         with open(settings_file, "r", encoding="utf-8") as f:
             data = json.load(f)
         # Merge: defaults first, then on-disk values override
-        return {**DEFAULT_SETTINGS, **data}
+        settings = {**DEFAULT_SETTINGS, **data}
+        # Normalize empty string values for fields that must be numbers/None
+        for key in (
+            "default_temperature",
+            "speechmatics_timeout_seconds",
+            "speechmatics_poll_interval_seconds",
+            "local_llm_temperature",
+            "local_llm_max_output_tokens",
+            "local_llm_ctx_size",
+            "local_llm_startup_timeout",
+        ):
+            if settings.get(key) == "":
+                settings[key] = None
+        return settings
     except Exception:
         return DEFAULT_SETTINGS.copy()
 

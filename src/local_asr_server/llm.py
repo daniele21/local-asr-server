@@ -157,7 +157,7 @@ class NemotronLocalProvider(BaseLLMProvider):
         except ModuleNotFoundError as exc:
             raise RuntimeError(
                 "local-llm-server non è installato. "
-                "Installa il wheel con: uv pip install local_llm_server-0.3.0-py3-none-any.whl"
+                "Installa il wheel local_llm_server dalla directory dist del repository collegato."
             ) from exc
 
         client = LocalLLMClient(base_url=self.base_url, model=self.model)
@@ -200,7 +200,7 @@ class VoxtralLocalProvider(BaseLLMProvider):
         except ModuleNotFoundError as exc:
             raise RuntimeError(
                 "local-llm-server non è installato. "
-                "Installa il wheel con: uv pip install local_llm_server-0.3.0-py3-none-any.whl"
+                "Installa il wheel local_llm_server dalla directory dist del repository collegato."
             ) from exc
 
         client = LocalLLMClient(base_url=self.base_url, model=self.model)

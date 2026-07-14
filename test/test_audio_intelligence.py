@@ -5,9 +5,11 @@ import struct
 import tempfile
 import unittest
 import wave
+from unittest.mock import patch
 from pathlib import Path
 
 from local_asr_server.audio_intelligence import build_audio_intelligence
+from local_asr_server.services.transcription_service import TranscriptionService
 
 
 def write_tone_wav(path: Path, *, tone_ranges: list[tuple[float, float]], duration: float = 2.0) -> None:
@@ -103,6 +105,32 @@ class AudioIntelligenceTests(unittest.TestCase):
             self.skipTest("onnxruntime not installed")
         finally:
             self.patcher.start()
+
+    def test_per_track_vad_fallback_is_explicit(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "mic.wav"
+            write_tone_wav(path, tone_ranges=[(0.1, 0.8)])
+            with patch(
+                "local_asr_server.audio_intelligence.vad.detect_speech_windows_vad",
+                side_effect=RuntimeError("vad exploded"),
+            ):
+                result = build_audio_intelligence(
+                    [({"id": "mic", "source": "mic", "label": "Tu"}, path)], []
+                )
+        channel = result["channels"]["mic"]
+        self.assertTrue(channel["fallback_used"])
+        self.assertEqual(channel["requested_backend"], "silero-vad-v4")
+        self.assertEqual(channel["actual_backend"], "energy-rms-v1")
+        self.assertIn("vad exploded", channel["fallback_reason"])
+
+    def test_near_silent_track_skip_is_explicit(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "silent.wav"
+            write_tone_wav(path, tone_ranges=[])
+            result = TranscriptionService._skip_near_silent_track(path, {"id": "mic"})
+        self.assertIsNotNone(result)
+        self.assertTrue(result["metadata"]["skipped"])
+        self.assertEqual(result["metadata"]["skip_reason"], "near_silent_track")
 
 
 if __name__ == "__main__":

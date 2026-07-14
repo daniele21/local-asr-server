@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,6 +19,7 @@ class SettingsServiceTests(unittest.TestCase):
             SettingsRequest(meeting_default_pipeline="missing"),
             SettingsRequest(default_task="summarize"),
             SettingsRequest(speechmatics_timeout_seconds=0),
+            SettingsRequest(speaker_diarization_minimum_overlap=1.5),
         )
         for body in invalid_requests:
             with self.subTest(body=body), patch(
@@ -100,6 +102,40 @@ class SettingsServiceTests(unittest.TestCase):
         self.assertNotIn("speechmatics_api_key", result)
         self.assertTrue(result["gemini_api_key_configured"])
         self.assertTrue(result["speechmatics_api_key_configured"])
+
+    def test_default_temperature_nullable_is_persisted(self):
+        current = {**DEFAULT_SETTINGS, "default_temperature": 0.5}
+        with (
+            patch(
+                "local_asr_server.services.settings_service.load_settings",
+                side_effect=[current, {**current, "default_temperature": None}],
+            ),
+            patch("local_asr_server.services.settings_service.save_settings") as save,
+        ):
+            SettingsService().update(SettingsRequest(default_temperature=None))
+
+        self.assertIsNone(save.call_args.args[0]["default_temperature"])
+
+    def test_load_settings_normalizes_empty_strings(self):
+        from local_asr_server.settings import load_settings
+        bad_data = {
+            "default_temperature": "",
+            "speechmatics_timeout_seconds": "",
+            "speechmatics_poll_interval_seconds": "",
+            "local_llm_temperature": "",
+            "local_llm_max_output_tokens": "",
+            "local_llm_ctx_size": "",
+            "local_llm_startup_timeout": "",
+        }
+        with (
+            patch("local_asr_server.settings.get_settings_file") as mock_get_file,
+            patch("builtins.open", unittest.mock.mock_open(read_data=json.dumps(bad_data))),
+        ):
+            mock_get_file.return_value.exists.return_value = True
+            loaded = load_settings()
+
+        for key in bad_data:
+            self.assertIsNone(loaded[key])
 
 
 if __name__ == "__main__":

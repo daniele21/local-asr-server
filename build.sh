@@ -33,7 +33,10 @@ APP_NAME="${CLOSEDROOM_APP_NAME:-ClosedRoom}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('$SCRIPT_DIR/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || python3 -c "import re; print(re.search(r'version\s*=\s*\"([^\"]+)\"', open('$SCRIPT_DIR/pyproject.toml').read()).group(1))" 2>/dev/null || echo "1.0.0")
 BUNDLE_ID="${CLOSEDROOM_APP_BUNDLE_ID:-com.closedroom.app}"
+BUILD_PYTHON_VERSION="${CLOSEDROOM_BUILD_PYTHON_VERSION:-3.10}"
 BUILD_ASSETS="$SCRIPT_DIR/build_assets"
+export UV_CACHE_DIR="${UV_CACHE_DIR:-$SCRIPT_DIR/.cache/uv}"
+export PYINSTALLER_CONFIG_DIR="${PYINSTALLER_CONFIG_DIR:-$SCRIPT_DIR/.cache/pyinstaller}"
 DIST_DIR="$SCRIPT_DIR/dist"
 APP_BUNDLE_BASENAME="${APP_NAME}-${APP_VERSION}"
 APP_BUNDLE_NAME="${APP_BUNDLE_BASENAME}.app"
@@ -135,7 +138,7 @@ if ! command -v pnpm &> /dev/null; then
     die "pnpm not found. Please install it: npm install -g pnpm"
 fi
 cd "$SCRIPT_DIR/frontend"
-CI=true pnpm install --frozen-lockfile
+CI=true pnpm install --frozen-lockfile --store-dir "$SCRIPT_DIR/.cache/pnpm-store"
 pnpm run build
 cd "$SCRIPT_DIR"
 ok "React frontend built successfully"
@@ -154,12 +157,12 @@ if [[ -f "$HELPER_CACHE" ]] && [[ -f "$SCRIPT_DIR/.cache/audio-helper/source.sha
         cp "$HELPER_CACHE" "$HELPER_DEST"
     else
         log "Source changed, recompiling..."
-        uv run local-asr setup-audio
+        uv run --no-sync local-asr setup-audio
         cp "$HELPER_CACHE" "$HELPER_DEST"
     fi
 else
     log "Compiling for the first time..."
-    uv run local-asr setup-audio
+    uv run --no-sync local-asr setup-audio
     cp "$HELPER_CACHE" "$HELPER_DEST"
 fi
 chmod +x "$HELPER_DEST"
@@ -170,10 +173,16 @@ NATIVE_HELPER_DEST="$BUILD_ASSETS/native-capture-helper"
 NATIVE_HELPER_APP="$BUILD_ASSETS/ClosedRoomNativeCapture.app"
 NATIVE_HELPER_APP_EXE="$NATIVE_HELPER_APP/Contents/MacOS/ClosedRoomNativeCapture"
 log "  Compiling native capture helper..."
-uv run python -c "from local_asr_server.native_capture_helper.compile import compile_helper; compile_helper(force=False)"
+uv run --no-sync python -c "from local_asr_server.native_capture_helper.compile import compile_helper; compile_helper(force=False)"
 cp "$NATIVE_HELPER_CACHE" "$NATIVE_HELPER_DEST"
 chmod +x "$NATIVE_HELPER_DEST"
 ok "Native capture helper: $NATIVE_HELPER_DEST ($(du -sh "$NATIVE_HELPER_DEST" | cut -f1))"
+
+SPEAKER_DIARIZATION_HELPER_CACHE="$SCRIPT_DIR/.cache/speaker-diarization-helper/speaker-diarization-helper"
+log "  Compiling FluidAudio speaker diarization helper..."
+uv run --no-sync python -c "from local_asr_server.speaker_diarization_helper.compile import compile_helper; compile_helper(force=False)"
+chmod +x "$SPEAKER_DIARIZATION_HELPER_CACHE"
+ok "Speaker diarization helper: $SPEAKER_DIARIZATION_HELPER_CACHE ($(du -sh "$SPEAKER_DIARIZATION_HELPER_CACHE" | cut -f1))"
 
 log "  Creating native capture helper app bundle..."
 rm -rf "$NATIVE_HELPER_APP"
@@ -321,7 +330,7 @@ if [[ -f "$SVG_SOURCE" ]]; then
     done
 
     # iconutil requires valid PNGs — if generation failed, create a placeholder
-    VALID_PNGS=$(ls "$ICONSET_DIR"/*.png 2>/dev/null | wc -l | tr -d ' ')
+    VALID_PNGS=$(find "$ICONSET_DIR" -maxdepth 1 -type f -name '*.png' | wc -l | tr -d ' ')
     if [[ "$VALID_PNGS" -gt 0 ]]; then
         iconutil -c icns "$ICONSET_DIR" -o "$ICNS_PATH" 2>/dev/null && ok "icon.icns generated" || warn "iconutil failed, using no icon"
     else
@@ -345,11 +354,11 @@ fi
 
 log "  Building python wheel..."
 rm -rf dist/wheels
-uv build --wheel --out-dir dist/wheels/
+uv build --no-build-isolation --wheel --out-dir dist/wheels/
 
-log "  Creating clean build virtual environment..."
+log "  Creating clean build virtual environment with Python $BUILD_PYTHON_VERSION..."
 rm -rf build_venv
-uv venv build_venv --color always
+uv venv build_venv --python "$BUILD_PYTHON_VERSION" --color always
 
 log "  Installing wheel and dependencies into build_venv..."
 # Installs local_asr_server wheel with [app] dependencies + pyinstaller
@@ -413,13 +422,16 @@ find_bundled_binary() {
 }
 
 AUDIO_HELPER_IN_APP="$(find_bundled_binary "audio-helper")"
+SPEAKER_DIARIZATION_HELPER_IN_APP="$(find_bundled_binary "speaker-diarization-helper")"
 FFMPEG_IN_APP="$(find_bundled_binary "ffmpeg")"
 
 [[ -n "$AUDIO_HELPER_IN_APP" ]] || die "audio-helper not found in app bundle"
+[[ -n "$SPEAKER_DIARIZATION_HELPER_IN_APP" ]] || die "speaker-diarization-helper not found in app bundle"
 [[ -f "$NATIVE_HELPER_IN_APP" ]] || die "ClosedRoomNativeCapture executable not found in helper app"
 [[ -n "$FFMPEG_IN_APP" ]] || die "ffmpeg not found in app bundle"
 
 chmod +x "$AUDIO_HELPER_IN_APP"
+chmod +x "$SPEAKER_DIARIZATION_HELPER_IN_APP"
 chmod +x "$NATIVE_HELPER_IN_APP"
 chmod +x "$FFMPEG_IN_APP"
 
@@ -471,6 +483,7 @@ done < <(
 
 # Sign inner binaries first, then their parent bundles (inside-out order).
 sign_entitled "$AUDIO_HELPER_IN_APP"
+sign_entitled "$SPEAKER_DIARIZATION_HELPER_IN_APP"
 sign_entitled "$NATIVE_HELPER_IN_APP"
 sign_entitled "$NATIVE_HELPER_APP_IN_APP"
 sign_entitled "$FFMPEG_IN_APP"

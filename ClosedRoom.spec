@@ -13,6 +13,7 @@ import shutil
 import os
 import sys
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 # ── Project layout ─────────────────────────────────────────────────────────────
 
@@ -36,6 +37,7 @@ except Exception:
 CACHE_DIR      = PROJECT_ROOT / ".cache"
 AUDIO_HELPER   = CACHE_DIR / "audio-helper" / "audio-helper"
 NATIVE_CAPTURE_HELPER = CACHE_DIR / "native-capture-helper" / "native-capture-helper"
+SPEAKER_DIARIZATION_HELPER = CACHE_DIR / "speaker-diarization-helper" / "speaker-diarization-helper"
 BUILD_ASSETS   = PROJECT_ROOT / "build_assets"                      # created by build.sh
 APP_NAME       = os.environ.get("CLOSEDROOM_APP_NAME", "ClosedRoom")
 APP_BUNDLE_NAME = os.environ.get("CLOSEDROOM_APP_BUNDLE_NAME", f"{APP_NAME}.app")
@@ -69,6 +71,12 @@ if not NATIVE_CAPTURE_HELPER.exists():
         "Run: ./build.sh"
     )
 
+if not SPEAKER_DIARIZATION_HELPER.exists():
+    raise FileNotFoundError(
+        f"Pre-compiled speaker diarization helper not found at {SPEAKER_DIARIZATION_HELPER}.\n"
+        "Run: ./build.sh"
+    )
+
 ffmpeg_bin = BUILD_ASSETS / "ffmpeg"
 if not ffmpeg_bin.exists():
     raise FileNotFoundError(
@@ -82,6 +90,7 @@ extra_binaries = [
     # PyInstaller may stage collected binaries under Contents/Frameworks in
     # macOS app bundles; build.sh discovers and signs the realized paths.
     (str(AUDIO_HELPER), "."),
+    (str(SPEAKER_DIARIZATION_HELPER), "."),
     (str(ffmpeg_bin), "."),
 ]
 
@@ -96,6 +105,9 @@ if lib_dir.exists():
 extra_datas = [
     (str(STATIC_DIR), "static"),
 ]
+
+for runtime_package in ("local_llm_server", "mlx_vlm"):
+    extra_datas.extend(collect_data_files(runtime_package))
 
 # mlx_whisper ships tokenizer data (json / tiktoken files)
 import mlx_whisper as _mlx_w
@@ -165,6 +177,9 @@ hidden_imports = [
     "local_asr_server.native_capture",
     "local_asr_server.native_capture_helper",
     "local_asr_server.native_capture_helper.compile",
+    "local_asr_server.speaker_diarization",
+    "local_asr_server.speaker_diarization_helper",
+    "local_asr_server.speaker_diarization_helper.compile",
     "local_asr_server.audio_diagnostics",
     "local_asr_server.transcription_jobs",
     "local_asr_server.runtime",
@@ -172,6 +187,7 @@ hidden_imports = [
     "local_asr_server.runtime.llm_sidecar",
     "local_asr_server.runtime.models",
     "local_asr_server.runtime.service_manager",
+    "local_asr_server.bundled_module_dispatch",
     "local_asr_server.services",
     "local_asr_server.services.analysis_service",
     "local_asr_server.services.transcription_service",
@@ -180,6 +196,9 @@ hidden_imports = [
     "local_asr_server.jobs.models",
     "local_asr_server.analysis_jobs",
 ]
+
+for runtime_package in ("local_llm_server", "mlx_vlm"):
+    hidden_imports.extend(collect_submodules(runtime_package))
 
 # ── Exclude heavy dev/test packages ───────────────────────────────────────────
 

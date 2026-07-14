@@ -75,6 +75,34 @@ async def append_recording_chunk(
         raise HTTPException(status_code=507, detail=str(exc)) from exc
 
 
+@router.post("/v1/recordings/{recording_id}/visual-frames", status_code=202)
+async def append_visual_frame(
+    recording_id: str,
+    request: Request,
+    file: UploadFile = File(...),
+    sequence: int = Form(...),
+    timestamp: float = Form(...),
+):
+    try:
+        return get_services(request.app).recordings.stage_visual_frame(
+            recording_id, sequence, timestamp, await file.read()
+        )
+    except RecordingNotFound as exc:
+        raise HTTPException(status_code=404, detail="Recording not found") from exc
+    except RecordingConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/v1/recordings/{recording_id}/visual-intelligence")
+def get_visual_intelligence(recording_id: str, request: Request):
+    try:
+        return get_services(request.app).recordings.get_visual_intelligence(recording_id)
+    except RecordingNotFound as exc:
+        raise HTTPException(status_code=404, detail="Recording not found") from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.post("/v1/recordings/{recording_id}/tracks/{track_id}/chunks")
 async def append_recording_track_chunk(
     recording_id: str,

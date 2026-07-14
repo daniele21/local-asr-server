@@ -58,6 +58,27 @@ class RecordingApiTests(unittest.TestCase):
         self.client.close()
         self.temp_dir.cleanup()
 
+    def test_visual_frame_upload_is_staged_only_while_recording(self) -> None:
+        created = self.client.post(
+            "/v1/recordings",
+            json={"title": "Visual call", "mime_type": "audio/webm", "capture_mode": "pc_only"},
+        )
+        recording_id = created.json()["id"]
+        uploaded = self.client.post(
+            f"/v1/recordings/{recording_id}/visual-frames",
+            data={"sequence": "0", "timestamp": "1.25"},
+            files={"file": ("frame.jpg", b"\xff\xd8\xffjpeg", "image/jpeg")},
+        )
+        self.assertEqual(uploaded.status_code, 202)
+        self.assertEqual(uploaded.json()["sequence"], 0)
+        self.client.post(f"/v1/recordings/{recording_id}/stop")
+        rejected = self.client.post(
+            f"/v1/recordings/{recording_id}/visual-frames",
+            data={"sequence": "1", "timestamp": "2.0"},
+            files={"file": ("frame.jpg", b"\xff\xd8\xffjpeg", "image/jpeg")},
+        )
+        self.assertEqual(rejected.status_code, 409)
+
     def test_ensure_capture_permissions_endpoint_delegates_to_manager(self) -> None:
         class FakeCaptureManager:
             def ensure_permissions(self, mode: str) -> dict:
@@ -441,6 +462,25 @@ class RecordingApiTests(unittest.TestCase):
         intermediate_stages = [s for s in statuses if s not in {"queued", "completed"}]
         self.assertTrue(len(intermediate_stages) > 0, f"Expected intermediate stages in {statuses}")
         self.assertEqual(status["result"]["text"], "[00:00] Tu: Ciao")
+        self.assertEqual(status["result"]["stats"]["speaker_diarization"]["status"], "disabled")
+        self.assertIn(status["result"]["outcome_status"], {"completed", "completed_with_warnings"})
+        self.assertIn("diagnostics", status["result"])
+        events = self.app.state.job_store.events_after(job_id, 0)
+        steps = [event["current_step"] for event in events]
+        self.assertIn("diarizing", steps)
+        self.assertIn("visual_processing", steps)
+        self.assertIn("audio_intelligence", steps)
+        self.assertIn("saving", steps)
+        completed_event = next(event for event in reversed(events) if event["status"] == "completed")
+        self.assertEqual(
+            completed_event["payload"]["outcome_status"],
+            status["result"]["outcome_status"],
+        )
+
+        diagnostics = self.client.get(f"/v1/meetings/{recording_id}/diagnostics")
+        self.assertEqual(diagnostics.status_code, 200)
+        self.assertEqual(diagnostics.json()["outcome_status"], status["result"]["outcome_status"])
+        self.assertTrue(diagnostics.json()["diagnostics"])
 
     def test_active_recording_and_overlay_flow(self) -> None:
         # 1. Initially active is False

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from local_asr_server.catalog import CatalogStore
+from local_asr_server.visual_intelligence.contracts import MAX_VISUAL_FRAME_BYTES
 
 
 VALID_STATUSES = {
@@ -358,6 +359,77 @@ class RecordingStore:
             self._write_json_atomic(session_dir / "intelligence.json", intelligence)
             return self.public_metadata(metadata)
 
+    def stage_visual_frame(
+        self, recording_id: str, sequence: int, timestamp: float, content: bytes,
+    ) -> dict[str, Any]:
+        if sequence < 0 or timestamp < 0 or not content:
+            raise RecordingConflict("Invalid visual frame")
+        if len(content) > MAX_VISUAL_FRAME_BYTES or not content.startswith(b"\xff\xd8\xff"):
+            raise RecordingConflict("Visual frame must be a JPEG no larger than 5 MB")
+        with self._lock_for(recording_id):
+            session_dir, metadata = self._load(recording_id)
+            if metadata["status"] != "recording":
+                raise RecordingConflict("Visual frames can only be staged while recording")
+            staging = session_dir / ".visual-staging"
+            staging.mkdir(mode=0o700, parents=True, exist_ok=True)
+            manifest = staging / "manifest.jsonl"
+            if manifest.exists():
+                lines = manifest.read_text(encoding="utf-8").splitlines()
+                if lines:
+                    previous = json.loads(lines[-1])
+                    if sequence <= int(previous["sequence"]) or timestamp < float(previous["timestamp"]):
+                        raise RecordingConflict("Visual frame sequence and timestamp must be monotonic")
+            path = staging / f"frame-{sequence:08d}.jpg"
+            if path.exists():
+                raise RecordingConflict(f"Visual frame sequence already exists: {sequence}")
+            self._write_bytes_atomic(path, content)
+            with manifest.open("a", encoding="utf-8") as output:
+                output.write(json.dumps({"sequence": sequence, "timestamp": timestamp, "file": path.name}) + "\n")
+                output.flush()
+                os.fsync(output.fileno())
+            return {"sequence": sequence, "timestamp": timestamp, "bytes": len(content)}
+
+    def list_visual_frames(self, recording_id: str) -> list[dict[str, Any]]:
+        session_dir, _ = self._load(recording_id)
+        staging = session_dir / ".visual-staging"
+        manifest = staging / "manifest.jsonl"
+        if not manifest.exists():
+            return []
+        frames = []
+        for line in manifest.read_text(encoding="utf-8").splitlines():
+            item = json.loads(line)
+            path = (staging / str(item.get("file") or "")).resolve()
+            if path.parent == staging.resolve() and path.is_file():
+                frames.append({**item, "path": path})
+        return sorted(frames, key=lambda item: int(item["sequence"]))
+
+    def cleanup_visual_frames(self, recording_id: str) -> None:
+        session_dir, _ = self._load(recording_id)
+        shutil.rmtree(session_dir / ".visual-staging", ignore_errors=True)
+
+    def save_visual_intelligence(
+        self, recording_id: str, observations: list[dict[str, Any]], summary: dict[str, Any],
+    ) -> None:
+        with self._lock_for(recording_id):
+            session_dir, metadata = self._load(recording_id)
+            serialized = "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in observations)
+            self._write_text_atomic(session_dir / "visual_observations.jsonl", serialized)
+            self._write_json_atomic(session_dir / "visual_summary.json", summary)
+            metadata["visual_intelligence"] = summary
+            self._write_metadata(session_dir, metadata)
+            self._upsert_catalog(metadata)
+
+    def get_visual_intelligence(self, recording_id: str) -> dict[str, Any]:
+        session_dir, _ = self._load(recording_id)
+        summary_path = session_dir / "visual_summary.json"
+        observations_path = session_dir / "visual_observations.jsonl"
+        if not summary_path.exists():
+            raise FileNotFoundError("Visual intelligence not found")
+        observations = []
+        if observations_path.exists():
+            observations = [json.loads(line) for line in observations_path.read_text(encoding="utf-8").splitlines()]
+        return {"summary": json.loads(summary_path.read_text(encoding="utf-8")), "observations": observations}
+
     def get_intelligence(self, recording_id: str) -> dict[str, Any]:
         session_dir, _ = self._load(recording_id)
         intelligence_path = session_dir / "intelligence.json"
@@ -527,6 +599,12 @@ class RecordingStore:
             metadata["error"] = None
             self._write_metadata(session_dir, metadata)
             self._upsert_catalog(metadata)
+
+    def save_speaker_diarization(self, recording_id: str, payload: dict[str, Any]) -> None:
+        """Persist the post-meeting diarization timeline for audit and reuse."""
+        with self._lock_for(recording_id):
+            session_dir, _ = self._load(recording_id)
+            self._write_json_atomic(session_dir / "speaker-diarization.json", payload)
 
     def fail(self, recording_id: str, error: str) -> None:
         with self._lock_for(recording_id):
@@ -699,6 +777,14 @@ class RecordingStore:
         temp_path = path.with_suffix(path.suffix + ".tmp")
         with temp_path.open("w", encoding="utf-8") as output:
             output.write(text)
+            output.flush()
+            os.fsync(output.fileno())
+        temp_path.replace(path)
+
+    def _write_bytes_atomic(self, path: Path, content: bytes) -> None:
+        temp_path = path.with_suffix(path.suffix + ".tmp")
+        with temp_path.open("wb") as output:
+            output.write(content)
             output.flush()
             os.fsync(output.fileno())
         temp_path.replace(path)

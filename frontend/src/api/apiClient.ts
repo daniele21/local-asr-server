@@ -112,6 +112,13 @@ export interface CaptureCapabilities {
   fallbacks: string[];
 }
 
+export interface CaptureWindow {
+  id: number;
+  title: string;
+  application_name: string;
+  bundle_identifier: string;
+}
+
 export interface CaptureDiagnostics {
   process_name?: string;
   executable_path?: string;
@@ -325,11 +332,36 @@ export interface Transcription {
   text: string;
   segments?: TranscriptionSegment[];
   stats?: {
+    outcome_status?: 'completed' | 'completed_with_warnings' | string;
+    diagnostics?: EnrichmentDiagnostic[];
     time_total_seconds?: number;
     asr_provider?: string;
     backend?: string;
     model?: string;
     provider_options?: Record<string, unknown>;
+    speaker_diarization?: {
+      status: string;
+      engine?: string;
+      assigned_segments?: number;
+      error?: string;
+    };
+    visual_intelligence?: {
+      status: string;
+      model?: string;
+      observation_count?: number;
+      parse_errors?: number;
+      error?: string;
+    };
+    speaker_attribution?: {
+      source?: string;
+      mappings?: Array<{
+        speaker_cluster: string;
+        display_name?: string | null;
+        status: string;
+        observation_count?: number;
+        margin?: number;
+      }>;
+    };
     [key: string]: unknown;
   };
   analysis?: any;
@@ -340,6 +372,38 @@ export interface Transcription {
   asr_provider?: 'local' | 'speechmatics' | string;
   backend?: string;
   provider_options?: Record<string, unknown>;
+}
+
+export interface EnrichmentDiagnostic {
+  component: string;
+  status: 'completed' | 'completed_with_warnings' | 'degraded' | 'failed' | 'disabled' | 'skipped' | string;
+  requested_backend?: string | null;
+  actual_backend?: string | null;
+  fallback_used?: boolean;
+  fallback_reason?: string | null;
+  error?: string | null;
+  counts?: Record<string, number>;
+  duration_seconds?: number | null;
+  details?: Record<string, unknown>;
+}
+
+export interface MeetingDiagnostics {
+  recording_id: string;
+  outcome_status: string;
+  diagnostics: EnrichmentDiagnostic[];
+  jobs: TranscriptionJob[];
+  events: Array<Record<string, unknown>>;
+  artifacts: Record<string, boolean>;
+  log_file?: string | null;
+  log_lines: string[];
+}
+
+export interface AccessibilityStatus {
+  available: boolean;
+  trusted: boolean;
+  required_for: string[];
+  reason?: string | null;
+  error?: string | null;
 }
 
 export interface Settings {
@@ -375,6 +439,12 @@ export interface Settings {
   local_llm_llama_server_bin?: string;
   meeting_auto_analysis?: boolean;
   meeting_default_pipeline?: string;
+  speaker_diarization_enabled?: boolean;
+  speaker_diarization_minimum_overlap?: number;
+  visual_intelligence_enabled?: boolean;
+  visual_llm_model?: string;
+  visual_minimum_observations?: number;
+  visual_minimum_margin?: number;
   default_model: string;
   default_language: string;
   default_task: string;
@@ -458,6 +528,14 @@ export const ApiClient = {
     return (await request('/v1/capture/capabilities')).json();
   },
 
+  async accessibilityStatus(): Promise<AccessibilityStatus> {
+    return (await request('/v1/system/accessibility')).json();
+  },
+
+  async captureWindows(): Promise<{ windows: CaptureWindow[] }> {
+    return (await request('/v1/capture/windows')).json();
+  },
+
   async capturePermissions(): Promise<CapturePermissions> {
     return (await request('/v1/capture/permissions')).json();
   },
@@ -522,11 +600,11 @@ export const ApiClient = {
     return (await request(`/v1/recordings/${recordingId}/stop`, { method: 'POST' })).json();
   },
 
-  async startNativeCapture(recordingId: string, mode: 'both' | 'mic_only' | 'pc_only'): Promise<any> {
+  async startNativeCapture(recordingId: string, mode: 'both' | 'mic_only' | 'pc_only', visualWindowId?: number, visualFps = 0.5): Promise<any> {
     return (await request(`/v1/recordings/${recordingId}/capture/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode }),
+      body: JSON.stringify({ mode, visual_window_id: visualWindowId, visual_fps: visualFps }),
     })).json();
   },
 
@@ -557,6 +635,20 @@ export const ApiClient = {
       method: 'POST',
       body: formData
     })).json();
+  },
+
+  async appendVisualFrame(recordingId: string, sequence: number, timestamp: number, file: Blob): Promise<any> {
+    const formData = new FormData();
+    formData.append('file', file, `frame-${sequence}.jpg`);
+    formData.append('sequence', String(sequence));
+    formData.append('timestamp', String(timestamp));
+    return (await request(`/v1/recordings/${recordingId}/visual-frames`, {
+      method: 'POST', body: formData,
+    })).json();
+  },
+
+  async visualIntelligence(recordingId: string): Promise<any> {
+    return (await request(`/v1/recordings/${recordingId}/visual-intelligence`)).json();
   },
 
   async appendRecordingTrackChunk(recordingId: string, trackId: string, sequence: number, file: Blob): Promise<any> {
@@ -753,6 +845,10 @@ export const ApiClient = {
 
   async getMeeting(recordingId: string): Promise<Meeting> {
     return (await request(`/v1/meetings/${recordingId}`)).json();
+  },
+
+  async getMeetingDiagnostics(recordingId: string): Promise<MeetingDiagnostics> {
+    return (await request(`/v1/meetings/${recordingId}/diagnostics`)).json();
   },
 
   async selectDirectory(): Promise<{ path: string | null; error?: string }> {

@@ -22,6 +22,7 @@ from local_asr_server.schemas import (
     CaptureStartRequest,
 )
 from local_asr_server.asr_provider import asr_catalog
+from local_asr_server.macos_permissions import accessibility_status
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -60,6 +61,7 @@ def health(request: Request) -> dict:
             "POST /v1/capture/request-permissions",
             "POST /v1/capture/ensure-permissions",
             "GET /v1/capture/diagnostics",
+            "GET /v1/system/accessibility",
             "POST /v1/recordings/{id}/capture/start",
             "GET /v1/recordings/{id}/capture/events",
             "POST /v1/recordings/{id}/capture/stop",
@@ -180,12 +182,27 @@ def capture_diagnostics(request: Request):
     return get_services(request.app).capture.diagnostics()
 
 
+@router.get("/v1/system/accessibility")
+def system_accessibility():
+    return accessibility_status()
+
+
+@router.get("/v1/capture/windows")
+def capture_windows(request: Request):
+    return get_services(request.app).capture.windows()
+
+
 @router.post("/v1/recordings/{recording_id}/capture/start", status_code=202)
 def start_capture(recording_id: str, request: Request, body: CaptureStartRequest):
     store = get_services(request.app).recordings
     try:
         session_dir = store.session_dir(recording_id)
-        result = get_services(request.app).capture.start(recording_id, session_dir, body.mode)
+        if body.visual_window_id is not None and not 0.1 <= body.visual_fps <= 2.0:
+            raise ValueError("visual_fps must be between 0.1 and 2.0")
+        result = get_services(request.app).capture.start(
+            recording_id, session_dir, body.mode,
+            visual_window_id=body.visual_window_id, visual_fps=body.visual_fps,
+        )
         store.mark_capture_started(recording_id, backend="native")
         return result
     except RecordingNotFound as exc:

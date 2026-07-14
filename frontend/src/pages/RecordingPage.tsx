@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ApiClient, AudioIntelligence, ProjectItem, Recording } from '../api/apiClient';
+import { ApiClient, AudioIntelligence, CaptureWindow, ProjectItem, Recording } from '../api/apiClient';
 import { NEW_RECORDING_PROJECT_STORAGE_KEY } from '../api/config';
 import { useTranslation } from '../i18n/i18n';
 import { useToast } from '../context/ToastContext';
@@ -9,6 +9,7 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { Badge } from '../components/ui/Badge';
+import { Checkbox } from '../components/ui/Checkbox';
 import { ProjectPromptModal } from '../components/ui/ProjectPromptModal';
 import { formatBytes, formatProjectDate } from '../utils/formatters';
 import AudioIntelligencePanel from './recording/AudioIntelligencePanel';
@@ -34,6 +35,14 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
   const [projectName, setProjectName] = useState('');
   const [sourceMode, setSourceMode] = useState<'both' | 'mic_only' | 'pc_only'>('both');
   const [recordingsDir, setRecordingsDir] = useState('');
+  const [visualIntelligenceEnabled, setVisualIntelligenceEnabled] = useState(false);
+  const [speakerDiarizationEnabled, setSpeakerDiarizationEnabled] = useState(false);
+  const [visualModel, setVisualModel] = useState('');
+  const [captureWindows, setCaptureWindows] = useState<CaptureWindow[]>([]);
+  const [selectedVisualWindowId, setSelectedVisualWindowId] = useState('');
+  const [captureWindowsLoading, setCaptureWindowsLoading] = useState(false);
+  const [captureWindowsError, setCaptureWindowsError] = useState('');
+  const [enrichmentSaving, setEnrichmentSaving] = useState<'diarization' | 'visual' | null>(null);
 
   // Project suggestions (datalist)
   const [projectsList, setProjectsList] = useState<string[]>([]);
@@ -74,8 +83,9 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
   const micReady = nativeCaptureReady
     ? (sourceMode === 'pc_only' || recorder.capturePermissions?.microphone === 'authorized')
     : (sourceMode === 'pc_only' || recorder.microphones.length > 0 || recorder.selectedMicrophone === '');
+  const visualCaptureSelected = visualIntelligenceEnabled && selectedVisualWindowId !== '';
   const computerReady = nativeCaptureReady
-    ? (sourceMode === 'mic_only' || recorder.capturePermissions?.screen_capture === 'granted')
+    ? ((sourceMode === 'mic_only' && !visualCaptureSelected) || recorder.capturePermissions?.screen_capture === 'granted')
     : (!needsComputerAudio || Boolean(recorder.audioRouteStatus?.ready_to_record) || recorder.systemDevices.length > 0);
   const storageReady = recordingsDir.trim().length > 0;
   const readyToRecord = nativeCaptureReady
@@ -122,7 +132,8 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
     setPermissionLoading(true);
     setPermissionError(null);
     try {
-      const result = await ApiClient.ensureCapturePermissions(sourceMode);
+      const permissionMode = visualCaptureSelected && sourceMode === 'mic_only' ? 'both' : sourceMode;
+      const result = await ApiClient.ensureCapturePermissions(permissionMode);
       await recorder.refreshCapturePermissions();
       if (!result.ok) {
         const message = result.diagnostics?.code_signature && result.diagnostics.code_signature !== 'signed'
@@ -159,6 +170,9 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
       try {
         const settings = await ApiClient.getSettings();
         setRecordingsDir(settings.recordings_dir || '');
+        setSpeakerDiarizationEnabled(Boolean(settings.speaker_diarization_enabled));
+        setVisualIntelligenceEnabled(Boolean(settings.visual_intelligence_enabled));
+        setVisualModel(settings.visual_llm_model || '');
         
         const projs = await ApiClient.listProjects();
         setProjectsList(
@@ -170,6 +184,51 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
     };
     loadSettings();
   }, []);
+
+  const updateEnrichmentSetting = async (
+    setting: 'speaker_diarization_enabled' | 'visual_intelligence_enabled',
+    enabled: boolean,
+  ) => {
+    const previous = setting === 'speaker_diarization_enabled'
+      ? speakerDiarizationEnabled
+      : visualIntelligenceEnabled;
+    const savingKey = setting === 'speaker_diarization_enabled' ? 'diarization' : 'visual';
+    if (setting === 'speaker_diarization_enabled') setSpeakerDiarizationEnabled(enabled);
+    else setVisualIntelligenceEnabled(enabled);
+    setEnrichmentSaving(savingKey);
+    try {
+      await ApiClient.updateSettings({ [setting]: enabled });
+    } catch (err) {
+      if (setting === 'speaker_diarization_enabled') setSpeakerDiarizationEnabled(previous);
+      else setVisualIntelligenceEnabled(previous);
+      showToast(err instanceof Error ? err.message : String(err), 'error');
+    } finally {
+      setEnrichmentSaving(null);
+    }
+  };
+
+  const refreshCaptureWindows = async () => {
+    setCaptureWindowsLoading(true);
+    setCaptureWindowsError('');
+    try {
+      const result = await ApiClient.captureWindows();
+      setCaptureWindows(result.windows || []);
+    } catch (err) {
+      setCaptureWindows([]);
+      setCaptureWindowsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCaptureWindowsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!nativeCaptureReady || !visualIntelligenceEnabled || detailId) {
+      setCaptureWindows([]);
+      setSelectedVisualWindowId('');
+      return;
+    }
+    refreshCaptureWindows();
+  }, [nativeCaptureReady, visualIntelligenceEnabled, detailId]);
 
   // Load Project Detail if detailId is provided
   useEffect(() => {
@@ -498,6 +557,12 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
             </Badge>
           </div>
 
+          {recorder.fallbackNotice && (
+            <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+              {recorder.fallbackNotice}
+            </div>
+          )}
+
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input
@@ -622,6 +687,93 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
               </div>
             )}
 
+            {/* Meeting intelligence is an explicit recording decision, not a hidden default. */}
+            <section className="rounded-xl border border-border-subtle bg-bg-surface/20 p-4 flex flex-col gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-semibold text-text-primary">{t('recording.intelligenceTitle')}</h3>
+                  <p className="text-xs text-text-muted mt-1">{t('recording.intelligenceDesc')}</p>
+                </div>
+                <Badge variant={speakerDiarizationEnabled && visualCaptureSelected ? 'success' : 'warning'}>
+                  {speakerDiarizationEnabled && visualCaptureSelected
+                    ? t('recording.intelligenceReady')
+                    : t('recording.intelligencePartial')}
+                </Badge>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Checkbox
+                  variant="toggle"
+                  label={t('settings.speakerDiarization')}
+                  checked={speakerDiarizationEnabled}
+                  disabled={Boolean(enrichmentSaving) || recorder.isRecording}
+                  onChange={(event) => updateEnrichmentSetting('speaker_diarization_enabled', event.target.checked)}
+                />
+                <p className="text-xs text-text-muted pl-[52px]">{t('recording.diarizationInlineDesc')}</p>
+              </div>
+
+              <div className="flex flex-col gap-3 border-t border-border-subtle pt-4">
+                <Checkbox
+                  variant="toggle"
+                  label={t('settings.visualIntelligence')}
+                  checked={visualIntelligenceEnabled}
+                  disabled={Boolean(enrichmentSaving) || recorder.isRecording}
+                  onChange={(event) => updateEnrichmentSetting('visual_intelligence_enabled', event.target.checked)}
+                />
+
+                {visualIntelligenceEnabled && !nativeCaptureReady && (
+                  <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-text-secondary">
+                    <strong className="text-warning">{t('recording.visualUnavailableTitle')}</strong>
+                    <p className="mt-1">{t('recording.visualUnavailableDesc')}</p>
+                  </div>
+                )}
+
+                {visualIntelligenceEnabled && nativeCaptureReady && (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-end gap-2">
+                      <div className="flex-1 min-w-0">
+                        <Select
+                          label={t('recording.visualWindowLabel')}
+                          value={selectedVisualWindowId}
+                          onChange={(event) => setSelectedVisualWindowId(event.target.value)}
+                          disabled={captureWindowsLoading || recorder.isRecording}
+                        >
+                          <option value="">
+                            {captureWindowsLoading ? t('recording.visualWindowsLoading') : t('recording.visualWindowDisabled')}
+                          </option>
+                          {captureWindows.map((window) => (
+                            <option key={window.id} value={window.id}>
+                              {window.application_name} — {window.title}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={refreshCaptureWindows}
+                        disabled={captureWindowsLoading || recorder.isRecording}
+                      >
+                        {t('recording.visualWindowsRefresh')}
+                      </Button>
+                    </div>
+                    {captureWindowsError && <p className="text-xs text-danger">{captureWindowsError}</p>}
+                    {!captureWindowsLoading && !captureWindowsError && captureWindows.length === 0 && (
+                      <p className="text-xs text-warning">{t('recording.visualWindowsEmpty')}</p>
+                    )}
+                    <p className="text-xs text-text-muted">
+                      {t('recording.visualModelDesc', { model: visualModel || t('common.notAvailable') })}
+                    </p>
+                  </div>
+                )}
+
+                {visualIntelligenceEnabled && !speakerDiarizationEnabled && (
+                  <p className="text-xs text-warning">{t('recording.visualNeedsDiarization')}</p>
+                )}
+              </div>
+            </section>
+
             {/* Controls Actions */}
             <div className="flex flex-wrap gap-4 mt-2">
               {!recorder.isRecording ? (
@@ -629,7 +781,13 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
                   <Button
                     size="lg"
                     className="flex-1 min-w-[200px]"
-                    onClick={() => recorder.startRecording(title, projectName, '', sourceMode)}
+                    onClick={() => recorder.startRecording(
+                      title,
+                      projectName,
+                      '',
+                      sourceMode,
+                      visualCaptureSelected ? Number(selectedVisualWindowId) : undefined,
+                    )}
                     disabled={recorder.isVerifying || !readyToRecord}
                   >
                     🎙️ {t('recording.btnStart')}
