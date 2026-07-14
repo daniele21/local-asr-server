@@ -1,9 +1,89 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from enum import Enum
 from typing import Any
 
 MAX_VISUAL_FRAME_BYTES = 5 * 1024 * 1024
+VISUAL_OBSERVATIONS_FILE = "visual_observations.jsonl"
+VISUAL_SUMMARY_FILE = "visual_summary.json"
+VISUAL_ROUTING_FILE = "visual_routing.json"
+VISUAL_DOCUMENT_FILE = "visual_intelligence.json"
+VISUAL_PROCESSING_CHECKPOINT = "visual_processing_checkpoint.json"
+VISUAL_GENERATION_STAGING_DIR = ".visual-generation-staging"
+VISUAL_RECOVERY_TTL_SECONDS = 24 * 60 * 60
+
+
+class VisualTask(str, Enum):
+    MEETING_UI = "meeting_ui"
+    MEETING_STATE = "meeting_state"
+    SHARED_CONTENT = "shared_content"
+
+
+class VisualTrigger(str, Enum):
+    FIRST_FRAME = "first_frame"
+    DIARIZATION_TURN_START = "diarization_turn_start"
+    LOCAL_CHANGE = "local_change"
+    STRUCTURAL_CHANGE = "structural_change"
+    SHARED_ROI_CHANGE = "shared_roi_change"
+    HEARTBEAT = "heartbeat"
+
+
+@dataclass(frozen=True)
+class VisualRoutingConfig:
+    mode: str = "v1"
+    dhash_distance: int = 2
+    structural_dhash_distance: int = 12
+    shared_roi_dhash_distance: int = 10
+    speaker_delay_seconds: float = 0.5
+    speaker_local_window_seconds: float = 2.5
+    speaker_tile_dhash_distance: int = 4
+    speaker_tile_color_distance: float = 0.08
+    participant_grid_rows: int = 3
+    participant_grid_columns: int = 3
+    speaker_heartbeat_seconds: float = 10.0
+    meeting_state_heartbeat_seconds: float = 30.0
+    shared_content_heartbeat_seconds: float = 60.0
+    shared_content_stabilization_seconds: float = 0.5
+    shared_content_roi: tuple[float, float, float, float] = (0.05, 0.05, 0.95, 0.85)
+    shared_content_roi_confidence: float = 0.55
+    shared_content_cadence_seconds: tuple[tuple[str, float], ...] = (
+        ("slide", 60.0),
+        ("document", 90.0),
+        ("spreadsheet", 60.0),
+        ("code", 90.0),
+        ("browser", 60.0),
+        ("dashboard", 60.0),
+        ("video", 120.0),
+        ("unknown", 60.0),
+    )
+
+
+@dataclass(frozen=True)
+class VisualTemporalConfig:
+    meeting_state_debounce_seconds: float = 2.0
+
+
+@dataclass(frozen=True)
+class FrameCandidate:
+    sequence: int
+    timestamp: float
+    task: VisualTask
+    trigger: VisualTrigger
+    selector_version: int = 1
+    roi: tuple[float, float, float, float] | None = None
+    roi_source: str | None = None
+    roi_confidence: float | None = None
+    roi_fallback: bool = False
+
+    def public(self) -> dict[str, Any]:
+        payload = asdict(self)
+        payload["schema_version"] = 1
+        payload["task"] = self.task.value
+        payload["trigger"] = self.trigger.value
+        payload["roi"] = list(self.roi) if self.roi else None
+        payload["independent_inference"] = True
+        return payload
 
 
 @dataclass(frozen=True)
@@ -18,6 +98,10 @@ class VisualObservation:
     confidence: float
     model: str
     prompt_version: int
+    task: str = VisualTask.MEETING_UI.value
+    trigger: str = VisualTrigger.STRUCTURAL_CHANGE.value
+    independent_inference: bool = True
+    schema_version: int = 1
 
     def public(self) -> dict[str, Any]:
-        return {"schema_version": 1, **asdict(self), "status": "valid"}
+        return {**asdict(self), "status": "valid"}

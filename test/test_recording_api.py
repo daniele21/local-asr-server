@@ -9,6 +9,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from local_asr_server.server import AudioRouter, create_app
+from support import deterministic_settings
 
 
 def _wav_bytes() -> bytes:
@@ -34,17 +35,11 @@ class RecordingApiTests(unittest.TestCase):
         self.cache_patcher.start()
         self.settings_patcher = patch("local_asr_server.transcriptions.load_settings")
         self.mock_load_settings = self.settings_patcher.start()
-        self.mock_load_settings.return_value = {
-            "transcriptions_dir": str(self.transcriptions_dir),
-            "recordings_dir": self.temp_dir.name,
-            "gemini_api_key": "",
-            "llm_provider": "mock",
-            "default_model": "test-model",
-            "default_language": "it",
-            "default_task": "transcribe",
-            "default_word_timestamps": False,
-            "default_condition_on_previous": True,
-        }
+        self.mock_load_settings.return_value = deterministic_settings(
+            Path(self.temp_dir.name),
+            recordings_dir=self.temp_dir.name,
+            default_condition_on_previous=True,
+        )
         self.app = create_app(
             default_model="test-model",
             recordings_dir=Path(self.temp_dir.name),
@@ -78,6 +73,50 @@ class RecordingApiTests(unittest.TestCase):
             files={"file": ("frame.jpg", b"\xff\xd8\xffjpeg", "image/jpeg")},
         )
         self.assertEqual(rejected.status_code, 409)
+
+    def test_visual_intelligence_v2_endpoint_preserves_v1_response(self) -> None:
+        created = self.client.post(
+            "/v1/recordings",
+            json={"title": "Visual v2", "mime_type": "audio/webm", "capture_mode": "pc_only"},
+        )
+        recording_id = created.json()["id"]
+        summary = {"version": 2, "status": "completed"}
+        document = {
+            "schema_version": 2, "observations": [], "speaker_intervals": [],
+            "meeting_state_events": [], "share_sessions": [], "semantic_links": [],
+            "routing_summary": {}, "model": "qwen", "prompt_version": 3,
+        }
+        self.app.state.recording_store.save_visual_intelligence(
+            recording_id, [], summary, document=document,
+        )
+
+        legacy = self.client.get(f"/v1/recordings/{recording_id}/visual-intelligence")
+        versioned = self.client.get(f"/v2/recordings/{recording_id}/visual-intelligence")
+
+        self.assertEqual(legacy.status_code, 200)
+        self.assertIn("observations", legacy.json())
+        self.assertNotIn("schema_version", legacy.json())
+        self.assertEqual(versioned.status_code, 200)
+        self.assertEqual(versioned.json()["schema_version"], 2)
+        persisted_document = versioned.json()["document"]
+        self.assertEqual(
+            {key: value for key, value in persisted_document.items() if key != "generation_id"},
+            document,
+        )
+        self.assertEqual(
+            persisted_document["generation_id"], versioned.json()["summary"]["generation_id"],
+        )
+
+        self.app.state.recording_store.replace_visual_intelligence_artifacts(
+            recording_id, [{"sequence": 1}], {"version": 1, "status": "completed"},
+        )
+        legacy_after_v1 = self.client.get(f"/v1/recordings/{recording_id}/visual-intelligence")
+        versioned_after_v1 = self.client.get(f"/v2/recordings/{recording_id}/visual-intelligence")
+
+        self.assertEqual(legacy_after_v1.status_code, 200)
+        self.assertNotIn("document", legacy_after_v1.json())
+        self.assertNotIn("routing", legacy_after_v1.json())
+        self.assertEqual(versioned_after_v1.status_code, 404)
 
     def test_ensure_capture_permissions_endpoint_delegates_to_manager(self) -> None:
         class FakeCaptureManager:

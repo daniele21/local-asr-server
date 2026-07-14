@@ -71,8 +71,11 @@ DEFAULT_SETTINGS: dict[str, any] = {
     "speaker_diarization_minimum_overlap": 0.25,
     "visual_intelligence_enabled": False,
     "visual_llm_model": "qwen3-vl-4b",
+    "visual_routing_mode": "v1",
     "visual_minimum_observations": 3,
     "visual_minimum_margin": 0.2,
+    "visual_minimum_distinct_turns": 2,
+    "visual_minimum_temporal_support_seconds": 2.0,
 }
 
 

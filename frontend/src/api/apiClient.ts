@@ -323,6 +323,15 @@ export interface MergedSource {
   recording_id?: string;
 }
 
+/* Visual-intelligence contracts live in their domain module. */
+export type {
+  VisualRoutingCandidate, VisualTranscriptLink, VisualMeetingStateEvent,
+  VisualShareKeyframe, VisualShareSession, VisualIntelligenceDocumentV2,
+  VisualIntelligenceResponse, VisualIntelligenceResponseV2,
+} from './visualIntelligence';
+import type { VisualIntelligenceResponse, VisualIntelligenceResponseV2 } from './visualIntelligence';
+
+
 export interface Transcription {
   id: string;
   timestamp: string;
@@ -346,10 +355,20 @@ export interface Transcription {
       error?: string;
     };
     visual_intelligence?: {
+      version?: number;
       status: string;
       model?: string;
+      routing_mode?: 'v1' | 'shadow' | 'v2';
+      requested_routing_mode?: 'v1' | 'shadow' | 'v2';
       observation_count?: number;
+      independent_observation_count?: number;
       parse_errors?: number;
+      routing_summary?: {
+        captured_frames?: number;
+        candidate_count?: number;
+        candidates_by_task?: Record<string, number>;
+        candidates_by_trigger?: Record<string, number>;
+      };
       error?: string;
     };
     speaker_attribution?: {
@@ -359,6 +378,8 @@ export interface Transcription {
         display_name?: string | null;
         status: string;
         observation_count?: number;
+        distinct_turn_count?: number;
+        temporal_support_seconds?: number;
         margin?: number;
       }>;
     };
@@ -443,8 +464,11 @@ export interface Settings {
   speaker_diarization_minimum_overlap?: number;
   visual_intelligence_enabled?: boolean;
   visual_llm_model?: string;
+  visual_routing_mode?: 'v1' | 'shadow' | 'v2';
   visual_minimum_observations?: number;
   visual_minimum_margin?: number;
+  visual_minimum_distinct_turns?: number;
+  visual_minimum_temporal_support_seconds?: number;
   default_model: string;
   default_language: string;
   default_task: string;
@@ -647,8 +671,12 @@ export const ApiClient = {
     })).json();
   },
 
-  async visualIntelligence(recordingId: string): Promise<any> {
+  async visualIntelligence(recordingId: string): Promise<VisualIntelligenceResponse> {
     return (await request(`/v1/recordings/${recordingId}/visual-intelligence`)).json();
+  },
+
+  async visualIntelligenceV2(recordingId: string, signal?: AbortSignal): Promise<VisualIntelligenceResponseV2> {
+    return (await request(`/v2/recordings/${recordingId}/visual-intelligence`, { signal })).json();
   },
 
   async appendRecordingTrackChunk(recordingId: string, trackId: string, sequence: number, file: Blob): Promise<any> {

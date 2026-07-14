@@ -1,6 +1,6 @@
 # Visual intelligence + diarizzazione — tracker E2E
 
-Ultimo aggiornamento: 13 luglio 2026.
+Ultimo aggiornamento: 14 luglio 2026.
 
 Owner operativo: repository ClosedRoom. Questo documento è la fonte di verità
 per arrivare a una pipeline post-meeting realmente testabile end-to-end, dalla
@@ -10,6 +10,7 @@ Documenti collegati:
 
 - [architettura generale](architecture.md);
 - [registro feature](features.md);
+- [piano task-aware della visual intelligence](task-aware-visual-intelligence-plan.md), evoluzione pianificata della selezione e aggregazione dei frame;
 - `README.md`, sezioni registrazione, diarizzazione e visual intelligence.
 
 ## 1. Risultato atteso
@@ -227,12 +228,18 @@ Stato: `DONE`.
 
 - [x] Mostrare in UI stato delle due feature e risultato/errore non bloccante.
 - [x] Verificare contratti, build e copy del selettore finestra e Settings in italiano e inglese.
-- [ ] Eseguire suite completa backend e build frontend.
+- [x] Eseguire suite completa backend e build frontend.
 - [x] Costruire `./build.sh --no-dmg`.
 - [ ] Lanciare la `.app` e ripetere il percorso E2E nel bundle.
 - [x] Verificare firma helper, path modello LM Studio e cleanup shutdown dei sidecar.
 - [ ] Verificare manualmente TCC, path log e cattura dalla UI della `.app` ad-hoc.
 - [x] Aggiornare README, architettura e registro feature con il risultato corrente.
+
+Aggiornamento F8 task-aware (14/07/2026): smoke reale con FluidAudio e Qwen
+passato anche con `--routing-mode v2`, astensione conservativa, 15 eventi job,
+artefatti canonici presenti e staging rimosso. La build `.app` corrente non è
+stata rieseguita perché il comando non è stato autorizzato; lancio, TCC e smoke
+dal bundle restano aperti.
 
 Criterio di uscita: stesso comportamento in sviluppo e `.app`, senza failure
 nuove rispetto alla baseline nota.

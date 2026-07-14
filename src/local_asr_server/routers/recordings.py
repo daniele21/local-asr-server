@@ -103,6 +103,18 @@ def get_visual_intelligence(recording_id: str, request: Request):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.get("/v2/recordings/{recording_id}/visual-intelligence")
+def get_visual_intelligence_v2(recording_id: str, request: Request):
+    try:
+        return get_services(request.app).recordings.get_visual_intelligence_v2(recording_id)
+    except RecordingNotFound as exc:
+        raise HTTPException(status_code=404, detail="Recording not found") from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.post("/v1/recordings/{recording_id}/tracks/{track_id}/chunks")
 async def append_recording_track_chunk(
     recording_id: str,

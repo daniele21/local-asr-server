@@ -458,6 +458,47 @@ supera `speaker_diarization_minimum_overlap`. Il valore assegnato ha forma
 6. applica un mapping conservativo solo a cluster speaker già esistenti;
 7. elimina sempre i JPEG nello staging, anche in errore.
 
+Nel percorso task-aware `v2`, `shared_content.py` possiede la normalizzazione
+dei tipi e la policy di cadenza. Il router assegna alla ROI fonte, confidence e
+fallback esplicito; il servizio classifica la prima osservazione e filtra solo
+gli heartbeat troppo ravvicinati, lasciando sempre passare i cambi ROI. La ROI
+generica resta sperimentale finché non viene validata su Meet, Zoom e Teams.
+`inference.py` valida inoltre ogni risposta con un contratto specifico del task:
+valori parziali o con tipi errati restano errori diagnostici del candidato e non
+raggiungono aggregazione temporale o fusion.
+
+`visual_intelligence.json` è il documento canonico v2. `fusion.py` aggiunge
+`semantic_links` derivati esclusivamente dalla sovrapposizione temporale fra
+eventi/keyframe e segmenti del transcript: ogni link conserva gli identificativi
+delle evidenze e non modifica le sorgenti. L'endpoint `/v1/.../visual-intelligence`
+mantiene il wrapper legacy; `/v2/.../visual-intelligence` restituisce il contratto
+canonico tipizzato.
+Ogni esito terminale sostituisce il set di artefatti della generazione: un rerun
+v1 rimuove documento e routing v2 obsoleti, mentre una feature disabilitata
+preserva intenzionalmente l'ultima generazione completata.
+
+Durante il processing v2, `visual_processing_checkpoint.json` conserva soltanto
+il fingerprint della configurazione/candidati, la versione prompt e il tempo di
+aggiornamento. Le osservazioni indipendenti già
+scritte in JSONL vengono riusate dopo un arresto di processo con fingerprint
+identico; a completamento checkpoint e JPEG di staging vengono eliminati. I
+`semantic_links` persistono solo ID e intervalli dei segmenti, non una seconda
+copia del testo o delle label speaker.
+Checkpoint e staging recuperabili hanno retention centralizzata di 24 ore e
+sono ripuliti da `RecordingStore` all'avvio. Gli artefatti terminali vengono
+prima scritti in `.visual-generation-staging/<generation_id>` e poi promossi;
+summary, documento, routing e metadata condividono lo stesso `generation_id`.
+Metadata e catalogo sono aggiornati per ultimi, e le API rifiutano generazioni
+parziali invece di combinare file appartenenti a run diversi.
+Le share session sono delimitate dalle transizioni osservabili start/stop; senza
+meeting state si usa un fallback basato sui keyframe, mentre i keyframe esterni
+a finestre note sono esposti in `unassigned_share_keyframes`.
+
+La UI React carica il documento v2 da `MeetingDetailPage` e delega il rendering
+a `components/meeting/VisualIntelligencePanel.tsx`. Il pannello gestisce timeline,
+share session, mapping accettati/da verificare, astensione, loading, errore e
+dataset vuoto; le soglie di tuning restano nel backend.
+
 Il contratto JSON è imposto dal prompt e validato localmente. Per compatibilità
 con l'output osservato di Qwen MLX, il parser accetta JSON, code fence, literal
 dictionary sicuri e un singolo wrapper `{` duplicato; struttura e tipi restano
@@ -730,7 +771,9 @@ Non sono presenti metriche remote, tracing distribuito o telemetry SaaS.
 | Default settings | `settings.py` |
 | Cattura macOS | `native_capture.py`, `native_capture_helper/` |
 | Diarizzazione | `speaker_diarization.py`, `speaker_diarization_helper/` |
-| Visual intelligence | `visual_intelligence/` |
+| Visual intelligence | `visual_intelligence/`: `service.py` orchestra; `contracts.py` possiede schemi/configurazione; `signatures.py` le firme economiche; `router.py` la selezione task-aware; `inference.py` i prompt per task; `temporal.py` intervalli/eventi/sessioni; `fusion.py` il mapping conservativo sui cluster provider. |
+| Processor visuali | `visual_intelligence/processors.py` converte risposte legacy e task-aware in osservazioni persistibili; parsing e validazione restano in `inference.py`, mentre `service.py` coordina policy, routing e lifecycle. |
+| Fetch visuale React | `api/visualIntelligence.ts` possiede i contratti e `hooks/useVisualIntelligence.ts` loading/error/abort; `MeetingDetailPage` coordina il workspace senza attendere il documento v2. |
 | Frontend navigation | `frontend/src/App.tsx` |
 | Build e packaging | `build.sh`, `ClosedRoom.spec`, `pyproject.toml` |
 | Registro funzionale | `docs/features.md` |

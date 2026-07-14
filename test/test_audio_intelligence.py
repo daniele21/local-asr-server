@@ -76,7 +76,10 @@ class AudioIntelligenceTests(unittest.TestCase):
 
     def test_silero_vad_direct(self) -> None:
         try:
-            from local_asr_server.audio_intelligence.vad import detect_speech_windows_vad
+            from local_asr_server.audio_intelligence.vad import SileroVAD, detect_speech_windows_vad
+            from local_asr_server.paths import get_models_dir
+            if not (get_models_dir() / "silero_vad.onnx").exists():
+                self.skipTest("Silero model not cached; unit tests must not download it")
             import numpy as np
             # Generate a 2 second tone at 16kHz
             sample_rate = 16_000
@@ -96,6 +99,9 @@ class AudioIntelligenceTests(unittest.TestCase):
         self.patcher.stop()
         try:
             from local_asr_server.audio_intelligence.vad import SileroVAD
+            from local_asr_server.paths import get_models_dir
+            if not (get_models_dir() / "silero_vad.onnx").exists():
+                self.skipTest("Silero model not cached; unit tests must not download it")
             import numpy as np
             vad = SileroVAD()
             chunk = np.zeros(512, dtype=np.float32)

@@ -53,6 +53,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--frame", type=Path, required=True, help="JPEG with one visible active speaker")
     parser.add_argument("--base-url", default="http://127.0.0.1:1245")
     parser.add_argument("--model", default="qwen3-vl-4b")
+    parser.add_argument("--routing-mode", choices=("v1", "shadow", "v2"), default="v1")
     parser.add_argument("--expect", choices=("mapping", "abstention"), default="mapping")
     parser.add_argument("--output-dir", type=Path, help="Keep artifacts here instead of a temporary directory")
     return parser.parse_args()
@@ -86,6 +87,7 @@ def main() -> int:
         "speaker_diarization_minimum_overlap": 0.25,
         "visual_intelligence_enabled": True,
         "visual_llm_model": args.model,
+        "visual_routing_mode": args.routing_mode,
         "visual_minimum_observations": 3,
         "visual_minimum_margin": 0.2,
     }
@@ -164,6 +166,10 @@ def main() -> int:
         "visual_summary.json",
         "intelligence.json",
     ]
+    if args.routing_mode in {"shadow", "v2"}:
+        required.append("visual_routing.json")
+    if args.routing_mode == "v2":
+        required.append("visual_intelligence.json")
     missing = [name for name in required if not (session_dir / name).is_file()]
     mappings = payload.get("speaker_attribution", {}).get("mappings", [])
     accepted = [item for item in mappings if item.get("status") == "accepted"]
@@ -190,6 +196,7 @@ def main() -> int:
         "diarization": payload.get("speaker_diarization"),
         "speaker_attribution": payload.get("speaker_attribution"),
         "expected_attribution": args.expect,
+        "routing_mode": args.routing_mode,
         "segments": payload.get("segments"),
         "missing_artifacts": missing,
         "staging_removed": staging_removed,

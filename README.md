@@ -450,6 +450,49 @@ Staged frames are private temporary data in the recording directory and are
 removed after processing, including failed Qwen runs. Only structured
 observations and a compact summary persist.
 
+For controlled rollout, `visual_routing_mode=shadow` leaves the v1 Qwen calls
+and user-visible mapping unchanged while persisting explainable candidate and
+trigger decisions in `visual_routing.json`. The authenticated visual
+intelligence endpoint returns this diagnostic artifact when present. A later
+v1 run removes stale routing diagnostics before processing.
+
+In experimental `v2` mode, meeting-state observations are restricted to
+visible layout, participant count, screen sharing and explicit UI activity.
+Short A-B-A oscillations are debounced before persistence; the resulting
+timeline uses typed layout, share start/stop, participant join/leave and
+visible-activity events rather than unrestricted meeting interpretations.
+Shared-content candidates record the ROI source, confidence and explicit
+full-frame fallback. Qwen's first stable observation classifies slides,
+documents, spreadsheets, code, browsers, videos or dashboards; subsequent
+heartbeat inference follows the category cadence, while informative ROI
+changes are never suppressed by that cadence.
+Task-specific validators reject partial or wrongly typed Qwen payloads before
+they reach temporal aggregation or speaker fusion, and persist the candidate
+validation cause for diagnostics. Observable share start/stop cycles create
+separate stable sessions; keyframes outside known share windows remain explicit
+as unassigned instead of being silently merged.
+The canonical task-aware document is available from
+`GET /v2/recordings/<recording-id>/visual-intelligence`; the existing `/v1`
+response remains compatible. Version 2 also stores derived timestamp-overlap
+links between meeting events or share keyframes and transcript segments. These
+links cite their source observation and transcript evidence without rewriting
+either source.
+A terminal visual run replaces its complete artifact set, so a later v1 run
+removes stale v2 documents and routing. Disabling the feature preserves the
+last completed generation; an enabled run with no frames records a coherent
+degraded result.
+Task-aware recovery retains a validated checkpoint and private frame staging
+for up to 24 hours. Terminal artifacts are staged under one generation ID and
+metadata/catalog updates happen last; incomplete mixed generations are not
+served by the API.
+The Meeting detail page loads this versioned document progressively and shows
+an observed timeline, expandable shared-content moments, and speaker mappings
+as accepted, needing review, or explicitly abstained. Raw tuning thresholds
+remain outside the primary workflow.
+The visual request is independent from the main meeting request and is aborted
+when navigating to another meeting or unmounting the page, preventing stale
+results from replacing the current workspace.
+
 The transcription result always shows the effective outcome of FluidAudio,
 Qwen and speaker attribution. Missing frames, partial frame failures, runtime
 errors and ASR/VAD fallbacks produce a persistent “completed with warnings”
@@ -481,6 +524,8 @@ two-speaker WAV and a JPEG containing one visible active-speaker label:
 The harness uses real FluidAudio and Qwen inference but deterministic timed ASR
 segments, so it does not download or execute Whisper. It fails unless the
 speaker mapping, persisted artifacts, catalog rows and visual staging cleanup
+for the selected policy. Pass `--routing-mode v2` to require the canonical
+document and routing artifact as part of the smoke.
 all pass.
 
 The macOS bundle is built with Python 3.10 by default, matching the supported
@@ -689,8 +734,11 @@ ClosedRoom can be configured through:
 | `speaker_diarization_minimum_overlap` | Minimum ASR-segment overlap required to assign a local cluster; default `0.25` |
 | `visual_intelligence_enabled` | Enable post-meeting Qwen visual evidence processing; default `false` |
 | `visual_llm_model` | Vision model routed through `local-llm-server`; default `qwen3-vl-4b` |
+| `visual_routing_mode` | Frame routing policy: stable `v1`, diagnostic-only `shadow`, or task-aware `v2`; default `v1` |
 | `visual_minimum_observations` | Minimum matching observations before automatic attribution |
 | `visual_minimum_margin` | Minimum normalized lead over the second identity candidate |
+| `visual_minimum_distinct_turns` | Minimum distinct diarization turns required by task-aware speaker attribution; default `2` |
+| `visual_minimum_temporal_support_seconds` | Minimum temporal span required by task-aware speaker attribution; default `2.0` |
 
 Settings updates are validated before the atomic write. Unknown providers,
 runtime modes, analysis pipelines and transcription tasks, as well as invalid

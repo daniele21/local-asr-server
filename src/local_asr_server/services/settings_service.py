@@ -115,6 +115,7 @@ class SettingsService:
             "local_llm_reasoning": LLM_REASONING_POLICIES,
             "meeting_default_pipeline": frozenset(PIPELINES),
             "default_task": frozenset({"transcribe", "translate"}),
+            "visual_routing_mode": frozenset({"v1", "shadow", "v2"}),
         }
         for key, allowed in choices.items():
             value = settings.get(key)
@@ -132,6 +133,12 @@ class SettingsService:
         minimum_margin = settings.get("visual_minimum_margin")
         if not isinstance(minimum_margin, (int, float)) or not 0 <= float(minimum_margin) <= 1:
             raise InvalidSettings("visual_minimum_margin must be between zero and one")
+        minimum_turns = settings.get("visual_minimum_distinct_turns")
+        if not isinstance(minimum_turns, int) or minimum_turns < 1:
+            raise InvalidSettings("visual_minimum_distinct_turns must be a positive integer")
+        temporal_support = settings.get("visual_minimum_temporal_support_seconds")
+        if not isinstance(temporal_support, (int, float)) or float(temporal_support) < 0:
+            raise InvalidSettings("visual_minimum_temporal_support_seconds must be non-negative")
         diarization_overlap = settings.get("speaker_diarization_minimum_overlap")
         if not isinstance(diarization_overlap, (int, float)) or not 0 <= float(diarization_overlap) <= 1:
             raise InvalidSettings("speaker_diarization_minimum_overlap must be between zero and one")

@@ -6,12 +6,22 @@ import shutil
 import threading
 import uuid
 import hashlib
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from local_asr_server.catalog import CatalogStore
-from local_asr_server.visual_intelligence.contracts import MAX_VISUAL_FRAME_BYTES
+from local_asr_server.visual_intelligence.contracts import (
+    MAX_VISUAL_FRAME_BYTES,
+    VISUAL_DOCUMENT_FILE,
+    VISUAL_OBSERVATIONS_FILE,
+    VISUAL_PROCESSING_CHECKPOINT,
+    VISUAL_GENERATION_STAGING_DIR,
+    VISUAL_RECOVERY_TTL_SECONDS,
+    VISUAL_ROUTING_FILE,
+    VISUAL_SUMMARY_FILE,
+)
 
 
 VALID_STATUSES = {
@@ -87,6 +97,7 @@ class RecordingStore:
         self._locks: dict[str, threading.Lock] = {}
         self._mark_interrupted_jobs()
         self.sync_catalog()
+        self.cleanup_orphaned_visual_processing()
 
     @property
     def root(self) -> Path:
@@ -410,40 +421,230 @@ class RecordingStore:
     def reset_visual_observations(self, recording_id: str) -> None:
         with self._lock_for(recording_id):
             session_dir, _ = self._load(recording_id)
-            observations_path = session_dir / "visual_observations.jsonl"
+            observations_path = session_dir / VISUAL_OBSERVATIONS_FILE
             if observations_path.exists():
                 observations_path.unlink()
 
     def append_visual_observation(self, recording_id: str, observation: dict[str, Any]) -> None:
         with self._lock_for(recording_id):
             session_dir, _ = self._load(recording_id)
-            observations_path = session_dir / "visual_observations.jsonl"
+            observations_path = session_dir / VISUAL_OBSERVATIONS_FILE
             # Append observation
             with observations_path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(observation, ensure_ascii=False) + "\n")
 
-    def save_visual_intelligence(
+    def save_visual_routing(self, recording_id: str, routing: dict[str, Any]) -> None:
+        """Persist explainable frame-routing decisions without bloating catalog metadata."""
+        with self._lock_for(recording_id):
+            session_dir, _ = self._load(recording_id)
+            self._write_json_atomic(session_dir / VISUAL_ROUTING_FILE, routing)
+
+    def reset_visual_routing(self, recording_id: str) -> None:
+        with self._lock_for(recording_id):
+            session_dir, _ = self._load(recording_id)
+            routing_path = session_dir / VISUAL_ROUTING_FILE
+            if routing_path.exists():
+                routing_path.unlink()
+
+    def begin_visual_processing(
+        self, recording_id: str, fingerprint: str, *, prompt_version: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Start a v2 run or resume successful candidates left by a process crash."""
+        with self._lock_for(recording_id):
+            session_dir, _ = self._load(recording_id)
+            checkpoint_path = session_dir / VISUAL_PROCESSING_CHECKPOINT
+            observations_path = session_dir / VISUAL_OBSERVATIONS_FILE
+            checkpoint = None
+            if checkpoint_path.exists():
+                try:
+                    checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    checkpoint = None
+            if checkpoint and checkpoint.get("fingerprint") == fingerprint:
+                return self._validated_recovered_observations(
+                    self._read_valid_jsonl(observations_path), checkpoint,
+                )
+            self._write_text_atomic(observations_path, "")
+            self._write_json_atomic(checkpoint_path, {
+                "schema_version": 1,
+                "status": "running",
+                "fingerprint": fingerprint,
+                "prompt_version": prompt_version,
+                "updated_at": _utc_now(),
+            })
+            return []
+
+    @staticmethod
+    def _validated_recovered_observations(items, checkpoint):
+        valid_tasks = {"meeting_ui", "meeting_state", "shared_content"}
+        recovered = []
+        seen = set()
+        for item in items:
+            task = item.get("task")
+            observation_id = item.get("observation_id")
+            expected_id = f"visual-{item.get('sequence')}-{task}"
+            if (
+                item.get("schema_version") != 2
+                or task not in valid_tasks
+                or item.get("prompt_version") != checkpoint.get("prompt_version")
+                or observation_id != expected_id
+                or observation_id in seen
+            ):
+                continue
+            seen.add(observation_id)
+            recovered.append(item)
+        return recovered
+
+    def finish_visual_processing(self, recording_id: str) -> None:
+        with self._lock_for(recording_id):
+            session_dir, _ = self._load(recording_id)
+            checkpoint_path = session_dir / VISUAL_PROCESSING_CHECKPOINT
+            if checkpoint_path.exists():
+                checkpoint_path.unlink()
+
+    @staticmethod
+    def _read_valid_jsonl(path: Path) -> list[dict[str, Any]]:
+        if not path.exists():
+            return []
+        items = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(item, dict):
+                items.append(item)
+        return items
+
+    def replace_visual_intelligence_artifacts(
         self, recording_id: str, observations: list[dict[str, Any]], summary: dict[str, Any],
+        document: dict[str, Any] | None = None, routing: dict[str, Any] | None = None,
     ) -> None:
+        """Stage and promote one coherent terminal visual generation."""
         with self._lock_for(recording_id):
             session_dir, metadata = self._load(recording_id)
+            generation_id = str(
+                summary.get("generation_id") or uuid.uuid4()
+            )
+            summary = {**summary, "generation_id": generation_id}
+            document = {**document, "generation_id": generation_id} if document is not None else None
+            routing = {**routing, "generation_id": generation_id} if routing is not None else None
             serialized = "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in observations)
-            self._write_text_atomic(session_dir / "visual_observations.jsonl", serialized)
-            self._write_json_atomic(session_dir / "visual_summary.json", summary)
+            staging = session_dir / VISUAL_GENERATION_STAGING_DIR / generation_id
+            shutil.rmtree(staging, ignore_errors=True)
+            staging.mkdir(mode=0o700, parents=True)
+            self._write_text_atomic(staging / VISUAL_OBSERVATIONS_FILE, serialized)
+            self._write_json_atomic(staging / VISUAL_SUMMARY_FILE, summary)
+            if document is not None:
+                self._write_json_atomic(staging / VISUAL_DOCUMENT_FILE, document)
+            if routing is not None:
+                self._write_json_atomic(staging / VISUAL_ROUTING_FILE, routing)
+            for filename in (
+                VISUAL_OBSERVATIONS_FILE, VISUAL_SUMMARY_FILE,
+                VISUAL_DOCUMENT_FILE, VISUAL_ROUTING_FILE,
+            ):
+                source = staging / filename
+                target = session_dir / filename
+                if source.exists():
+                    os.replace(source, target)
+                else:
+                    target.unlink(missing_ok=True)
             metadata["visual_intelligence"] = summary
             self._write_metadata(session_dir, metadata)
             self._upsert_catalog(metadata)
+            shutil.rmtree(session_dir / VISUAL_GENERATION_STAGING_DIR, ignore_errors=True)
+
+    def cleanup_orphaned_visual_processing(self, *, now: float | None = None) -> int:
+        """Remove expired visual checkpoints/staging while preserving resumable runs."""
+        now = time.time() if now is None else now
+        removed = 0
+        if not self.root.exists():
+            return removed
+        for checkpoint in self.root.glob(f"*/*/{VISUAL_PROCESSING_CHECKPOINT}"):
+            try:
+                age = now - checkpoint.stat().st_mtime
+            except OSError:
+                continue
+            if age <= VISUAL_RECOVERY_TTL_SECONDS:
+                continue
+            session_dir = checkpoint.parent
+            checkpoint.unlink(missing_ok=True)
+            shutil.rmtree(session_dir / ".visual-staging", ignore_errors=True)
+            shutil.rmtree(session_dir / VISUAL_GENERATION_STAGING_DIR, ignore_errors=True)
+            removed += 1
+        for staging in self.root.glob(f"*/*/{VISUAL_GENERATION_STAGING_DIR}"):
+            try:
+                age = now - staging.stat().st_mtime
+            except OSError:
+                continue
+            if age > VISUAL_RECOVERY_TTL_SECONDS:
+                shutil.rmtree(staging, ignore_errors=True)
+                removed += 1
+        return removed
+
+    def save_visual_intelligence(
+        self, recording_id: str, observations: list[dict[str, Any]], summary: dict[str, Any],
+        document: dict[str, Any] | None = None,
+    ) -> None:
+        """Backward-compatible wrapper; new code should replace the complete set."""
+        self.replace_visual_intelligence_artifacts(
+            recording_id, observations, summary, document=document,
+        )
 
     def get_visual_intelligence(self, recording_id: str) -> dict[str, Any]:
         session_dir, _ = self._load(recording_id)
-        summary_path = session_dir / "visual_summary.json"
-        observations_path = session_dir / "visual_observations.jsonl"
+        summary_path = session_dir / VISUAL_SUMMARY_FILE
+        observations_path = session_dir / VISUAL_OBSERVATIONS_FILE
         if not summary_path.exists():
             raise FileNotFoundError("Visual intelligence not found")
         observations = []
         if observations_path.exists():
             observations = [json.loads(line) for line in observations_path.read_text(encoding="utf-8").splitlines()]
-        return {"summary": json.loads(summary_path.read_text(encoding="utf-8")), "observations": observations}
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        result = {"summary": summary, "observations": observations}
+        document_path = session_dir / VISUAL_DOCUMENT_FILE
+        if document_path.exists():
+            result["document"] = json.loads(document_path.read_text(encoding="utf-8"))
+        routing_path = session_dir / VISUAL_ROUTING_FILE
+        if routing_path.exists():
+            result["routing"] = json.loads(routing_path.read_text(encoding="utf-8"))
+        self._validate_visual_generation(result)
+        return result
+
+    @staticmethod
+    def _validate_visual_generation(result: dict[str, Any]) -> None:
+        generation_id = result["summary"].get("generation_id")
+        if not generation_id:
+            return
+        for key in ("document", "routing"):
+            artifact = result.get(key)
+            if artifact is not None and artifact.get("generation_id") != generation_id:
+                raise FileNotFoundError("Visual intelligence generation is incomplete")
+
+    def get_visual_intelligence_v2(self, recording_id: str) -> dict[str, Any]:
+        """Read the canonical v2 document without changing the legacy response."""
+        session_dir, _ = self._load(recording_id)
+        document_path = session_dir / VISUAL_DOCUMENT_FILE
+        if not document_path.exists():
+            raise FileNotFoundError("Visual intelligence v2 not found")
+        document = json.loads(document_path.read_text(encoding="utf-8"))
+        if document.get("schema_version") != 2:
+            raise ValueError("Unsupported visual intelligence schema")
+        summary_path = session_dir / VISUAL_SUMMARY_FILE
+        response = {
+            "schema_version": 2,
+            "summary": json.loads(summary_path.read_text(encoding="utf-8")),
+            "document": document,
+        }
+        routing_path = session_dir / VISUAL_ROUTING_FILE
+        if routing_path.exists():
+            response["routing"] = json.loads(routing_path.read_text(encoding="utf-8"))
+        self._validate_visual_generation({
+            "summary": response["summary"],
+            "document": response["document"],
+            **({"routing": response["routing"]} if "routing" in response else {}),
+        })
+        return response
 
     def get_intelligence(self, recording_id: str) -> dict[str, Any]:
         session_dir, _ = self._load(recording_id)

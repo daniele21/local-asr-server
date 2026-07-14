@@ -7,6 +7,7 @@ import os
 
 from local_asr_server.server import create_app
 from local_asr_server.llm import LLMService, MockProvider, NemotronLocalProvider, VoxtralLocalProvider
+from support import deterministic_settings
 
 class AnalysisApiTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -15,13 +16,17 @@ class AnalysisApiTests(unittest.TestCase):
         self.transcriptions_dir.mkdir(parents=True, exist_ok=True)
         self.settings_patcher = patch("local_asr_server.transcriptions.load_settings")
         self.mock_load_settings = self.settings_patcher.start()
-        self.mock_load_settings.return_value = {
-            "transcriptions_dir": str(self.transcriptions_dir),
-            "recordings_dir": self.temp_dir.name,
-            "gemini_api_key": "",
-            "llm_provider": "mock",
-            "local_llm_url": "http://127.0.0.1:1235",
-        }
+        self.mock_load_settings.return_value = deterministic_settings(Path(self.temp_dir.name))
+        self.runtime_settings_patcher = patch(
+            "local_asr_server.runtime.service_manager.load_settings",
+            return_value=self.mock_load_settings.return_value,
+        )
+        self.analysis_settings_patcher = patch(
+            "local_asr_server.services.analysis_service.load_settings",
+            return_value=self.mock_load_settings.return_value,
+        )
+        self.runtime_settings_patcher.start()
+        self.analysis_settings_patcher.start()
         self.app = create_app(
             default_model="test-model",
             recordings_dir=Path(self.temp_dir.name),
@@ -30,6 +35,8 @@ class AnalysisApiTests(unittest.TestCase):
         self.client = TestClient(self.app)
 
     def tearDown(self) -> None:
+        self.analysis_settings_patcher.stop()
+        self.runtime_settings_patcher.stop()
         self.settings_patcher.stop()
         self.client.close()
         self.temp_dir.cleanup()

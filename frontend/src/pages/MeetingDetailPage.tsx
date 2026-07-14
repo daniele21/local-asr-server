@@ -28,6 +28,8 @@ import { AnalysisSetupModal, AnalysisSetupSelection } from '../components/ui/Ana
 import { Sheet, SheetContent, SheetHeader, SheetBody } from '../components/ui/Sheet';
 import { cn } from '../utils/cn';
 import { formatJobProgress } from '../utils/jobs';
+import { VisualIntelligencePanel } from '../components/meeting/VisualIntelligencePanel';
+import { useVisualIntelligence } from '../hooks/useVisualIntelligence';
 
 interface MeetingDetailPageProps {
   recordingId: string | null;
@@ -60,6 +62,10 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [showAudioPlayer, setShowAudioPlayer] = useState(false);
   const [transcriptExpanded, setTranscriptExpanded] = useState(false);
+  const visualEnabled = meeting?.transcription?.stats?.visual_intelligence?.version === 2;
+  const { data: visualData, loading: visualLoading, error: visualError } = useVisualIntelligence(
+    demoMode ? null : recordingId, visualEnabled,
+  );
 
 
   const load = async () => {
@@ -213,6 +219,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
   );
   const acceptedSpeakerMappings = (meeting.transcription?.stats?.speaker_attribution?.mappings || [])
     .filter((mapping) => mapping.status === 'accepted' && mapping.display_name);
+  const speakerMappings = meeting.transcription?.stats?.speaker_attribution?.mappings || [];
 
   const enrichmentBadge = (status?: string) => {
     if (status === 'completed') return <Badge variant="success">{t('meeting.enrichmentCompleted')}</Badge>;
@@ -575,6 +582,15 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               )}
             </div>
           </div>
+
+          {(visualData || visualLoading || visualError) && (
+            <VisualIntelligencePanel
+              data={visualData}
+              mappings={speakerMappings}
+              loading={visualLoading}
+              error={visualError}
+            />
+          )}
 
           {/* Collapsible Transcript Panel */}
           <div className="surface-supporting rounded-xl overflow-hidden border border-border-subtle transition-premium shadow-soft">

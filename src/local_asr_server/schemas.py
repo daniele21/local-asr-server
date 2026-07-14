@@ -159,8 +159,11 @@ class SettingsRequest(BaseModel):
     speaker_diarization_minimum_overlap: Optional[float] = None
     visual_intelligence_enabled: Optional[bool] = None
     visual_llm_model: Optional[str] = None
+    visual_routing_mode: Optional[str] = None
     visual_minimum_observations: Optional[int] = None
     visual_minimum_margin: Optional[float] = None
+    visual_minimum_distinct_turns: Optional[int] = None
+    visual_minimum_temporal_support_seconds: Optional[float] = None
 
 class MergeTranscriptionsRequest(BaseModel):
     transcription_ids: list[str]

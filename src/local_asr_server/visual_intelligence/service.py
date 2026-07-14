@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import ast
+import hashlib
 import json
 import logging
 import time
@@ -8,8 +8,23 @@ from pathlib import Path
 from typing import Any, Callable
 
 from local_asr_server.settings import load_settings
-from local_asr_server.visual_intelligence.contracts import VisualObservation
-from local_asr_server.visual_intelligence.fusion import apply_visual_speaker_mapping
+from local_asr_server.visual_intelligence.contracts import VisualRoutingConfig, VisualTask
+from local_asr_server.visual_intelligence.fusion import (
+    apply_visual_speaker_mapping,
+    derive_visual_transcript_links,
+)
+from local_asr_server.visual_intelligence.inference import (
+    PROMPT_VERSION as TASK_PROMPT_VERSION,
+    VisualResponseValidationError,
+    normalize_task_response,
+    parse_visual_response,
+    prepare_candidate_message,
+)
+from local_asr_server.visual_intelligence.router import TaskAwareFrameRouter
+from local_asr_server.visual_intelligence.processors import LegacyVisualProcessor, TaskAwareVisualProcessor
+from local_asr_server.visual_intelligence.shared_content import should_infer_shared_candidate
+from local_asr_server.visual_intelligence.signatures import calculate_signature
+from local_asr_server.visual_intelligence.temporal import aggregate_temporal_state
 from local_asr_server.diagnostics import diagnostic
 
 logger = logging.getLogger("uvicorn.error")
@@ -22,21 +37,7 @@ Se un dato non è leggibile usa un valore unknown o un array vuoto. Non inventar
 
 def calculate_dhash(image_path: Path) -> int:
     """Calculate a 64-bit dHash of the image for similarity checks."""
-    from PIL import Image
-    with Image.open(image_path) as img:
-        resample = getattr(Image, "Resampling", Image).BILINEAR
-        img = img.convert("L").resize((9, 8), resample)
-        pixels = list(img.getdata())
-        difference = []
-        for row in range(8):
-            for col in range(8):
-                pixel_left = pixels[row * 9 + col]
-                pixel_right = pixels[row * 9 + col + 1]
-                difference.append(pixel_left > pixel_right)
-        decimal_value = 0
-        for bit in difference:
-            decimal_value = (decimal_value << 1) | int(bit)
-        return decimal_value
+    return calculate_signature(image_path).global_dhash
 
 
 class PostMeetingVisualService:
@@ -51,6 +52,7 @@ class PostMeetingVisualService:
         progress_callback: Callable[[int, int], None] | None = None,
     ) -> dict[str, Any]:
         settings = load_settings()
+        requested_routing_mode = str(settings.get("visual_routing_mode") or "v1")
         frames = services.recordings.list_visual_frames(recording_id)
         if not frames:
             if settings.get("visual_intelligence_enabled"):
@@ -71,13 +73,40 @@ class PostMeetingVisualService:
                         counts={"frames": 0, "observations": 0, "parse_errors": 0},
                     ),
                 }
-                services.recordings.save_visual_intelligence(recording_id, [], summary)
+                services.recordings.replace_visual_intelligence_artifacts(
+                    recording_id, [], summary,
+                )
                 payload.setdefault("stats", {})["visual_intelligence"] = summary
             return payload
         if not settings.get("visual_intelligence_enabled"):
             services.recordings.cleanup_visual_frames(recording_id)
             return payload
         model = str(settings.get("visual_llm_model") or "qwen3-vl-4b")
+        routing_mode = requested_routing_mode
+        routing_summary = None
+        routing_error = None
+        routing_artifact = None
+        if routing_mode in {"shadow", "v2"}:
+            try:
+                routing_config = VisualRoutingConfig(mode=routing_mode)
+                router = TaskAwareFrameRouter(routing_config)
+                candidates, routing_summary = router.route(frames, payload.get("segments") or [])
+                routing_artifact = {
+                    **routing_summary,
+                    "routing_mode": routing_mode,
+                    "selector_version": 1,
+                }
+                if routing_mode == "v2":
+                    return self._process_v2(
+                        services, recording_id, payload, frames, candidates, routing_summary,
+                        model=model, progress_callback=progress_callback, routing_config=routing_config,
+                        routing_artifact=routing_artifact,
+                    )
+            except Exception as exc:
+                routing_error = str(exc)
+                routing_mode = "v1"
+                routing_summary = {"schema_version": 1, "error": routing_error}
+                logger.warning("Visual router failed; falling back to v1 for %s: %s", recording_id, exc)
         observations, parse_errors = [], 0
         started = time.perf_counter()
         try:
@@ -109,16 +138,10 @@ class PostMeetingVisualService:
                     logger.warning("Failed to calculate dhash for frame %s: %s", frame.get("sequence"), hash_exc)
 
                 if is_duplicate and last_parsed is not None:
-                    obs = VisualObservation(
-                        sequence=int(frame["sequence"]), timestamp=float(frame["timestamp"]),
-                        platform=str(last_parsed.get("platform") or "unknown"),
-                        layout=str(last_parsed.get("layout") or "unknown"),
-                        participants=self._strings(last_parsed.get("participants")),
-                        active_speakers=self._strings(last_parsed.get("active_speakers")),
-                        evidence=self._strings(last_parsed.get("evidence")),
-                        confidence=self._confidence(last_parsed.get("confidence")),
-                        model=model, prompt_version=PROMPT_VERSION,
-                    ).public()
+                    obs = LegacyVisualProcessor.observation(
+                        frame, self._legacy_response(last_parsed), model,
+                        independent_inference=False,
+                    )
                     observations.append(obs)
                     services.recordings.append_visual_observation(recording_id, obs)
                     continue
@@ -129,27 +152,20 @@ class PostMeetingVisualService:
                         temperature=0.0,
                         max_tokens=512,
                     )
-                    parsed = self._parse(raw)
+                    parsed = parse_visual_response(raw)
                     last_parsed = parsed
                     if frame_hash is not None:
                         last_hash = frame_hash
-                    obs = VisualObservation(
-                        sequence=int(frame["sequence"]), timestamp=float(frame["timestamp"]),
-                        platform=str(parsed.get("platform") or "unknown"),
-                        layout=str(parsed.get("layout") or "unknown"),
-                        participants=self._strings(parsed.get("participants")),
-                        active_speakers=self._strings(parsed.get("active_speakers")),
-                        evidence=self._strings(parsed.get("evidence")),
-                        confidence=self._confidence(parsed.get("confidence")),
-                        model=model, prompt_version=PROMPT_VERSION,
-                    ).public()
+                    obs = LegacyVisualProcessor.observation(
+                        frame, self._legacy_response(parsed), model,
+                    )
                     observations.append(obs)
                     services.recordings.append_visual_observation(recording_id, obs)
                 except Exception as exc:
                     parse_errors += 1
                     logger.warning("Visual frame %s failed: %s", frame.get("sequence"), exc)
             elapsed = time.perf_counter() - started
-            status = "completed"
+            status = "degraded" if routing_error else "completed"
             error = None
             if parse_errors and not observations:
                 status = "failed"
@@ -161,12 +177,19 @@ class PostMeetingVisualService:
                 "prompt_version": PROMPT_VERSION, "frame_count": len(frames),
                 "observation_count": len(observations), "parse_errors": parse_errors,
                 "elapsed_seconds": round(elapsed, 3),
+                "requested_routing_mode": requested_routing_mode,
+                "routing_mode": routing_mode,
+                **({"routing_summary": self._compact_routing_summary(routing_summary)} if routing_summary else {}),
                 **diagnostic(
                     "visual_intelligence",
                     status,
                     requested_backend=model,
                     actual_backend=model,
-                    fallback_reason="partial_frame_failures" if status == "degraded" else None,
+                    fallback_used=bool(routing_error),
+                    fallback_reason=(
+                        "task_aware_router_failed" if routing_error
+                        else ("partial_frame_failures" if status == "degraded" else None)
+                    ),
                     error=error,
                     counts={
                         "frames": len(frames),
@@ -176,7 +199,10 @@ class PostMeetingVisualService:
                     duration_seconds=elapsed,
                 ),
             }
-            services.recordings.save_visual_intelligence(recording_id, observations, summary)
+            services.recordings.replace_visual_intelligence_artifacts(
+                recording_id, observations, summary,
+                routing=routing_artifact if requested_routing_mode == "shadow" and routing_error is None else None,
+            )
             payload = apply_visual_speaker_mapping(
                 payload, observations,
                 minimum_observations=int(settings.get("visual_minimum_observations") or 3),
@@ -201,6 +227,176 @@ class PostMeetingVisualService:
         finally:
             services.recordings.cleanup_visual_frames(recording_id)
 
+    def _process_v2(
+        self, services, recording_id, payload, frames, candidates, routing_summary, *, model,
+        progress_callback, routing_config, routing_artifact,
+    ):
+        fingerprint = self._processing_fingerprint(candidates, model)
+        observations = services.recordings.begin_visual_processing(
+            recording_id, fingerprint, prompt_version=TASK_PROMPT_VERSION,
+        )
+        resumed_observation_count = len(observations)
+        completed_observation_ids = {item.get("observation_id") for item in observations}
+        parse_errors = 0
+        candidate_errors: list[dict[str, Any]] = []
+        started = time.perf_counter()
+        skipped_by_cadence = 0
+        recovered_by_id = {item["observation_id"]: item for item in observations}
+        last_shared_inference_timestamp = None
+        last_shared_content_type = "unknown"
+        completed = False
+        try:
+            ready = services.runtime.ensure_llm_ready(
+                capability="image", reasoning="off", overrides={"local_llm_model": model},
+            )
+            client = self._client(ready["base_url"], model)
+            frames_by_sequence = {int(item["sequence"]): item for item in frames}
+            for index, candidate in enumerate(candidates):
+                if progress_callback:
+                    try:
+                        progress_callback(index + 1, len(candidates))
+                    except Exception as cb_exc:
+                        logger.warning("Visual intelligence progress callback failed: %s", cb_exc)
+                frame = frames_by_sequence[candidate.sequence]
+                observation_id = f"visual-{candidate.sequence}-{candidate.task.value}"
+                if observation_id in completed_observation_ids:
+                    recovered = recovered_by_id[observation_id]
+                    if candidate.task is VisualTask.SHARED_CONTENT:
+                        last_shared_inference_timestamp = candidate.timestamp
+                        last_shared_content_type = str(recovered.get("content_type") or "unknown")
+                    continue
+                if candidate.task is VisualTask.SHARED_CONTENT and not should_infer_shared_candidate(
+                    trigger=candidate.trigger.value,
+                    timestamp=candidate.timestamp,
+                    last_inference_timestamp=last_shared_inference_timestamp,
+                    content_type=last_shared_content_type,
+                    config=routing_config,
+                ):
+                    skipped_by_cadence += 1
+                    continue
+                try:
+                    raw = client.chat(
+                        prepare_candidate_message(candidate, Path(frame["path"])),
+                        temperature=0.0,
+                        max_tokens=768 if candidate.task is VisualTask.SHARED_CONTENT else 512,
+                    )
+                    parsed = parse_visual_response(raw)
+                    normalized = normalize_task_response(candidate.task, parsed)
+                    observation = TaskAwareVisualProcessor.observation(candidate, normalized, model)
+                    observations.append(observation)
+                    services.recordings.append_visual_observation(recording_id, observation)
+                    if candidate.task is VisualTask.SHARED_CONTENT:
+                        last_shared_inference_timestamp = candidate.timestamp
+                        last_shared_content_type = observation["content_type"]
+                except Exception as exc:
+                    parse_errors += 1
+                    candidate_errors.append({
+                        "sequence": candidate.sequence,
+                        "task": candidate.task.value,
+                        "trigger": candidate.trigger.value,
+                        "error_type": "validation" if isinstance(exc, VisualResponseValidationError) else "inference",
+                        "error": str(exc),
+                    })
+                    logger.warning(
+                        "Visual candidate %s/%s failed: %s",
+                        candidate.sequence, candidate.task.value, exc,
+                    )
+            temporal = aggregate_temporal_state(observations)
+            temporal["semantic_links"] = derive_visual_transcript_links(
+                temporal, payload.get("segments") or [],
+            )
+            elapsed = time.perf_counter() - started
+            status = "completed" if not parse_errors else ("degraded" if observations else "failed")
+            summary = {
+                "version": 2,
+                "status": status,
+                "model": model,
+                "prompt_version": TASK_PROMPT_VERSION,
+                "routing_mode": "v2",
+                "frame_count": len(frames),
+                "observation_count": len(observations),
+                "independent_observation_count": len(observations),
+                "parse_errors": parse_errors,
+                "candidate_errors": candidate_errors,
+                "resumed_observation_count": resumed_observation_count,
+                "skipped_by_content_cadence": skipped_by_cadence,
+                "routing_summary": self._compact_routing_summary(routing_summary),
+                "elapsed_seconds": round(elapsed, 3),
+                **diagnostic(
+                    "visual_intelligence", status,
+                    requested_backend=model, actual_backend=model,
+                    fallback_reason="partial_candidate_failures" if status == "degraded" else None,
+                    error="all_visual_candidates_failed" if status == "failed" else None,
+                    counts={
+                        "frames": len(frames), "candidates": len(candidates),
+                        "observations": len(observations), "parse_errors": parse_errors,
+                        "skipped_by_content_cadence": skipped_by_cadence,
+                        "resumed_observations": resumed_observation_count,
+                    },
+                    duration_seconds=elapsed,
+                ),
+            }
+            document = {
+                "schema_version": 2,
+                "observations": observations,
+                "candidate_errors": candidate_errors,
+                **temporal,
+                "routing_summary": self._compact_routing_summary(routing_summary),
+                "model": model,
+                "prompt_version": TASK_PROMPT_VERSION,
+            }
+            services.recordings.replace_visual_intelligence_artifacts(
+                recording_id, observations, summary, document=document, routing=routing_artifact,
+            )
+            speaker_observations = [item for item in observations if item.get("task") == VisualTask.MEETING_UI.value]
+            settings = load_settings()
+            payload = apply_visual_speaker_mapping(
+                payload, speaker_observations,
+                minimum_observations=int(settings.get("visual_minimum_observations") or 3),
+                minimum_margin=float(settings.get("visual_minimum_margin") or 0.2),
+                minimum_distinct_turns=int(settings.get("visual_minimum_distinct_turns") or 2),
+                minimum_temporal_support_seconds=float(settings.get("visual_minimum_temporal_support_seconds") or 0.0),
+            )
+            payload["visual_intelligence"] = temporal
+            payload.setdefault("stats", {})["visual_intelligence"] = summary
+            completed = True
+            return payload
+        except Exception as exc:
+            logger.warning("Task-aware visual intelligence failed for %s: %s", recording_id, exc)
+            payload.setdefault("stats", {})["visual_intelligence"] = {
+                "version": 2, "routing_mode": "v2", "model": model,
+                **diagnostic(
+                    "visual_intelligence", "failed", requested_backend=model,
+                    error=str(exc), duration_seconds=time.perf_counter() - started,
+                ),
+            }
+            return payload
+        finally:
+            if completed:
+                services.recordings.finish_visual_processing(recording_id)
+                services.recordings.cleanup_visual_frames(recording_id)
+
+    @classmethod
+    def _v2_observation(cls, candidate, parsed, model):
+        return TaskAwareVisualProcessor.observation(candidate, parsed, model)
+
+    @staticmethod
+    def _compact_routing_summary(routing_summary):
+        if not isinstance(routing_summary, dict):
+            return routing_summary
+        return {key: value for key, value in routing_summary.items() if key != "candidates"}
+
+    @staticmethod
+    def _processing_fingerprint(candidates, model: str) -> str:
+        payload = {
+            "schema_version": 2,
+            "model": model,
+            "prompt_version": TASK_PROMPT_VERSION,
+            "candidates": [candidate.public() for candidate in candidates],
+        }
+        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
     def _client(self, base_url: str, model: str) -> Any:
         if self._client_factory:
             return self._client_factory(base_url=base_url, model=model)
@@ -214,33 +410,18 @@ class PostMeetingVisualService:
 
     @staticmethod
     def _parse(raw: str) -> dict[str, Any]:
-        candidate = raw.strip()
-        if candidate.startswith("```"):
-            lines = candidate.splitlines()
-            candidate = "\n".join(lines[1:-1]).strip() if len(lines) >= 3 else candidate
-        start, end = candidate.find("{"), candidate.rfind("}")
-        if start >= 0 and end >= start:
-            candidate = candidate[start:end + 1]
-        candidates = [candidate]
-        without_outer_open = candidate[1:].lstrip() if candidate.startswith("{") else candidate
-        if without_outer_open.startswith("{"):
-            candidates.append(without_outer_open)
-        parsed = None
-        last_error: Exception | None = None
-        for structured in candidates:
-            for parser in (json.loads, ast.literal_eval):
-                try:
-                    parsed = parser(structured)
-                    break
-                except (json.JSONDecodeError, SyntaxError, ValueError) as exc:
-                    last_error = exc
-            if parsed is not None:
-                break
-        if parsed is None and last_error is not None:
-            raise last_error
-        if not isinstance(parsed, dict):
-            raise ValueError("Visual response must be a JSON object")
-        return parsed
+        return parse_visual_response(raw)
+
+    @classmethod
+    def _legacy_response(cls, parsed: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "platform": str(parsed.get("platform") or "unknown"),
+            "layout": str(parsed.get("layout") or "unknown"),
+            "participants": cls._strings(parsed.get("participants")),
+            "active_speakers": cls._strings(parsed.get("active_speakers")),
+            "evidence": cls._strings(parsed.get("evidence")),
+            "confidence": cls._confidence(parsed.get("confidence")),
+        }
 
     @staticmethod
     def _strings(value: Any) -> list[str]:

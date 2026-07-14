@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "description": "Synthetic stable/change/stabilized sequence used to verify deterministic F2 routing.",
+  "expected_sequences": {
+    "meeting_ui": [0, 1],
+    "meeting_state": [0, 2],
+    "shared_content": [0, 3]
+  }
+}
