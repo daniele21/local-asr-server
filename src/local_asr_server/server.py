@@ -94,7 +94,18 @@ def create_app(
     else:
         catalog_path = CatalogStore.default_db_path()
     app.state.app_log_file = configure_application_logging(fallback_dir=catalog_path.parent)
-        
+    
+    import logging
+    logger = logging.getLogger("uvicorn.error")
+    llm_status = runtime_services.llm_status()
+    llm_mode = llm_status.get("mode", "disabled")
+    if llm_mode == "auto":
+        logger.info("Local LLM: mode is 'auto' (will start dynamically on demand on a free port)")
+    elif llm_mode == "external":
+        logger.info(f"Local LLM: mode is 'external' (using configured URL: {llm_status.get('url')})")
+    else:
+        logger.info("Local LLM: disabled")
+
     catalog_store = CatalogStore(catalog_path)
     app.state.prompts_file = catalog_path.parent / "prompts.json" if temp_root in catalog_path.resolve().parents else None
     job_store = JobStore(catalog_path)

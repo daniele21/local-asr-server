@@ -191,6 +191,9 @@ class LocalLLMSidecar:
         self._port = self._select_port()
         cmd = self._build_command(port=self._port, **config.__dict__)
         try:
+            import logging
+            logger = logging.getLogger("uvicorn.error")
+            logger.info(f"Starting local LLM server on port {self._port} (model: {model})")
             log_handle = self.log_file.open("ab")
             self._process = subprocess.Popen(cmd, stdout=log_handle, stderr=subprocess.STDOUT)
             self._started_at = time.time()
@@ -277,9 +280,14 @@ class LocalLLMSidecar:
     ) -> list[str]:
         binary = shutil.which("local-llm-server")
         cmd = [binary, "serve"] if binary else [sys.executable, "-m", "local_llm_server", "serve"]
-        cmd.extend(["--host", self.host, "--port", str(port)])
+        cmd.extend(["--host", self.host, "--port", str(port), "--enable-admin-api"])
+        from local_asr_server.settings import load_settings
+        settings = load_settings()
+        visual_model = settings.get("visual_llm_model") or "qwen3-vl-4b"
         if model != "custom":
-            cmd.extend(["--model", model])
+            cmd.extend(["--models", model, visual_model])
+        else:
+            cmd.extend(["--models", visual_model])
         if model_path:
             cmd.extend(["--model-path", model_path])
         if backend:

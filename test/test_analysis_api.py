@@ -222,9 +222,11 @@ class AnalysisApiTests(unittest.TestCase):
         )
         self.assertEqual(result["title"], "Voxtral Title")
 
+    @patch("local_asr_server.runtime.service_manager._query_external_health")
     @patch("local_llm_server.client.LocalLLMClient")
     @patch("local_asr_server.routers.system.load_settings")
-    def test_voxtral_audio_analysis_via_endpoint(self, mock_load, mock_client_cls) -> None:
+    def test_voxtral_audio_analysis_via_endpoint(self, mock_load, mock_client_cls, mock_health) -> None:
+        mock_health.return_value = {"status": "ok"}
         mock_load.return_value = {
             "local_llm_url": "http://127.0.0.1:1235",
             "llm_provider": "voxtral_local"

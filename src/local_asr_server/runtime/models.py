@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
+from pathlib import Path
 from typing import Any, Literal
 
 
@@ -55,4 +57,53 @@ def resolve_local_llm_model_path(settings: dict[str, Any], model: str | None = N
     model_paths = settings.get("local_llm_model_paths") or {}
     if not isinstance(model_paths, dict):
         model_paths = {}
-    return model_paths.get(selected_model) or settings.get("local_llm_model_path") or ""
+    
+    path = model_paths.get(selected_model) or settings.get("local_llm_model_path") or ""
+    if path:
+        return path
+
+    if selected_model:
+        # Check if the selected_model is already a path that exists
+        model_path_obj = Path(selected_model).expanduser()
+        if model_path_obj.exists():
+            return str(model_path_obj.resolve())
+
+        # Scan LM Studio models directory (skip in unit tests to ensure test hermeticity)
+        import sys
+        import os
+        lm_studio_dir = Path("~/.lmstudio/models").expanduser()
+        if ("unittest" not in sys.modules or os.environ.get("CLOSEDROOM_TEST_RESOLVE")) and lm_studio_dir.exists():
+            query_tokens = [t.lower() for t in re.findall(r'[a-zA-Z0-9]+', selected_model) if t]
+            if query_tokens:
+                best_match = None
+                best_match_score = 0
+                best_match_len = 999999
+                
+                for p in lm_studio_dir.rglob("*"):
+                    is_gguf_file = p.is_file() and p.suffix.lower() == ".gguf"
+                    is_mlx_dir = p.is_dir() and (p / "config.json").exists()
+                    
+                    if not (is_gguf_file or is_mlx_dir):
+                        continue
+                        
+                    path_str = str(p.relative_to(lm_studio_dir)).lower()
+                    
+                    # Exclude mmproj files unless explicitly requested
+                    if "mmproj" in path_str and "mmproj" not in selected_model.lower():
+                        continue
+                        
+                    matched_tokens = sum(1 for token in query_tokens if token in path_str)
+                    
+                    if matched_tokens > best_match_score:
+                        best_match_score = matched_tokens
+                        best_match = p
+                        best_match_len = len(path_str)
+                    elif matched_tokens == best_match_score and best_match_score > 0:
+                        if len(path_str) < best_match_len:
+                            best_match = p
+                            best_match_len = len(path_str)
+                            
+                if best_match and best_match_score >= max(1, len(query_tokens) // 2):
+                    return str(best_match.resolve())
+
+    return ""

@@ -119,6 +119,9 @@ class RuntimeServiceManager:
         if mode == "disabled":
             raise RuntimeError("local_llm_disabled")
         if mode == "external":
+            health = _query_external_health(llm["url"])
+            if health is None:
+                raise RuntimeError(f"external_llm_server_not_reachable: {llm['url']}")
             return {
                 "base_url": llm["url"],
                 "model": llm["model"],

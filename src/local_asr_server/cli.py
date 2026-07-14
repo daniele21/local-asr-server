@@ -12,6 +12,7 @@ import uvicorn
 from local_asr_server.runtime.models import (
     DEFAULT_API_PORT,
     DEFAULT_DEV_RELOAD_PORT,
+    DEFAULT_LOCAL_LLM_PORT,
     LOCAL_SERVICE_HOST,
 )
 
@@ -64,8 +65,10 @@ def _build_parser() -> argparse.ArgumentParser:
     serve.add_argument(
         "--llm-port",
         type=int,
+        nargs="?",
+        const=DEFAULT_LOCAL_LLM_PORT,
         default=None,
-        help="Start the local LLM server on this port in parallel.",
+        help=f"Start the local LLM server on this port in parallel (default: {DEFAULT_LOCAL_LLM_PORT}).",
     )
     serve.add_argument(
         "--llm-model",
@@ -268,20 +271,22 @@ def main() -> None:
         save_settings(settings)
 
         # Build command to start local-llm-server
-        cmd = [sys.executable, "-m", "local_llm_server", "serve", "--host", LOCAL_SERVICE_HOST, "--port", str(args.llm_port)]
-        if llm_model_path:
-            cmd.extend(["--model-path", llm_model_path])
-        else:
-            cmd.extend(["--model", llm_model])
+        visual_model = settings.get("visual_llm_model") or "qwen3-vl-4b"
+        cmd = [
+            sys.executable, "-m", "local_llm_server", "serve",
+            "--host", LOCAL_SERVICE_HOST, "--port", str(args.llm_port),
+            "--enable-admin-api",
+            "--models", llm_model, visual_model
+        ]
 
         binary = shutil.which("local-llm-server")
         if binary:
-            binary_cmd = [binary, "serve", "--host", LOCAL_SERVICE_HOST, "--port", str(args.llm_port)]
-            if llm_model_path:
-                binary_cmd.extend(["--model-path", llm_model_path])
-            else:
-                binary_cmd.extend(["--model", llm_model])
-            cmd = binary_cmd
+            cmd = [
+                binary, "serve",
+                "--host", LOCAL_SERVICE_HOST, "--port", str(args.llm_port),
+                "--enable-admin-api",
+                "--models", llm_model, visual_model
+            ]
         
         desc = f"path: {llm_model_path}" if llm_model_path else f"model: {llm_model}"
         print(f"Starting local LLM server ({desc}) on port {args.llm_port} in background...")

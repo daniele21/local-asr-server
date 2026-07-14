@@ -33,6 +33,45 @@ class RuntimeServiceManagerTests(unittest.TestCase):
             "/models/legacy.gguf",
         )
 
+    @patch("local_asr_server.runtime.models.Path")
+    @patch.dict("os.environ", {"CLOSEDROOM_TEST_RESOLVE": "1"})
+    def test_resolve_local_llm_model_path_scans_lm_studio(self, mock_path_class: Mock) -> None:
+        mock_lm_studio_dir = Mock()
+        mock_lm_studio_dir.exists.return_value = True
+        
+        mock_model_file = Mock()
+        mock_model_file.is_file.return_value = True
+        mock_model_file.is_dir.return_value = False
+        mock_model_file.suffix = ".gguf"
+        mock_model_file.relative_to.return_value = "lmstudio-community/NVIDIA-Nemotron-3-Nano-4B-GGUF/NVIDIA-Nemotron-3-Nano-4B-Q8_0.gguf"
+        mock_model_file.resolve.return_value = "/mock/home/.lmstudio/models/lmstudio-community/NVIDIA-Nemotron-3-Nano-4B-GGUF/NVIDIA-Nemotron-3-Nano-4B-Q8_0.gguf"
+        
+        mock_lm_studio_dir.rglob.return_value = [mock_model_file]
+        
+        def path_side_effect(arg):
+            if arg == "~/.lmstudio/models":
+                p = Mock()
+                p.expanduser.return_value = mock_lm_studio_dir
+                return p
+            else:
+                p = Mock()
+                p.expanduser.return_value = p
+                p.exists.return_value = False
+                return p
+        mock_path_class.side_effect = path_side_effect
+        
+        settings = {
+            "local_llm_model": "nemotron-nano-4b-q8",
+            "local_llm_model_path": "",
+            "local_llm_model_paths": {},
+        }
+        
+        resolved_path = resolve_local_llm_model_path(settings)
+        self.assertEqual(
+            resolved_path,
+            "/mock/home/.lmstudio/models/lmstudio-community/NVIDIA-Nemotron-3-Nano-4B-GGUF/NVIDIA-Nemotron-3-Nano-4B-Q8_0.gguf"
+        )
+
     def test_llm_status_defaults_to_managed_stopped(self) -> None:
         with patch("local_asr_server.runtime.service_manager.load_settings") as load:
             load.return_value = {
@@ -119,7 +158,9 @@ class RuntimeServiceManagerTests(unittest.TestCase):
             capability="text",
         )
 
-    def test_external_mode_returns_configured_llm_url_without_sidecar(self) -> None:
+    @patch("local_asr_server.runtime.service_manager._query_external_health")
+    def test_external_mode_returns_configured_llm_url_without_sidecar(self, mock_health) -> None:
+        mock_health.return_value = {"status": "ok"}
         sidecar = Mock()
         with patch("local_asr_server.runtime.service_manager.load_settings") as load:
             load.return_value = {
@@ -135,6 +176,26 @@ class RuntimeServiceManagerTests(unittest.TestCase):
         self.assertEqual(result["model"], "nemotron-nano-4b")
         self.assertEqual(result["reasoning"], "off")
         sidecar.ensure_ready.assert_not_called()
+        mock_health.assert_called_once_with("http://127.0.0.1:5555")
+
+    @patch("local_asr_server.runtime.service_manager._query_external_health")
+    def test_external_mode_raises_when_not_reachable(self, mock_health) -> None:
+        mock_health.return_value = None
+        sidecar = Mock()
+        with patch("local_asr_server.runtime.service_manager.load_settings") as load:
+            load.return_value = {
+                "local_llm_mode": "external",
+                "local_llm_model": "nemotron-nano-4b",
+                "local_llm_url": "http://127.0.0.1:5555",
+                "local_llm_reasoning": "off",
+            }
+
+            with self.assertRaises(RuntimeError) as ctx:
+                RuntimeServiceManager(llm_sidecar=sidecar).ensure_llm_ready(capability="text")
+
+        self.assertIn("external_llm_server_not_reachable", str(ctx.exception))
+        sidecar.ensure_ready.assert_not_called()
+        mock_health.assert_called_once_with("http://127.0.0.1:5555")
 
 
 if __name__ == "__main__":

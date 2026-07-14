@@ -13,7 +13,10 @@ from local_asr_server.runtime.llm_sidecar import (
 class LocalLLMSidecarTests(unittest.TestCase):
     def test_build_command_keeps_registry_model_when_overriding_model_path(self) -> None:
         sidecar = LocalLLMSidecar()
-        with patch("local_asr_server.runtime.llm_sidecar.shutil.which", return_value="local-llm"):
+        with (
+            patch("local_asr_server.runtime.llm_sidecar.shutil.which", return_value="local-llm"),
+            patch("local_asr_server.settings.load_settings", return_value={"visual_llm_model": "qwen3-vl-4b"})
+        ):
             command = sidecar._build_command(
                 model="voxtral-mini-3b",
                 model_path="/models/voxtral.gguf",
@@ -29,7 +32,8 @@ class LocalLLMSidecarTests(unittest.TestCase):
             command,
             [
                 "local-llm", "serve", "--host", "127.0.0.1", "--port", "45678",
-                "--model", "voxtral-mini-3b", "--model-path", "/models/voxtral.gguf",
+                "--enable-admin-api",
+                "--models", "voxtral-mini-3b", "qwen3-vl-4b", "--model-path", "/models/voxtral.gguf",
                 "--backend", "llama_server", "--mmproj-path", "/models/mmproj.gguf",
                 "--ctx-size", "32768", "--startup-timeout", "120",
                 "--llama-server-bin", "/opt/bin/llama-server",
