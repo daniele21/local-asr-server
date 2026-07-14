@@ -288,12 +288,25 @@ def main() -> None:
         llm_process = subprocess.Popen(cmd)
 
     try:
-        uvicorn.run(
-            app,
-            host=args.host,
-            port=port,
-            reload=args.reload,
-        )
+        if args.reload:
+            import os
+            if args.model:
+                os.environ["CLOSEDROOM_DEFAULT_MODEL"] = args.model
+            if args.recordings_dir:
+                os.environ["CLOSEDROOM_RECORDINGS_DIR"] = str(Path(args.recordings_dir).expanduser())
+            uvicorn.run(
+                "local_asr_server.server:app",
+                host=args.host,
+                port=port,
+                reload=True,
+            )
+        else:
+            uvicorn.run(
+                app,
+                host=args.host,
+                port=port,
+                reload=False,
+            )
     finally:
         if llm_process:
             print("Stopping local LLM server...")

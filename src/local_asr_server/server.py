@@ -52,6 +52,13 @@ def create_app(
     enable_auth: bool | None = None,
     allowed_origins: list[str] | None = None,
 ) -> FastAPI:
+    if default_model == "mlx-community/whisper-large-v3-turbo":
+        default_model = os.environ.get("CLOSEDROOM_DEFAULT_MODEL", default_model)
+    if recordings_dir is None:
+        env_rec_dir = os.environ.get("CLOSEDROOM_RECORDINGS_DIR")
+        if env_rec_dir:
+            recordings_dir = Path(env_rec_dir)
+
     app = FastAPI(
         title="ClosedRoom",
         version=get_app_version(),
@@ -168,3 +175,7 @@ def create_app(
     app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="root_static")
 
     return app
+
+
+# Exposed for uvicorn --reload import string loading
+app = create_app()

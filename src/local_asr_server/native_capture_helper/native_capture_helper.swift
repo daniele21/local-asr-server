@@ -142,6 +142,22 @@ func runWindows() {
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
             let ownPID = ProcessInfo.processInfo.processIdentifier
+            
+            // 1. Get displays
+            var list: [[String: Any]] = content.displays.enumerated().map { index, display in
+                let displayID = display.displayID
+                let sourceID = -Int(displayID)
+                return [
+                    "id": sourceID,
+                    "title": "Schermo/Screen \(index + 1) (\(display.width)x\(display.height))",
+                    "application_name": "Schermo Intero/Full Screen",
+                    "bundle_identifier": "com.apple.displays",
+                    "width": Int(display.width),
+                    "height": Int(display.height),
+                ]
+            }
+            
+            // 2. Add windows
             let windows: [[String: Any]] = content.windows.compactMap { window in
                 guard window.owningApplication?.processID != ownPID,
                       window.frame.width >= 160, window.frame.height >= 120 else { return nil }
@@ -154,7 +170,8 @@ func runWindows() {
                     "height": Int(window.frame.height),
                 ]
             }
-            JSONEmitter.shared.emitAndExit(["windows": windows], exitCode: 0)
+            list.append(contentsOf: windows)
+            JSONEmitter.shared.emitAndExit(["windows": list], exitCode: 0)
         } catch {
             JSONEmitter.shared.emitAndExit(["windows": [], "reason": "window_listing_failed", "error": error.localizedDescription], exitCode: 3)
         }
@@ -471,7 +488,7 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
 @available(macOS 13.0, *)
 final class VisualWindowCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     var onFatalError: ((String) -> Void)?
-    private let windowID: CGWindowID
+    private let sourceID: Int
     private let outputDir: URL
     private let fps: Double
     private let epochUptime: Double
@@ -480,8 +497,8 @@ final class VisualWindowCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     private var stream: SCStream?
     private var sequence = 0
 
-    init(windowID: CGWindowID, outputDir: URL, fps: Double, epochUptime: Double) {
-        self.windowID = windowID
+    init(windowID: Int, outputDir: URL, fps: Double, epochUptime: Double) {
+        self.sourceID = windowID
         self.outputDir = outputDir
         self.fps = min(2.0, max(0.1, fps))
         self.epochUptime = epochUptime
@@ -489,17 +506,40 @@ final class VisualWindowCapture: NSObject, SCStreamOutput, SCStreamDelegate {
 
     func start() async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
-        guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
-            throw NSError(domain: "ClosedRoomNativeCapture", code: 41, userInfo: [
-                NSLocalizedDescriptionKey: "Selected visual capture window is no longer available"
-            ])
+        
+        let filter: SCContentFilter
+        let frameWidth: CGFloat
+        let frameHeight: CGFloat
+        
+        if sourceID < 0 {
+            // It's a display/screen!
+            let displayID = CGDirectDisplayID(-sourceID)
+            guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
+                throw NSError(domain: "ClosedRoomNativeCapture", code: 42, userInfo: [
+                    NSLocalizedDescriptionKey: "Selected visual capture display is no longer available"
+                ])
+            }
+            filter = SCContentFilter(display: display, excludingWindows: [])
+            frameWidth = CGFloat(display.width)
+            frameHeight = CGFloat(display.height)
+        } else {
+            // It's a window!
+            let windowID = CGWindowID(sourceID)
+            guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
+                throw NSError(domain: "ClosedRoomNativeCapture", code: 41, userInfo: [
+                    NSLocalizedDescriptionKey: "Selected visual capture window is no longer available"
+                ])
+            }
+            filter = SCContentFilter(desktopIndependentWindow: window)
+            frameWidth = window.frame.width
+            frameHeight = window.frame.height
         }
+        
         try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        let filter = SCContentFilter(desktopIndependentWindow: window)
         let configuration = SCStreamConfiguration()
-        let scale = min(1.0, 1280.0 / max(window.frame.width, 1.0))
-        configuration.width = max(2, Int(window.frame.width * scale))
-        configuration.height = max(2, Int(window.frame.height * scale))
+        let scale = min(1.0, 1280.0 / max(frameWidth, 1.0))
+        configuration.width = max(2, Int(frameWidth * scale))
+        configuration.height = max(2, Int(frameHeight * scale))
         configuration.minimumFrameInterval = CMTime(seconds: 1.0 / fps, preferredTimescale: 600)
         configuration.queueDepth = 2
         configuration.showsCursor = false
@@ -633,7 +673,7 @@ final class NativeCaptureRun {
     private let recordingID: String
     private let outputDir: URL
     private let mode: String
-    private let visualWindowID: CGWindowID?
+    private let visualWindowID: Int?
     private let visualFPS: Double
     private var systemCapture: AnyObject?
     private var visualCapture: AnyObject?
@@ -655,7 +695,7 @@ final class NativeCaptureRun {
     private var lastSystemEmitTime: Double = 0
     private let emitInterval: Double = 0.1
 
-    init(recordingID: String, outputDir: String, mode: String, visualWindowID: CGWindowID?, visualFPS: Double) {
+    init(recordingID: String, outputDir: String, mode: String, visualWindowID: Int?, visualFPS: Double) {
         self.recordingID = recordingID
         self.outputDir = URL(fileURLWithPath: outputDir, isDirectory: true)
         self.mode = mode
@@ -919,7 +959,7 @@ final class NativeCaptureRun {
     }
 }
 
-func runStart(recordingID: String, outputDir: String, mode: String, visualWindowID: CGWindowID?, visualFPS: Double) {
+func runStart(recordingID: String, outputDir: String, mode: String, visualWindowID: Int?, visualFPS: Double) {
     guard ["both", "mic_only", "pc_only"].contains(mode) else {
         JSONEmitter.shared.emitAndExit(["type": "error", "message": "Invalid capture mode: \(mode)"], exitCode: 2)
     }
@@ -1015,7 +1055,7 @@ case "start":
           let mode = requireArg("--mode", in: args) else {
         JSONEmitter.shared.emitAndExit(["type": "error", "message": "Missing required start arguments"], exitCode: 2)
     }
-    let visualWindowID = requireArg("--visual-window-id", in: args).flatMap { UInt32($0) }
+    let visualWindowID = requireArg("--visual-window-id", in: args).flatMap { Int($0) }
     let visualFPS = requireArg("--visual-fps", in: args).flatMap { Double($0) } ?? 0.5
     runStart(
         recordingID: recordingID, outputDir: outputDir, mode: mode,
