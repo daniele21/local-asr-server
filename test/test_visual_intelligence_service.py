@@ -454,6 +454,62 @@ class VisualIntelligenceTests(unittest.TestCase):
             self.assertEqual(v2["document"], persisted["document"])
             self.assertEqual(store.list_visual_frames(recording["id"]), [])
 
+    def test_v2_backend_circuit_breaker_preserves_staging(self) -> None:
+        class UnavailableClient:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def chat(self, messages, **kwargs):
+                self.calls += 1
+                raise RuntimeError(
+                    "local-llm-server request failed (500): "
+                    '{"detail":"mlx_vlm.server returned HTTP 500: Internal Server Error"}'
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = RecordingStore(
+                root, use_settings_dir=False, catalog=CatalogStore(root / "catalog.db"),
+            )
+            recording = store.create(
+                title="Task-aware retry", mime_type="audio/wav", model="test", language="it",
+                capture_mode="pc_only", capture_backend="native",
+            )
+            for sequence, timestamp in enumerate((0.0, 4.0, 8.0, 12.0, 16.0)):
+                store.stage_visual_frame(
+                    recording["id"], sequence, timestamp, self._jpeg("blue", pattern=True),
+                )
+            settings = {
+                "visual_intelligence_enabled": True,
+                "visual_llm_model": "qwen3-vl-4b",
+                "visual_routing_mode": "v2",
+            }
+            client = UnavailableClient()
+            service = PostMeetingVisualService(client_factory=lambda **_: client)
+            with patch(
+                "local_asr_server.visual_intelligence.service.load_settings",
+                return_value=settings,
+            ), patch(
+                "local_asr_server.visual_intelligence.service.prepare_candidate_message",
+                side_effect=lambda candidate, _: [{"task": candidate.task.value}],
+            ):
+                result = service.process(
+                    SimpleNamespace(recordings=store, runtime=_Runtime()), recording["id"],
+                    {"segments": [], "stats": {}},
+                )
+
+            outcome = result["stats"]["visual_intelligence"]
+            self.assertEqual(client.calls, 3)
+            self.assertEqual(outcome["routing_mode"], "v2")
+            self.assertEqual(outcome["error"], "visual_backend_unavailable")
+            self.assertTrue(outcome["details"]["staging_preserved"])
+            self.assertEqual(len(store.list_visual_frames(recording["id"])), 5)
+            checkpoint = next(root.glob(f"*/*/{VISUAL_PROCESSING_CHECKPOINT}"))
+            self.assertEqual(
+                json.loads(checkpoint.read_text(encoding="utf-8"))["status"],
+                "retryable_failure",
+            )
+
     def test_v2_processing_resumes_completed_candidates_after_process_crash(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -839,6 +895,74 @@ class VisualIntelligenceTests(unittest.TestCase):
                 self.assertEqual(result["stats"]["visual_intelligence"]["status"], expected)
                 self.assertEqual(store.list_visual_frames(recording["id"]), [])
 
+    def test_backend_circuit_breaker_preserves_frames_for_retry(self) -> None:
+        class UnavailableClient:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def chat(self, messages, **kwargs):
+                self.calls += 1
+                raise RuntimeError(
+                    'local-llm-server request failed (500): {"detail":"Internal Server Error"}'
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = RecordingStore(
+                root, use_settings_dir=False, catalog=CatalogStore(root / "catalog.db"),
+            )
+            recording = store.create(
+                title="Retry visual", mime_type="audio/wav", model="test", language="it",
+                capture_mode="pc_only", capture_backend="native",
+            )
+            for sequence in range(5):
+                store.stage_visual_frame(
+                    recording["id"], sequence, float(sequence), self._jpeg("blue"),
+                )
+            settings = {
+                "visual_intelligence_enabled": True,
+                "visual_llm_model": "qwen3-vl-4b",
+                "visual_routing_mode": "v1",
+            }
+            unavailable = UnavailableClient()
+            service = PostMeetingVisualService(client_factory=lambda **_: unavailable)
+            with patch(
+                "local_asr_server.visual_intelligence.service.load_settings",
+                return_value=settings,
+            ), patch.object(service, "_image_message", return_value=[]):
+                result = service.process(
+                    SimpleNamespace(recordings=store, runtime=_Runtime()), recording["id"],
+                    {"segments": [], "stats": {}},
+                )
+
+            outcome = result["stats"]["visual_intelligence"]
+            self.assertEqual(unavailable.calls, 3)
+            self.assertEqual(outcome["error"], "visual_backend_unavailable")
+            self.assertTrue(outcome["details"]["staging_preserved"])
+            self.assertEqual(len(store.list_visual_frames(recording["id"])), 5)
+            checkpoint = next(root.glob(f"*/*/{VISUAL_PROCESSING_CHECKPOINT}"))
+            self.assertEqual(
+                json.loads(checkpoint.read_text(encoding="utf-8"))["status"],
+                "retryable_failure",
+            )
+
+            recovered_client = _Client()
+            recovered_service = PostMeetingVisualService(
+                client_factory=lambda **_: recovered_client,
+            )
+            with patch(
+                "local_asr_server.visual_intelligence.service.load_settings",
+                return_value=settings,
+            ), patch.object(recovered_service, "_image_message", return_value=[]):
+                recovered = recovered_service.process(
+                    SimpleNamespace(recordings=store, runtime=_Runtime()), recording["id"],
+                    {"segments": [], "stats": {}},
+                )
+
+            self.assertEqual(recovered["stats"]["visual_intelligence"]["status"], "completed")
+            self.assertEqual(store.list_visual_frames(recording["id"]), [])
+            self.assertFalse(checkpoint.exists())
+
     def test_frame_deduplication_skips_identical_frames(self) -> None:
         from PIL import Image, ImageDraw
         import io
@@ -882,15 +1006,27 @@ class VisualIntelligenceTests(unittest.TestCase):
             service = PostMeetingVisualService(client_factory=lambda **_: client)
             
             progress_calls = []
-            def progress_cb(curr, tot):
-                progress_calls.append((curr, tot))
+            def progress_cb(detail):
+                progress_calls.append(detail)
 
             with patch("local_asr_server.visual_intelligence.service.load_settings", return_value=settings), \
                  patch.object(service, "_image_message", return_value=[]):
                 result = service.process(services, recording["id"], payload, progress_callback=progress_cb)
 
             self.assertEqual(len(client.calls), 2)
-            self.assertEqual(progress_calls, [(1, 3), (2, 3), (3, 3)])
+            completed = [item for item in progress_calls if item["processed"] > 0]
+            self.assertEqual(
+                [(item["processed"], item["total"]) for item in completed],
+                [(1, 3), (2, 3), (3, 3)],
+            )
+            self.assertEqual(completed[-1]["remaining"], 0)
+            self.assertEqual(completed[-1]["eta_seconds"], 0.0)
+            self.assertEqual(completed[-1]["inferred"], 2)
+            self.assertEqual(completed[-1]["reused"], 1)
+            self.assertEqual(
+                [item["decision"] for item in completed],
+                ["inferred", "duplicate_reused", "inferred"],
+            )
             
             persisted = store.get_visual_intelligence(recording["id"])
             self.assertEqual(len(persisted["observations"]), 3)

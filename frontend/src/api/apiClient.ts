@@ -141,10 +141,35 @@ export interface TranscriptionJob {
   status: string;
   current_step: string;
   progress: number;
+  progress_detail?: VisualProcessingProgress | Record<string, unknown> | null;
   error?: string | null;
   result?: any;
   created_at: number;
   updated_at: number;
+}
+
+export interface VisualProcessingProgress {
+  schema_version: number;
+  kind: 'visual_processing_progress';
+  phase: string;
+  unit: 'frames' | 'candidates';
+  routing_mode: string;
+  processed: number;
+  total: number;
+  remaining: number;
+  captured_frames: number;
+  selected_candidates: number;
+  rejected_candidates: number;
+  inferred: number;
+  reused: number;
+  skipped: number;
+  failed: number;
+  elapsed_seconds: number;
+  eta_seconds?: number | null;
+  sequence?: number | null;
+  task?: string | null;
+  trigger?: string | null;
+  decision?: string | null;
 }
 
 export interface AnalysisJobCreated {

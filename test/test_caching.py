@@ -11,9 +11,72 @@ from local_asr_server.schemas import AnalysisRequest
 from local_asr_server.services.analysis_service import AnalysisService
 from local_asr_server.transcriber import generate_cache_key
 from local_asr_server.routers.transcriptions import _transcribe_audio_file_with_cache
+from local_asr_server.services.transcription_service import TranscriptionService
+from local_asr_server.transcriptions import TranscriptionStore
 
 
 class CachingTests(unittest.TestCase):
+    def test_recording_pipeline_cache_retries_preserved_visual_staging(self) -> None:
+        reusable = {"stats": {"visual_intelligence": {"status": "completed"}}}
+        retryable = {
+            "stats": {
+                "visual_intelligence": {
+                    "status": "failed",
+                    "details": {"staging_preserved": True},
+                }
+            }
+        }
+
+        self.assertTrue(TranscriptionService.recording_pipeline_cache_reusable(reusable))
+        self.assertFalse(TranscriptionService.recording_pipeline_cache_reusable(retryable))
+
+    def test_latest_recording_pipeline_reads_complete_persisted_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as temp, patch(
+            "local_asr_server.transcriptions.load_settings",
+            return_value={"transcriptions_dir": temp},
+        ):
+            store = TranscriptionStore(CatalogStore(Path(temp) / "catalog.db"))
+            saved = store.save(
+                {
+                    "text": "Ciao",
+                    "segments": [],
+                    "stats": {"recording_pipeline_cache_key": "same-key"},
+                    "diagnostics": [{"component": "visual_intelligence"}],
+                    "outcome_status": "completed_with_warnings",
+                },
+                recording_id="recording-1",
+            )
+
+            cached = store.latest_for_recording("recording-1")
+
+        self.assertEqual(cached["id"], saved["id"])
+        self.assertEqual(cached["stats"]["recording_pipeline_cache_key"], "same-key")
+        self.assertEqual(cached["diagnostics"][0]["component"], "visual_intelligence")
+
+    def test_recording_pipeline_cache_key_reuses_identical_inputs(self) -> None:
+        track_results = [{"track": {"id": "mic"}, "result": {"text": "Ciao", "segments": []}}]
+        settings = {
+            "speaker_diarization_enabled": False,
+            "visual_intelligence_enabled": False,
+        }
+        first = TranscriptionService.recording_pipeline_cache_key(
+            recording_id="recording-1", track_results=track_results, settings=settings,
+            visual_input_fingerprint=TranscriptionService.visual_input_fingerprint([]),
+        )
+        second = TranscriptionService.recording_pipeline_cache_key(
+            recording_id="recording-1", track_results=track_results, settings=dict(settings),
+            visual_input_fingerprint=TranscriptionService.visual_input_fingerprint([]),
+        )
+        changed = TranscriptionService.recording_pipeline_cache_key(
+            recording_id="recording-1",
+            track_results=track_results,
+            settings={**settings, "speaker_diarization_enabled": True},
+            visual_input_fingerprint=TranscriptionService.visual_input_fingerprint([]),
+        )
+
+        self.assertEqual(first, second)
+        self.assertNotEqual(first, changed)
+
     def test_transcription_cache_key_includes_initial_prompt(self) -> None:
         base = {
             "audio_hash": "same-audio",

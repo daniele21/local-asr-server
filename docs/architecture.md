@@ -353,7 +353,7 @@ CORS non è aperto implicitamente: le origin ammesse provengono da configurazion
 ├── intelligence.json                  # metriche conversazionali
 ├── visual_observations.jsonl          # evidenze Qwen strutturate
 ├── visual_summary.json                # summary visual intelligence
-└── .visual-staging/                    # JPEG temporanei, rimossi post-job
+└── .visual-staging/                    # JPEG temporanei; retry backend, TTL 24h
 ```
 
 Durante l'upload browser vengono usati file parziali. La finalizzazione rende
@@ -456,7 +456,15 @@ supera `speaker_diarization_minimum_overlap`. Il valore assegnato ha forma
 4. accetta solo nomi e indicatori visibili, senza face recognition;
 5. persiste osservazioni e summary;
 6. applica un mapping conservativo solo a cluster speaker già esistenti;
-7. elimina sempre i JPEG nello staging, anche in errore.
+7. elimina i JPEG dopo un esito terminale normale.
+
+Dopo tre errori infrastrutturali consecutivi dal backend visuale, un circuit
+breaker interrompe le richieste residue, marca il checkpoint come
+`retryable_failure` e conserva lo staging. Il successivo avvio non riusa dalla
+cache l'arricchimento fallito e può ritentare gli stessi frame; se il retry non
+avviene, il cleanup centralizzato elimina checkpoint e JPEG dopo 24 ore. Gli
+errori di validazione di singole risposte restano invece degradazioni locali e
+non aprono il circuit breaker.
 
 Nel percorso task-aware `v2`, `shared_content.py` possiede la normalizzazione
 dei tipi e la policy di cadenza. Il router assegna alla ROI fonte, confidence e

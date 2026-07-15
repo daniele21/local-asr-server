@@ -62,11 +62,29 @@ class TranscriptionStore:
             "analysis": payload.get("analysis"),
             "merged_sources": payload.get("merged_sources"),
             "source_tracks": payload.get("source_tracks"),
+            "speaker_diarization": payload.get("speaker_diarization"),
+            "speaker_attribution": payload.get("speaker_attribution"),
+            "insight_candidates": payload.get("insight_candidates"),
+            "diagnostics": payload.get("diagnostics"),
+            "outcome_status": payload.get("outcome_status"),
         }
 
         file_name = self._write_export_files(filename_base, meta)
         self.catalog.upsert_transcription(meta, file_name=file_name)
         return meta
+
+    def latest_for_recording(self, recording_id: str) -> dict[str, Any] | None:
+        """Return the latest persisted transcription for a recording, if any."""
+        item = self.catalog.find_transcription_for_recording(recording_id)
+        if item is None:
+            return None
+        file_name = self._file_name_for(item["id"])
+        if not file_name:
+            return None
+        try:
+            return json.loads((self.root / file_name).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
 
     def merge(self, transcription_ids: list[str], title: str | None = None) -> dict[str, Any]:
         if not transcription_ids or len(transcription_ids) < 2:

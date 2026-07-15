@@ -14,6 +14,40 @@ VISUAL_GENERATION_STAGING_DIR = ".visual-generation-staging"
 VISUAL_RECOVERY_TTL_SECONDS = 24 * 60 * 60
 
 
+@dataclass(frozen=True)
+class VisualProcessingProgress:
+    """Structured job/UI snapshot for visual filtering and inference progress."""
+
+    phase: str
+    unit: str
+    routing_mode: str
+    processed: int
+    total: int
+    captured_frames: int
+    selected_candidates: int
+    rejected_candidates: int
+    inferred: int = 0
+    reused: int = 0
+    skipped: int = 0
+    failed: int = 0
+    elapsed_seconds: float = 0.0
+    eta_seconds: float | None = None
+    sequence: int | None = None
+    task: str | None = None
+    trigger: str | None = None
+    decision: str | None = None
+
+    def public(self) -> dict[str, Any]:
+        return {
+            "schema_version": 1,
+            "kind": "visual_processing_progress",
+            **asdict(self),
+            "remaining": max(0, self.total - self.processed),
+            "elapsed_seconds": round(self.elapsed_seconds, 3),
+            "eta_seconds": round(self.eta_seconds, 1) if self.eta_seconds is not None else None,
+        }
+
+
 class VisualTask(str, Enum):
     MEETING_UI = "meeting_ui"
     MEETING_STATE = "meeting_state"

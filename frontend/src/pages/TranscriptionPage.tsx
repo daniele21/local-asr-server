@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ApiClient, Recording, Transcription } from '../api/apiClient';
+import { ApiClient, Recording, Transcription, VisualProcessingProgress } from '../api/apiClient';
 import { DEFAULTS } from '../api/config';
 import { useTranslation } from '../i18n/i18n';
 import { useToast } from '../context/ToastContext';
@@ -9,7 +9,13 @@ import ProcessingStep from './transcription/components/ProcessingStep';
 import ResultsStep from './transcription/components/ResultsStep';
 import { TourTranscriptionResult } from '../features/tour/TourTranscriptionResult';
 import { asrConfigFromSettings } from '../features/config/asrConfig';
-import { localizeJobStep } from '../utils/jobs';
+import {
+  formatVisualProgressLog,
+  formatVisualProgressStatus,
+  getTranscriptionActiveStep,
+  isVisualProcessingProgress,
+  localizeJobStep,
+} from '../utils/jobs';
 import { transcriptionHasWarnings } from '../utils/diagnostics';
 
 interface TranscriptionPageProps {
@@ -128,10 +134,12 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressStatus, setProgressStatus] = useState('');
   const [progressPercent, setProgressPercent] = useState(0);
+  const [progressStep, setProgressStep] = useState('queued');
   const [audioDuration, setAudioDuration] = useState<number>(0);
   const [liveConsoleLines, setLiveConsoleLines] = useState<string[]>([]);
   const [livePreviewText, setLivePreviewText] = useState('');
   const [elapsedTime, setElapsedTime] = useState('0.0s');
+  const [visualProgress, setVisualProgress] = useState<VisualProcessingProgress | null>(null);
 
   // Results State
   const [transcriptionResult, setTranscriptionResult] = useState<Transcription | null>(null);
@@ -142,6 +150,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const timerIntervalRef = useRef<any>(null);
+  const lastVisualProgressRef = useRef('');
 
   const loadRecordings = async () => {
     try {
@@ -356,7 +365,10 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
     setIsProcessing(true);
     setLiveConsoleLines([]);
     setLivePreviewText('');
+    setVisualProgress(null);
+    lastVisualProgressRef.current = '';
     setProgressPercent(0);
+    setProgressStep('queued');
     setProgressStatus(t('transcription.preparing'));
 
     const timerStart = performance.now();
@@ -389,7 +401,29 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
         let currentJob = job;
         while (!['completed', 'failed', 'cancelled'].includes(currentJob.status)) {
           setProgressPercent(currentJob.progress || 10);
-          setProgressStatus(localizeJobStep(currentJob.current_step || currentJob.status, t));
+          setProgressStep(currentJob.current_step || currentJob.status);
+          if (isVisualProcessingProgress(currentJob.progress_detail)) {
+            const detail = currentJob.progress_detail;
+            setVisualProgress(detail);
+            setProgressStatus(formatVisualProgressStatus(detail, t));
+            const fingerprint = [
+              detail.processed,
+              detail.total,
+              detail.decision,
+              detail.sequence,
+              detail.task,
+            ].join(':');
+            if (fingerprint !== lastVisualProgressRef.current) {
+              lastVisualProgressRef.current = fingerprint;
+              setLiveConsoleLines((previous) => [
+                ...previous,
+                formatVisualProgressLog(detail, t),
+              ].slice(-500));
+            }
+          } else {
+            setVisualProgress(null);
+            setProgressStatus(localizeJobStep(currentJob.current_step || currentJob.status, t));
+          }
           await new Promise((resolve) => setTimeout(resolve, 800));
           currentJob = await ApiClient.getJob(job.id);
         }
@@ -450,6 +484,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
 
             if (event.type === 'progress') {
               setProgressStatus(event.message);
+              setProgressStep(event.step || 'transcribing');
 
               if (event.step === 'downloading' && event.percent !== undefined) {
                 setProgressPercent(Math.round(event.percent));
@@ -617,9 +652,12 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
         <ProcessingStep
           progressStatus={progressStatus}
           progressPercent={progressPercent}
+          activeStep={getTranscriptionActiveStep(progressStep, progressPercent)}
+          currentStep={progressStep}
           livePreviewText={livePreviewText}
           liveConsoleLines={liveConsoleLines}
           elapsedTime={elapsedTime}
+          visualProgress={visualProgress}
         />
       )}
 

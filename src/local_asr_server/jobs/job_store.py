@@ -60,6 +60,7 @@ class JobStore:
                 status TEXT NOT NULL,
                 current_step TEXT,
                 progress INTEGER NOT NULL DEFAULT 0,
+                progress_detail_json TEXT,
                 payload_json TEXT,
                 result_json TEXT,
                 error TEXT,
@@ -89,6 +90,15 @@ class JobStore:
             CREATE INDEX IF NOT EXISTS idx_job_events_job_sequence ON job_events(job_id, sequence);
             """
         )
+        self._ensure_column(conn, "jobs", "progress_detail_json", "TEXT")
+
+    @staticmethod
+    def _ensure_column(
+        conn: sqlite3.Connection, table: str, column: str, definition: str,
+    ) -> None:
+        columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def create(
         self,
@@ -145,6 +155,7 @@ class JobStore:
         cancel_requested: bool | None = None,
         message: str | None = None,
         event_payload: dict[str, Any] | None = None,
+        progress_detail: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         existing = self.get(job_id)
         if existing is None:
@@ -165,6 +176,7 @@ class JobStore:
                 SET status = ?,
                     current_step = ?,
                     progress = ?,
+                    progress_detail_json = ?,
                     result_json = ?,
                     error = ?,
                     updated_at = ?,
@@ -177,6 +189,7 @@ class JobStore:
                     status,
                     next_step,
                     next_progress,
+                    _json_dump(progress_detail),
                     _json_dump(result) if result is not None else _json_dump(existing.get("result")),
                     error if error is not None else existing.get("error"),
                     now,
@@ -303,6 +316,7 @@ class JobStore:
             "status": row["status"],
             "current_step": row["current_step"],
             "progress": row["progress"],
+            "progress_detail": _json_load(row["progress_detail_json"], None),
             "payload": _json_load(row["payload_json"], None),
             "result": _json_load(row["result_json"], None),
             "error": row["error"],

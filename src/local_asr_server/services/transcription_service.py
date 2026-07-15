@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from local_asr_server.app_services import get_services
 
+import hashlib
+import json
 import logging
 import time
 from pathlib import Path
@@ -39,6 +41,19 @@ from local_asr_server.diagnostics import attach_diagnostics, diagnostic, log_dia
 
 
 logger = logging.getLogger("uvicorn.error")
+
+RECORDING_PIPELINE_CACHE_VERSION = 1
+RECORDING_PIPELINE_SETTING_KEYS = (
+    "speaker_diarization_enabled",
+    "speaker_diarization_minimum_overlap",
+    "visual_intelligence_enabled",
+    "visual_llm_model",
+    "visual_routing_mode",
+    "visual_minimum_observations",
+    "visual_minimum_margin",
+    "visual_minimum_distinct_turns",
+    "visual_minimum_temporal_support_seconds",
+)
 
 
 class TranscriptionService:
@@ -159,8 +174,9 @@ class TranscriptionService:
         engine: Callable[..., dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         started_at = time.perf_counter()
+        settings = load_settings()
         provider, provider_model, provider_options, public_options = self.resolve_asr(
-            load_settings(),
+            settings,
             provider=body.asr_provider,
             model=body.model or app.state.default_model,
             speechmatics_region=body.speechmatics_region,
@@ -229,6 +245,32 @@ class TranscriptionService:
             )
             track_results.append({"track": public_track, "result": result})
 
+        cached_pipeline = get_services(app).transcriptions.latest_for_recording(recording_id)
+        frames = store.list_visual_frames(recording_id)
+        visual_input_fingerprint = self.visual_input_fingerprint(frames)
+        if not frames and cached_pipeline is not None:
+            visual_input_fingerprint = cached_pipeline.get("stats", {}).get(
+                "recording_pipeline_visual_input_fingerprint", visual_input_fingerprint,
+            )
+        pipeline_cache_key = self.recording_pipeline_cache_key(
+            recording_id=recording_id,
+            track_results=track_results,
+            settings=settings,
+            visual_input_fingerprint=visual_input_fingerprint,
+        )
+        if (
+            cached_pipeline is not None
+            and cached_pipeline.get("stats", {}).get("recording_pipeline_cache_key")
+            == pipeline_cache_key
+            and self.recording_pipeline_cache_reusable(cached_pipeline)
+        ):
+            logger.info("[Recording Pipeline Cache] Hit for %s", recording_id)
+            job_event("merging", "merging", 94)
+            cached_pipeline["saved_id"] = cached_pipeline["id"]
+            cached_pipeline["saved_file_path"] = str(get_services(app).transcriptions.root)
+            cached_pipeline.setdefault("stats", {})["recording_pipeline_cache_hit"] = True
+            return cached_pipeline
+
         job_event("diarizing", "diarizing", 82)
         diarization = self.diarization.process(store, recording_id, track_paths, track_results)
         job_event("diarizing", "diarizing", 83, component_outcome=diarization)
@@ -248,11 +290,19 @@ class TranscriptionService:
         }
         payload["speaker_diarization"] = diarization_summary
         payload.setdefault("stats", {})["speaker_diarization"] = diarization_summary
-        def visual_progress(current: int, total: int) -> None:
+        payload["stats"]["recording_pipeline_cache_key"] = pipeline_cache_key
+        payload["stats"]["recording_pipeline_visual_input_fingerprint"] = visual_input_fingerprint
+        payload["stats"]["recording_pipeline_cache_hit"] = False
+        def visual_progress(detail: dict[str, Any]) -> None:
             val = 88
+            current = int(detail.get("processed") or 0)
+            total = int(detail.get("total") or 0)
             if total > 0:
                 val = 88 + int((current / total) * 2)
-            job_event("visual_processing", f"visual_processing:{current}:{total}", val)
+            job_event(
+                "visual_processing", "visual_processing", val,
+                component_outcome=detail,
+            )
 
         job_event("visual_processing", "visual_processing", 88)
         payload = self.visual.process(
@@ -288,6 +338,48 @@ class TranscriptionService:
         payload["saved_id"] = saved_meta["id"]
         payload["saved_file_path"] = str(get_services(app).transcriptions.root)
         return payload
+
+    @staticmethod
+    def recording_pipeline_cache_reusable(payload: dict[str, Any]) -> bool:
+        """Retry post-ASR enrichments when a prior run retained inputs after backend failure."""
+        visual = payload.get("stats", {}).get("visual_intelligence") or {}
+        return not bool((visual.get("details") or {}).get("staging_preserved"))
+
+    @staticmethod
+    def recording_pipeline_cache_key(
+        *,
+        recording_id: str,
+        track_results: list[dict[str, Any]],
+        settings: dict[str, Any],
+        visual_input_fingerprint: str,
+    ) -> str:
+        """Fingerprint every input that affects post-ASR segment organization."""
+        material = {
+            "version": RECORDING_PIPELINE_CACHE_VERSION,
+            "recording_id": recording_id,
+            "track_results": track_results,
+            "settings": {key: settings.get(key) for key in RECORDING_PIPELINE_SETTING_KEYS},
+            "visual_input_fingerprint": visual_input_fingerprint,
+        }
+        encoded = json.dumps(
+            _clean_nan_values(material), sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    @staticmethod
+    def visual_input_fingerprint(frames: list[dict[str, Any]]) -> str:
+        visual_inputs = []
+        for frame in frames:
+            path = Path(frame["path"])
+            visual_inputs.append({
+                "sequence": int(frame["sequence"]),
+                "timestamp": float(frame["timestamp"]),
+                "sha256": hash_audio_file(path),
+            })
+        encoded = json.dumps(
+            visual_inputs, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
 
     @staticmethod
     def _skip_near_silent_track(audio_path: Path, track: dict[str, Any]) -> dict[str, Any] | None:

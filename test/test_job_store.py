@@ -30,17 +30,20 @@ class JobStoreTests(unittest.TestCase):
                 status="completed",
                 current_step="done",
                 progress=100,
+                progress_detail={"kind": "visual_processing_progress", "processed": 3},
                 result={"text": "Ciao"},
             )
             self.assertIsNotNone(updated)
             self.assertEqual(updated["status"], "completed")
             self.assertEqual(updated["result"], {"text": "Ciao"})
+            self.assertEqual(updated["progress_detail"]["processed"], 3)
             self.assertIsNotNone(updated["completed_at"])
 
             reopened = JobStore(db_path)
             persisted = reopened.get("job-1")
             self.assertIsNotNone(persisted)
             self.assertEqual(persisted["result"], {"text": "Ciao"})
+            self.assertEqual(persisted["progress_detail"]["processed"], 3)
 
             events = reopened.events_after("job-1")
             self.assertIsNotNone(events)

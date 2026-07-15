@@ -502,6 +502,25 @@ class RecordingStore:
             if checkpoint_path.exists():
                 checkpoint_path.unlink()
 
+    def mark_visual_processing_retryable(self, recording_id: str, reason: str) -> None:
+        """Keep visual staging resumable and eligible for TTL cleanup after backend failure."""
+        with self._lock_for(recording_id):
+            session_dir, _ = self._load(recording_id)
+            checkpoint_path = session_dir / VISUAL_PROCESSING_CHECKPOINT
+            checkpoint: dict[str, Any] = {}
+            if checkpoint_path.exists():
+                try:
+                    checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    checkpoint = {}
+            self._write_json_atomic(checkpoint_path, {
+                **checkpoint,
+                "schema_version": 1,
+                "status": "retryable_failure",
+                "reason": reason,
+                "updated_at": _utc_now(),
+            })
+
     @staticmethod
     def _read_valid_jsonl(path: Path) -> list[dict[str, Any]]:
         if not path.exists():

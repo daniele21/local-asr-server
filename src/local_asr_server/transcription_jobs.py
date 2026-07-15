@@ -20,6 +20,7 @@ class TranscriptionJob:
     status: str = "queued"
     current_step: str = "queued"
     progress: int = 0
+    progress_detail: dict[str, Any] | None = None
     error: str | None = None
     result: dict[str, Any] | None = None
     created_at: float = field(default_factory=time.time)
@@ -37,6 +38,7 @@ class TranscriptionJob:
             "status": self.status,
             "current_step": self.current_step,
             "progress": self.progress,
+            "progress_detail": self.progress_detail,
             "error": self.error,
             "result": self.result,
             "created_at": self.created_at,
@@ -198,6 +200,7 @@ class TranscriptionJobManager:
         job.status = status
         job.current_step = step or status
         job.progress = progress
+        job.progress_detail = event_payload
         job.updated_at = time.time()
         job.events.put(job.public())
         if self._store is not None:
@@ -211,6 +214,7 @@ class TranscriptionJobManager:
                 cancel_requested=job.cancel_requested,
                 message=message,
                 event_payload=event_payload,
+                progress_detail=event_payload,
             )
 
     def _stored_public(self, stored: dict[str, Any] | None) -> dict[str, Any]:
@@ -225,6 +229,7 @@ class TranscriptionJobManager:
             "status": stored["status"],
             "current_step": stored["current_step"],
             "progress": stored["progress"],
+            "progress_detail": stored.get("progress_detail"),
             "error": stored["error"],
             "result": stored["result"],
             "created_at": stored["created_at"],
