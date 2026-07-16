@@ -55,4 +55,8 @@ class TaskAwareVisualProcessor:
                 "roi_confidence": candidate.roi_confidence,
                 "roi_fallback": candidate.roi_fallback,
             })
+        if candidate.diarization_turn_id:
+            result["diarization_turn_id"] = candidate.diarization_turn_id
+        if candidate.expected_cluster:
+            result["expected_cluster"] = candidate.expected_cluster
         return result

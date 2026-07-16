@@ -109,6 +109,8 @@ class FrameCandidate:
     roi_source: str | None = None
     roi_confidence: float | None = None
     roi_fallback: bool = False
+    diarization_turn_id: str | None = None
+    expected_cluster: str | None = None
 
     def public(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -136,6 +138,46 @@ class VisualObservation:
     trigger: str = VisualTrigger.STRUCTURAL_CHANGE.value
     independent_inference: bool = True
     schema_version: int = 1
+    diarization_turn_id: str | None = None
+    expected_cluster: str | None = None
 
     def public(self) -> dict[str, Any]:
         return {**asdict(self), "status": "valid"}
+
+
+@dataclass(frozen=True)
+class PipelineRunConfig:
+    recording_id: str
+    job_id: str
+    generation_id: str
+    asr_provider: str
+    asr_model: str
+    diarization_enabled: bool
+    diarization_model: str
+    visual_enabled: bool
+    visual_model: str
+    visual_routing_mode: str
+    visual_routing_config: dict[str, Any]
+    prompt_versions: dict[str, int]
+    llm_parameters: dict[str, Any]
+    input_fingerprints: dict[str, str]
+
+    def public(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class StageResult:
+    stage: str
+    status: str
+    started_at: str
+    completed_at: str
+    duration_ms: int
+    input_summary: dict[str, Any]
+    output_summary: dict[str, Any]
+    diagnostics: list[dict[str, Any]]
+    artifacts: list[dict[str, Any]]
+    memory: dict[str, Any] | None = None
+
+    def public(self) -> dict[str, Any]:
+        return asdict(self)

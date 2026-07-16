@@ -6,7 +6,7 @@ from collections.abc import Sequence
 
 
 SUPPORTED_BUNDLED_MODULES = {"local_llm_server", "mlx_vlm.server"}
-SUPPORTED_CLI_COMMANDS = {"inspect-meeting"}
+SUPPORTED_CLI_COMMANDS = {"inspect-meeting", "transcribe"}
 
 
 def dispatch_bundled_module(argv: Sequence[str] | None = None) -> bool:

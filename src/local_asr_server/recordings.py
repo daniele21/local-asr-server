@@ -538,36 +538,125 @@ class RecordingStore:
     def replace_visual_intelligence_artifacts(
         self, recording_id: str, observations: list[dict[str, Any]], summary: dict[str, Any],
         document: dict[str, Any] | None = None, routing: dict[str, Any] | None = None,
+        run_config: dict[str, Any] | None = None, trace_path: Path | None = None,
     ) -> None:
-        """Stage and promote one coherent terminal visual generation."""
+        """Stage and promote one coherent terminal visual generation, storing history under visual-runs."""
         with self._lock_for(recording_id):
             session_dir, metadata = self._load(recording_id)
             generation_id = str(
                 summary.get("generation_id") or uuid.uuid4()
             )
             summary = {**summary, "generation_id": generation_id}
-            document = {**document, "generation_id": generation_id} if document is not None else None
-            routing = {**routing, "generation_id": generation_id} if routing is not None else None
-            serialized = "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in observations)
+            
+            # 1. Create staging directory for this run
             staging = session_dir / VISUAL_GENERATION_STAGING_DIR / generation_id
             shutil.rmtree(staging, ignore_errors=True)
             staging.mkdir(mode=0o700, parents=True)
-            self._write_text_atomic(staging / VISUAL_OBSERVATIONS_FILE, serialized)
+            
+            # 2. Write observations.jsonl to run folder (streaming)
+            observations_file = staging / "observations.jsonl"
+            with open(observations_file, "w", encoding="utf-8") as f:
+                for item in observations:
+                    f.write(json.dumps(item, ensure_ascii=False) + "\n")
+            
+            # 3. Write run.json
+            if run_config:
+                self._write_json_atomic(staging / "run.json", run_config)
+            
+            # 4. Write routing.jsonl and routing_summary.json
+            if routing:
+                routing = {**routing, "generation_id": generation_id}
+                routing_file = staging / "routing.jsonl"
+                candidates = routing.get("candidates") or []
+                with open(routing_file, "w", encoding="utf-8") as f:
+                    for c in candidates:
+                        f.write(json.dumps(c, ensure_ascii=False) + "\n")
+                routing_summary = {k: v for k, v in routing.items() if k != "candidates"}
+                self._write_json_atomic(staging / "routing_summary.json", routing_summary)
+            
+            # 5. Write trace.jsonl
+            if trace_path and trace_path.exists():
+                try:
+                    shutil.copy(trace_path, staging / "trace.jsonl")
+                except Exception as e:
+                    logger.warning("Failed to copy trace file to staging: %s", e)
+            
+            # 6. Write result.json and metrics.json
+            if document:
+                clean_doc = {**document, "generation_id": generation_id, "observations": []}
+                clean_doc["observation_store"] = "observations.jsonl"
+                clean_doc["observation_count"] = len(observations)
+                self._write_json_atomic(staging / "result.json", clean_doc)
+            
+            metrics = {
+                "elapsed_seconds": summary.get("elapsed_seconds"),
+                "frame_count": summary.get("frame_count"),
+                "observation_count": len(observations),
+                "parse_errors": summary.get("parse_errors"),
+                "status": summary.get("status"),
+            }
+            self._write_json_atomic(staging / "metrics.json", metrics)
+            
+            # 7. Write compatibility files to staging first
             self._write_json_atomic(staging / VISUAL_SUMMARY_FILE, summary)
-            if document is not None:
-                self._write_json_atomic(staging / VISUAL_DOCUMENT_FILE, document)
-            if routing is not None:
+            serialized = "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in observations)
+            self._write_text_atomic(staging / VISUAL_OBSERVATIONS_FILE, serialized)
+            if document:
+                clean_doc = {**document, "generation_id": generation_id}
+                self._write_json_atomic(staging / VISUAL_DOCUMENT_FILE, clean_doc)
+            if routing:
                 self._write_json_atomic(staging / VISUAL_ROUTING_FILE, routing)
-            for filename in (
-                VISUAL_OBSERVATIONS_FILE, VISUAL_SUMMARY_FILE,
-                VISUAL_DOCUMENT_FILE, VISUAL_ROUTING_FILE,
-            ):
-                source = staging / filename
-                target = session_dir / filename
+                
+            self._write_json_atomic(staging / "current_visual_generation.json", {
+                "generation_id": generation_id,
+                "created_at": time.time(),
+                "model": summary.get("model"),
+                "status": summary.get("status"),
+            })
+            
+            # 8. Promote staging files to target visual-runs directory and root directory using os.replace
+            run_dir = session_dir / "visual-runs" / generation_id
+            shutil.rmtree(run_dir, ignore_errors=True)
+            run_dir.mkdir(mode=0o700, parents=True)
+            
+            compat_filenames = {
+                VISUAL_SUMMARY_FILE,
+                VISUAL_OBSERVATIONS_FILE,
+                VISUAL_DOCUMENT_FILE,
+                VISUAL_ROUTING_FILE,
+                "current_visual_generation.json"
+            }
+            
+            ordered_compat_names = [
+                VISUAL_OBSERVATIONS_FILE,
+                VISUAL_SUMMARY_FILE,
+                VISUAL_DOCUMENT_FILE,
+                VISUAL_ROUTING_FILE,
+                "current_visual_generation.json"
+            ]
+            
+            # Promote compat files first deterministically
+            for name in ordered_compat_names:
+                source = staging / name
+                target = session_dir / name
                 if source.exists():
-                    os.replace(source, target)
+                    os.replace(str(source), str(target))
                 else:
                     target.unlink(missing_ok=True)
+            
+            # Promote non-compat files second
+            for item in list(staging.iterdir()):
+                if item.name in compat_filenames:
+                    continue
+                target = run_dir / item.name
+                if item.is_dir():
+                    target.mkdir(mode=0o700, parents=True)
+                    for subitem in list(item.iterdir()):
+                        os.replace(str(subitem), str(target / subitem.name))
+                    shutil.rmtree(item, ignore_errors=True)
+                else:
+                    os.replace(str(item), str(target))
+            
             metadata["visual_intelligence"] = summary
             self._write_metadata(session_dir, metadata)
             self._upsert_catalog(metadata)
@@ -623,7 +712,10 @@ class RecordingStore:
         result = {"summary": summary, "observations": observations}
         document_path = session_dir / VISUAL_DOCUMENT_FILE
         if document_path.exists():
-            result["document"] = json.loads(document_path.read_text(encoding="utf-8"))
+            doc = json.loads(document_path.read_text(encoding="utf-8"))
+            if not doc.get("observations"):
+                doc["observations"] = observations
+            result["document"] = doc
         routing_path = session_dir / VISUAL_ROUTING_FILE
         if routing_path.exists():
             result["routing"] = json.loads(routing_path.read_text(encoding="utf-8"))
@@ -649,6 +741,19 @@ class RecordingStore:
         document = json.loads(document_path.read_text(encoding="utf-8"))
         if document.get("schema_version") != 2:
             raise ValueError("Unsupported visual intelligence schema")
+        if not document.get("observations"):
+            observations_path = session_dir / VISUAL_OBSERVATIONS_FILE
+            if observations_path.exists():
+                try:
+                    document["observations"] = [
+                        json.loads(line)
+                        for line in observations_path.read_text(encoding="utf-8").splitlines()
+                        if line.strip()
+                    ]
+                except Exception:
+                    document["observations"] = []
+            else:
+                document["observations"] = []
         summary_path = session_dir / VISUAL_SUMMARY_FILE
         response = {
             "schema_version": 2,

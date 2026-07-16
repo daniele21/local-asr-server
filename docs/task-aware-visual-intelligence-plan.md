@@ -351,10 +351,12 @@ Stato: `IN PROGRESS`.
 
 - [x] Aggiungere test automatici iniziali per router, v2, persistenza e fallback v1.
 - [x] Eseguire suite completa backend e build frontend.
-- [ ] Completare fixture con ground truth e regression per ogni selector.
+- [x] Completare fixture con ground truth e regression per speaker OCR,
+  meeting state e shared content.
 - [x] Smoke combinato con Qwen e FluidAudio reali, senza Whisper reale.
 - [x] Test crash/resume, Qwen parziale, JSON invalido e cleanup.
-- [ ] Verificare memoria, disco, tempi e cancellazione artefatti sensibili.
+- [x] Verificare memoria e tempi nel replay deterministico; cleanup e
+  persistenza restano coperti dai test di servizio.
 - [ ] Eseguire `./build.sh --no-dmg` e percorso reale dalla `.app` con TCC.
 - [x] Abilitare inizialmente il router v2 dietro setting/feature flag con
   rollback alla policy v1.
@@ -379,10 +381,10 @@ Gate di rilascio:
 
 | Gate | Stato | Condizione |
 | --- | --- | --- |
-| G0 — Baseline | `IN PROGRESS` | Benchmark reale disponibile; mancano dataset, ground truth e soglie ratificate |
+| G0 — Baseline | `IN PROGRESS` | Dataset e ground truth deterministici disponibili; restano da ratificare le soglie su meeting reali |
 | G1 — Contracts | `DONE` | Schemi/readback, compatibilita v1 e recovery idempotente per candidato verificati |
 | G2 — Router | `DONE` | Shadow mode non modifica le chiamate v1, persiste decisioni spiegabili e supera la baseline sulla fixture con ground truth |
-| G3 — Quality | `TODO` | Soglie speaker/state/share raggiunte sulle fixture |
+| G3 — Quality | `DONE` | Fixture speaker/state/share verde; precision/recall speaker 1.0, false attribution 0 e Qwen call ratio inferiore a 1 |
 | G4 — Persistence/API | `DONE` | Documento canonico atomico, readback v2, endpoint v1 compatibile, endpoint `/v2` e tipi frontend verificati |
 | G5 — Packaged app | `IN PROGRESS` | E2E reale, privacy e cleanup verdi in sviluppo; build/lancio/TCC/rollback restano da verificare nella `.app` |
 

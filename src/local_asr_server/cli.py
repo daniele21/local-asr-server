@@ -99,6 +99,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     inspect_meeting.add_argument("recording_id")
     inspect_meeting.add_argument("--json", action="store_true", dest="as_json")
+
+    subparsers.add_parser(
+        "transcribe",
+        help="Run ASR worker transcription inside a subprocess.",
+    )
     return parser
 
 
@@ -243,6 +248,9 @@ def main() -> None:
         if not _inspect_meeting(args.recording_id, as_json=args.as_json):
             raise SystemExit(1)
         return
+    if args.command == "transcribe":
+        _run_transcribe_worker()
+        return
     if args.command != "serve":
         parser.print_help()
         return
@@ -320,3 +328,52 @@ def main() -> None:
                 llm_process.wait(timeout=3)
             except subprocess.TimeoutExpired:
                 llm_process.kill()
+
+
+def _run_transcribe_worker() -> None:
+    import sys
+    import json
+    import contextlib
+    from local_asr_server.transcriber import transcribe_file_sync
+
+    class IPCStdoutCapture:
+        def __init__(self):
+            self._buffer = []
+
+        def write(self, data: str) -> None:
+            if not data:
+                return
+            self._buffer.append(data)
+            if data.endswith("\n"):
+                line = "".join(self._buffer).rstrip("\r\n")
+                self._buffer = []
+                if line:
+                    if line.startswith("DOWNLOAD_PROGRESS:"):
+                        parts = line.split(":")
+                        if len(parts) >= 4:
+                            percent = float(parts[1])
+                            sys.__stdout__.write(json.dumps({"type": "progress", "percent": percent, "message": line}, ensure_ascii=False) + "\n")
+                            sys.__stdout__.flush()
+                    else:
+                        sys.__stdout__.write(json.dumps({"type": "progress", "message": line}, ensure_ascii=False) + "\n")
+                        sys.__stdout__.flush()
+
+        def flush(self) -> None:
+            sys.__stdout__.flush()
+
+    try:
+        config_str = sys.stdin.read()
+        kwargs = json.loads(config_str)
+        
+        capture = IPCStdoutCapture()
+        with contextlib.redirect_stdout(capture):
+            result = transcribe_file_sync(**kwargs)
+            
+        sys.__stdout__.write(json.dumps({"type": "result", "data": result}, ensure_ascii=False) + "\n")
+        sys.__stdout__.flush()
+    except Exception as e:
+        import traceback
+        err_msg = f"{e}\n{traceback.format_exc()}"
+        sys.__stdout__.write(json.dumps({"type": "error", "message": err_msg}, ensure_ascii=False) + "\n")
+        sys.__stdout__.flush()
+        sys.exit(1)

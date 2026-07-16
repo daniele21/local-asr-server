@@ -23,7 +23,7 @@ from local_asr_server.asr_provider import (
 from local_asr_server.audio_intelligence import build_audio_intelligence
 from local_asr_server.recordings import RecordingStore
 from local_asr_server.routers.helpers import _merge_track_transcriptions
-from local_asr_server.runtime.asr_worker import ASRWorkerRunner, InProcessASRWorkerRunner
+from local_asr_server.runtime.asr_worker import ASRWorkerRunner, InProcessASRWorkerRunner, ASRProcessRunner
 from local_asr_server.schemas import TranscribeRecordingRequest
 from local_asr_server.settings import load_settings
 from local_asr_server.speechmatics_asr import SpeechmaticsBatchASRProvider
@@ -60,7 +60,7 @@ class TranscriptionService:
     """Application service boundary for transcription workflows."""
 
     def __init__(self, runner: ASRWorkerRunner | None = None) -> None:
-        self.runner = runner or InProcessASRWorkerRunner()
+        self.runner = runner or ASRProcessRunner()
         self.visual = PostMeetingVisualService()
         self.diarization = LocalSpeakerDiarizationService()
 
@@ -80,6 +80,7 @@ class TranscriptionService:
             vad_post_filter=bool(kwargs.get("vad_post_filter", False)),
             provider=provider_name,
             provider_options=kwargs.pop("provider_options", {}) or {},
+            job=kwargs.get("job"),
         )
         if provider_name == ASR_PROVIDER_SPEECHMATICS:
             return SpeechmaticsBatchASRProvider().transcribe(request)

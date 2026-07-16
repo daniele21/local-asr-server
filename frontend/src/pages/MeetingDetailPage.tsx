@@ -28,6 +28,7 @@ import { Sheet, SheetContent, SheetHeader, SheetBody } from '../components/ui/Sh
 import { cn } from '../utils/cn';
 import { formatJobProgress } from '../utils/jobs';
 import { VisualIntelligencePanel } from '../components/meeting/VisualIntelligencePanel';
+import { VisualDebugPanel } from '../components/meeting/VisualDebugPanel';
 import { useVisualIntelligence } from '../hooks/useVisualIntelligence';
 import { recordingTranscriptionRoute } from '../utils/transcriptionRoute';
 
@@ -577,6 +578,10 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               loading={visualLoading}
               error={visualError}
             />
+          )}
+
+          {recordingId && visualEnabled && (
+            <VisualDebugPanel recordingId={recordingId} />
           )}
 
           {/* Collapsible Transcript Panel */}

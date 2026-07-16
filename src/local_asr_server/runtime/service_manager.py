@@ -114,6 +114,9 @@ class RuntimeServiceManager:
         self, *, capability: str = "text", reasoning: str | None = None,
         overrides: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        from local_asr_server.runtime.leases import ModelRuntimeLeaseManager
+        lease_type = "vision" if capability == "image" else "llm"
+        ModelRuntimeLeaseManager.acquire_lease(lease_type)
         llm = self._llm_settings(overrides)
         mode = llm["mode"]
         if mode == "disabled":

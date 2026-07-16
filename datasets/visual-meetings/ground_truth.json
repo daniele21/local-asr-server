@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "recording_id": "benchmark-recording",
+  "participants": ["Alice", "Daniel", "Bob"],
+  "segments": [
+    {"id": "turn-1", "start": 1.0, "end": 2.5, "source": "system", "provider_speaker": "system:S1"},
+    {"id": "turn-2", "start": 3.0, "end": 5.5, "source": "system", "provider_speaker": "system:S2"}
+  ],
+  "mock_debounce_violations": 0,
+  "mock_roi_stability": 1.0,
+  "frames": [
+    {
+      "sequence": 0,
+      "timestamp": 1.0,
+      "file": "frame_00000000.jpg",
+      "expected": {
+        "layout": "gallery",
+        "active_speaker": null,
+        "screen_share": false
+      },
+      "mock_ocr_text": [],
+      "mock_observation": {"layout": "gallery", "screen_share": false}
+    },
+    {
+      "sequence": 1,
+      "timestamp": 3.0,
+      "file": "frame_00000001.jpg",
+      "expected": {
+        "layout": "gallery",
+        "active_speaker": "Alice",
+        "screen_share": false
+      },
+      "mock_ocr_text": ["Alice"],
+      "mock_observation": {"layout": "gallery", "screen_share": false}
+    },
+    {
+      "sequence": 2,
+      "timestamp": 5.0,
+      "file": "frame_00000002.jpg",
+      "expected": {
+        "layout": "presentation",
+        "active_speaker": "Daniel",
+        "screen_share": true,
+        "screen_share_presenter": "Daniel",
+        "shared_content_type": "slide",
+        "shared_content_keyframe": true
+      },
+      "mock_ocr_text": ["Daniel"],
+      "mock_observation": {
+        "layout": "presentation",
+        "screen_share": true,
+        "shared_content_keyframe": true
+      }
+    }
+  ]
+}

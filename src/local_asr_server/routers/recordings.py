@@ -115,6 +115,121 @@ def get_visual_intelligence_v2(recording_id: str, request: Request):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@router.get("/v2/recordings/{recording_id}/visual-debug")
+def get_visual_debug(
+    recording_id: str,
+    request: Request,
+    page: int = 1,
+    limit: int = 50,
+    task: Optional[str] = None,
+):
+    import json
+    try:
+        services = get_services(request.app)
+        session_dir = services.recordings.session_dir(recording_id)
+        current_path = session_dir / "current_visual_generation.json"
+        if not current_path.exists():
+            runs_dir = session_dir / "visual-runs"
+            if not runs_dir.exists():
+                raise HTTPException(status_code=404, detail="No visual runs found")
+            runs = sorted(runs_dir.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True)
+            if not runs:
+                raise HTTPException(status_code=404, detail="No visual runs found")
+            generation_id = runs[0].name
+        else:
+            current = json.loads(current_path.read_text(encoding="utf-8"))
+            generation_id = current["generation_id"]
+            
+        run_dir = session_dir / "visual-runs" / generation_id
+        if not run_dir.exists():
+            raise HTTPException(status_code=404, detail="Run files not found")
+            
+        run_config = {}
+        config_path = run_dir / "run.json"
+        if config_path.exists():
+            run_config = json.loads(config_path.read_text(encoding="utf-8"))
+            
+        metrics = {}
+        metrics_path = run_dir / "metrics.json"
+        if metrics_path.exists():
+            metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+            
+        result = {}
+        result_path = run_dir / "result.json"
+        if result_path.exists():
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            
+        traces = []
+        trace_path = run_dir / "trace.jsonl"
+        if trace_path.exists():
+            for line in trace_path.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    traces.append(json.loads(line))
+                    
+        candidates = []
+        routing_path = run_dir / "routing.jsonl"
+        if routing_path.exists():
+            for line in routing_path.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    candidates.append(json.loads(line))
+                    
+        observations = []
+        obs_path = run_dir / "observations.jsonl"
+        if obs_path.exists():
+            for line in obs_path.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    obs = json.loads(line)
+                    if task and obs.get("task") != task:
+                        continue
+                    observations.append(obs)
+                    
+        total_observations = len(observations)
+        start_idx = (page - 1) * limit
+        end_idx = start_idx + limit
+        paginated_obs = observations[start_idx:end_idx]
+        
+        return {
+            "generation_id": generation_id,
+            "run_config": run_config,
+            "metrics": metrics,
+            "result": result,
+            "traces": traces,
+            "candidates": candidates,
+            "observations": paginated_obs,
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": total_observations,
+                "has_more": end_idx < total_observations,
+            }
+        }
+    except RecordingNotFound as exc:
+        raise HTTPException(status_code=404, detail="Recording not found") from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/v2/recordings/{recording_id}/visual-runs/{generation_id}/previews/{filename}")
+def get_visual_preview(
+    recording_id: str,
+    generation_id: str,
+    filename: str,
+    request: Request,
+):
+    try:
+        services = get_services(request.app)
+        session_dir = services.recordings.session_dir(recording_id)
+        preview_file = (session_dir / "visual-runs" / generation_id / "previews" / filename).resolve()
+        if not preview_file.exists():
+            raise HTTPException(status_code=404, detail="Preview file not found")
+        run_previews_dir = (session_dir / "visual-runs" / generation_id / "previews").resolve()
+        if not str(preview_file).startswith(str(run_previews_dir)):
+            raise HTTPException(status_code=403, detail="Forbidden")
+        return FileResponse(preview_file)
+    except RecordingNotFound as exc:
+        raise HTTPException(status_code=404, detail="Recording not found") from exc
+
+
 @router.post("/v1/recordings/{recording_id}/tracks/{track_id}/chunks")
 async def append_recording_track_chunk(
     recording_id: str,

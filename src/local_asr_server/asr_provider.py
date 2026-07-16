@@ -41,6 +41,7 @@ class ASRRequest:
     vad_post_filter: bool = False
     provider: str = ASR_PROVIDER_LOCAL
     provider_options: dict[str, Any] = field(default_factory=dict)
+    job: Any = None
 
 
 class ASRProvider(Protocol):
@@ -53,29 +54,35 @@ class LocalMlxASRProvider:
         self.runner = runner
 
     def transcribe(self, request: ASRRequest) -> dict[str, Any]:
-        result = self.runner.transcribe(
-            audio_path=str(request.audio_path),
-            model=request.model,
-            language=request.language,
-            task=request.task,
-            word_timestamps=request.word_timestamps,
-            initial_prompt=request.initial_prompt,
-            temperature=request.temperature,
-            condition_on_previous_text=request.condition_on_previous_text,
-            verbose=request.verbose,
-            vad_guided=request.vad_guided,
-            vad_post_filter=request.vad_post_filter,
-        )
-        payload = dict(result or {})
-        payload.setdefault("model", request.model)
-        payload.setdefault("backend", get_asr_backend(request.model))
-        payload.setdefault("provider", ASR_PROVIDER_LOCAL)
-        payload.setdefault("asr_provider", ASR_PROVIDER_LOCAL)
-        metadata = dict(payload.get("metadata") or {})
-        metadata.setdefault("asr_provider", ASR_PROVIDER_LOCAL)
-        metadata.setdefault("backend", payload["backend"])
-        payload["metadata"] = metadata
-        return payload
+        from local_asr_server.runtime.leases import ModelRuntimeLeaseManager
+        ModelRuntimeLeaseManager.acquire_lease("asr")
+        try:
+            result = self.runner.transcribe(
+                audio_path=str(request.audio_path),
+                model=request.model,
+                language=request.language,
+                task=request.task,
+                word_timestamps=request.word_timestamps,
+                initial_prompt=request.initial_prompt,
+                temperature=request.temperature,
+                condition_on_previous_text=request.condition_on_previous_text,
+                verbose=request.verbose,
+                vad_guided=request.vad_guided,
+                vad_post_filter=request.vad_post_filter,
+                job=request.job,
+            )
+            payload = dict(result or {})
+            payload.setdefault("model", request.model)
+            payload.setdefault("backend", get_asr_backend(request.model))
+            payload.setdefault("provider", ASR_PROVIDER_LOCAL)
+            payload.setdefault("asr_provider", ASR_PROVIDER_LOCAL)
+            metadata = dict(payload.get("metadata") or {})
+            metadata.setdefault("asr_provider", ASR_PROVIDER_LOCAL)
+            metadata.setdefault("backend", payload["backend"])
+            payload["metadata"] = metadata
+            return payload
+        finally:
+            ModelRuntimeLeaseManager.release_lease("asr")
 
 
 def normalize_asr_provider(provider: str | None) -> str:

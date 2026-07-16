@@ -36,9 +36,11 @@ class LocalSpeakerDiarizationService:
                 "engine": DIARIZATION_ENGINE,
                 **diagnostic("speaker_diarization", "disabled", requested_backend=DIARIZATION_ENGINE),
             }
-        inputs = {str(track["id"]): path for track, path in track_paths}
-        model_path = get_models_dir() / "fluidaudio-speaker-diarization"
+        from local_asr_server.runtime.leases import ModelRuntimeLeaseManager
+        ModelRuntimeLeaseManager.acquire_lease("diarization")
         try:
+            inputs = {str(track["id"]): path for track, path in track_paths}
+            model_path = get_models_dir() / "fluidaudio-speaker-diarization"
             result = self._runner(inputs)
             tracks = result.get("tracks") or {}
             minimum_overlap = float(settings.get("speaker_diarization_minimum_overlap", 0.25))
@@ -79,6 +81,8 @@ class LocalSpeakerDiarizationService:
             }
             store.save_speaker_diarization(recording_id, summary)
             return summary
+        finally:
+            ModelRuntimeLeaseManager.release_lease("diarization")
 
     @staticmethod
     def _assign_segments(

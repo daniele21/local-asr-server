@@ -14,6 +14,12 @@ from local_asr_server.visual_intelligence.fusion import (
     apply_visual_speaker_mapping,
     derive_visual_transcript_links,
 )
+from local_asr_server.visual_intelligence.adapter import (
+    detect_active_tile,
+    match_participant_name,
+)
+from local_asr_server.visual_intelligence.benchmark import replay_visual_dataset
+from local_asr_server.visual_intelligence.ocr import recognize_text_in_image
 from local_asr_server.visual_intelligence.inference import (
     VisualResponseValidationError,
     normalize_task_response,
@@ -33,6 +39,8 @@ from local_asr_server.visual_intelligence.router import (
     legacy_candidate_sequences,
 )
 from local_asr_server.visual_intelligence.signatures import (
+    FrameSignature,
+    TileSignature,
     calculate_signature,
     participant_tile_changed,
 )
@@ -51,6 +59,56 @@ from visual_intelligence_support import (
 
 
 class VisualIntelligenceTests(unittest.TestCase):
+    def test_native_ocr_gracefully_abstains_when_vision_is_unavailable(self) -> None:
+        with patch(
+            "local_asr_server.visual_intelligence.ocr._VISION_AVAILABLE",
+            False,
+        ):
+            self.assertEqual(recognize_text_in_image(Path("/missing.jpg")), [])
+
+    def test_local_speaker_adapter_failure_falls_back_without_raising(self) -> None:
+        candidate = SimpleNamespace(sequence=1, task=VisualTask.MEETING_UI)
+        with patch(
+            "local_asr_server.visual_intelligence.service.calculate_signature",
+            side_effect=RuntimeError("signature unavailable"),
+        ):
+            result = PostMeetingVisualService._local_speaker_observation(
+                candidate,
+                {"sequence": 1, "path": "/missing-right.jpg"},
+                {"sequence": 0, "path": "/missing-left.jpg"},
+                ["Alice"],
+                {},
+                VisualRoutingConfig(mode="v2"),
+            )
+        self.assertIsNone(result)
+
+    def test_active_tile_detection_prefers_new_highlight_and_name_match_is_unambiguous(self) -> None:
+        neutral = TileSignature(0, (0.0, 1.0), border_highlight_score=0.0)
+        highlighted = TileSignature(0, (1.0, 0.0), border_highlight_score=0.8)
+        left = FrameSignature(0, (), 0, participant_tiles=(highlighted, neutral))
+        right = FrameSignature(0, (), 0, participant_tiles=(neutral, highlighted))
+
+        self.assertEqual(detect_active_tile(left, right, color_threshold=0.05), 1)
+        self.assertEqual(
+            match_participant_name(["Daniel"], ["Alice", "Daniel"]),
+            "Daniel",
+        )
+        self.assertIsNone(
+            match_participant_name(["Anna"], ["Anna Bianchi", "Anna Verdi"]),
+        )
+
+    def test_visual_dataset_replay_meets_quality_and_efficiency_gates(self) -> None:
+        dataset = Path(__file__).parents[1] / "datasets" / "visual-meetings"
+        result = replay_visual_dataset(dataset)
+
+        self.assertEqual(result["speaker"]["precision"], 1.0)
+        self.assertEqual(result["speaker"]["recall"], 1.0)
+        self.assertEqual(result["speaker"]["false_attribution_rate"], 0.0)
+        self.assertEqual(result["meeting_state"]["transition_accuracy"], 1.0)
+        self.assertEqual(result["shared_content"]["keyframe_recall"], 1.0)
+        self.assertGreater(result["efficiency"]["ocr_bypass_count"], 0)
+        self.assertLess(result["efficiency"]["qwen_call_ratio"], 1.0)
+
     def test_semantic_links_are_derived_and_do_not_mutate_sources(self) -> None:
         temporal = {
             "meeting_state_events": [{
@@ -453,6 +511,92 @@ class VisualIntelligenceTests(unittest.TestCase):
             self.assertEqual(v2["schema_version"], 2)
             self.assertEqual(v2["document"], persisted["document"])
             self.assertEqual(store.list_visual_frames(recording["id"]), [])
+
+    def test_v2_progressive_ocr_bypasses_qwen_for_known_speaker_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = RecordingStore(
+                root,
+                use_settings_dir=False,
+                catalog=CatalogStore(root / "catalog.db"),
+            )
+            recording = store.create(
+                title="OCR bypass",
+                mime_type="audio/wav",
+                model="test",
+                language="it",
+                capture_mode="pc_only",
+                capture_backend="native",
+            )
+            dataset = Path(__file__).parents[1] / "datasets" / "visual-meetings"
+            for sequence, timestamp in enumerate((1.0, 3.0, 5.0)):
+                store.stage_visual_frame(
+                    recording["id"],
+                    sequence,
+                    timestamp,
+                    (dataset / f"frame_{sequence:08d}.jpg").read_bytes(),
+                )
+            payload = {
+                "participants": ["Alice", "Daniel", "Bob"],
+                "segments": [
+                    {
+                        "id": "turn-1",
+                        "start": 1.0,
+                        "end": 2.5,
+                        "source": "system",
+                        "provider_speaker": "system:S1",
+                    },
+                    {
+                        "id": "turn-2",
+                        "start": 3.0,
+                        "end": 5.5,
+                        "source": "system",
+                        "provider_speaker": "system:S2",
+                    },
+                ],
+                "stats": {},
+            }
+            settings = {
+                "visual_intelligence_enabled": True,
+                "visual_llm_model": "qwen3-vl-4b",
+                "visual_routing_mode": "v2",
+                "visual_minimum_observations": 1,
+                "visual_minimum_margin": 0.0,
+                "visual_minimum_distinct_turns": 1,
+                "visual_minimum_temporal_support_seconds": 0.0,
+            }
+            client = _TaskAwareClient()
+            service = PostMeetingVisualService(client_factory=lambda **_: client)
+            with patch(
+                "local_asr_server.visual_intelligence.service.load_settings",
+                return_value=settings,
+            ), patch(
+                "local_asr_server.visual_intelligence.service.prepare_candidate_message",
+                side_effect=lambda candidate, _: [{"task": candidate.task.value}],
+            ), patch(
+                "local_asr_server.visual_intelligence.service.visual_adapter.extract_speaker_name",
+                side_effect=["Alice", "Daniel"],
+            ):
+                result = service.process(
+                    SimpleNamespace(recordings=store, runtime=_Runtime()),
+                    recording["id"],
+                    payload,
+                )
+
+            summary = result["stats"]["visual_intelligence"]
+            self.assertEqual(summary["ocr_attempt_count"], 2)
+            self.assertEqual(summary["ocr_bypass_count"], 2)
+            self.assertEqual(summary["qwen_call_count"], 3)
+            self.assertEqual(len(client.calls), 3)
+            observations = store.get_visual_intelligence(recording["id"])["observations"]
+            local_observations = [
+                item for item in observations
+                if item.get("inference_backend") == "local_ocr"
+            ]
+            self.assertEqual(
+                [item["active_speakers"][0] for item in local_observations],
+                ["Alice", "Daniel"],
+            )
 
     def test_v2_backend_circuit_breaker_preserves_staging(self) -> None:
         class UnavailableClient:
@@ -966,7 +1110,7 @@ class VisualIntelligenceTests(unittest.TestCase):
     def test_frame_deduplication_skips_identical_frames(self) -> None:
         from PIL import Image, ImageDraw
         import io
-        
+
         def make_jpeg(color, with_pattern=False):
             img = Image.new("RGB", (100, 100), color=color)
             if with_pattern:
@@ -1004,7 +1148,7 @@ class VisualIntelligenceTests(unittest.TestCase):
             }
             client = _Client()
             service = PostMeetingVisualService(client_factory=lambda **_: client)
-            
+
             progress_calls = []
             def progress_cb(detail):
                 progress_calls.append(detail)
@@ -1027,14 +1171,14 @@ class VisualIntelligenceTests(unittest.TestCase):
                 [item["decision"] for item in completed],
                 ["inferred", "duplicate_reused", "inferred"],
             )
-            
+
             persisted = store.get_visual_intelligence(recording["id"])
             self.assertEqual(len(persisted["observations"]), 3)
 
     def test_local_llm_params_config_file_loading_and_usage(self) -> None:
         from local_asr_server.local_llm_params import load_local_llm_params
         from local_asr_server.paths import get_local_llm_params_file
-        
+
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir) / "local_llm_params.json"
             with patch("local_asr_server.local_llm_params.get_local_llm_params_file", return_value=tmp_path):
@@ -1042,17 +1186,17 @@ class VisualIntelligenceTests(unittest.TestCase):
                 self.assertFalse(tmp_path.exists())
                 params = load_local_llm_params()
                 self.assertTrue(tmp_path.exists())
-                
+
                 # Check nested models structure
                 self.assertIn("models", params)
                 self.assertIn("nemotron-nano-4b-q8", params["models"])
                 self.assertEqual(params["models"]["nemotron-nano-4b-q8"]["params"]["ctx_size"], 36466)
-                
+
                 # Check nested chat_params structure
                 self.assertEqual(params["chat_params"]["temperature"], 0.0)
                 self.assertEqual(params["chat_params"]["max_tokens"], 512)
                 self.assertEqual(params["chat_params"]["shared_content_max_tokens"], 768)
-                
+
                 # 2. Test when file contains custom settings
                 with open(tmp_path, "w", encoding="utf-8") as f:
                     json.dump({
@@ -1076,7 +1220,7 @@ class VisualIntelligenceTests(unittest.TestCase):
 
     def test_visual_service_passes_custom_params_to_client_chat(self) -> None:
         from local_asr_server.local_llm_params import load_local_llm_params
-        
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             store = RecordingStore(root, use_settings_dir=False, catalog=CatalogStore(root / "catalog.db"))
@@ -1095,7 +1239,7 @@ class VisualIntelligenceTests(unittest.TestCase):
             }
             client = _Client()
             service = PostMeetingVisualService(client_factory=lambda **_: client)
-            
+
             # Setup custom parameters config file mocking (nested structure)
             custom_config = {
                 "models": {},
@@ -1105,12 +1249,12 @@ class VisualIntelligenceTests(unittest.TestCase):
                     "top_p": 0.95,
                 }
             }
-            
+
             with patch("local_asr_server.visual_intelligence.service.load_settings", return_value=settings), \
                  patch("local_asr_server.local_llm_params.load_local_llm_params", return_value=custom_config), \
                  patch.object(service, "_image_message", return_value=[]):
                 service.process(SimpleNamespace(recordings=store, runtime=_Runtime()), recording["id"], payload)
-                
+
             self.assertEqual(len(client.calls), 1)
             call_kwargs = client.calls[0]["kwargs"]
             self.assertEqual(call_kwargs.get("temperature"), 0.7)
@@ -1119,13 +1263,13 @@ class VisualIntelligenceTests(unittest.TestCase):
 
     def test_local_llm_server_registry_loads_config_file(self) -> None:
         from local_llm_server.registry import load_registry
-        
+
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_home = Path(tmp_dir)
             config_dir = tmp_home / "Library" / "Application Support" / "ClosedRoom"
             config_dir.mkdir(parents=True, exist_ok=True)
             config_file = config_dir / "local_llm_params.json"
-            
+
             # Setup ClosedRoom local_llm_params.json
             with open(config_file, "w", encoding="utf-8") as f:
                 json.dump({
@@ -1143,17 +1287,17 @@ class VisualIntelligenceTests(unittest.TestCase):
                         }
                     }
                 }, f)
-                
+
             # Run load_registry inside mock home directory
             with patch("pathlib.Path.home", return_value=tmp_home):
                 registry = load_registry()
-                
+
             # Verify custom model parameter merging
             self.assertIn("qwen3-vl-4b", registry["models"])
             self.assertEqual(registry["models"]["qwen3-vl-4b"]["params"]["max_kv_size"], 9999)
             self.assertEqual(registry["models"]["nemotron-nano-4b-q8"]["params"]["ctx_size"], 36466)
             self.assertEqual(registry["models"]["nemotron-nano-4b-q8"]["params"]["n_gpu_layers"], 42)
-            
+
             # Verify startup models default to config models when user/builtin startup_models not specified
             self.assertIn("qwen3-vl-4b", registry["startup_models"])
             self.assertIn("nemotron-nano-4b-q8", registry["startup_models"])
@@ -1161,5 +1305,3 @@ class VisualIntelligenceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-

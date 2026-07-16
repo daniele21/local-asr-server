@@ -4,6 +4,8 @@ import hashlib
 import json
 import logging
 import time
+import uuid
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Callable
 
@@ -13,6 +15,7 @@ from local_asr_server.visual_intelligence.contracts import (
     VisualRoutingConfig,
     VisualTask,
 )
+from local_asr_server.visual_intelligence import adapter as visual_adapter
 from local_asr_server.visual_intelligence.fusion import (
     apply_visual_speaker_mapping,
     derive_visual_transcript_links,
@@ -27,7 +30,7 @@ from local_asr_server.visual_intelligence.inference import (
 from local_asr_server.visual_intelligence.router import TaskAwareFrameRouter
 from local_asr_server.visual_intelligence.processors import LegacyVisualProcessor, TaskAwareVisualProcessor
 from local_asr_server.visual_intelligence.shared_content import should_infer_shared_candidate
-from local_asr_server.visual_intelligence.signatures import calculate_signature
+from local_asr_server.visual_intelligence.signatures import FrameSignature, calculate_signature
 from local_asr_server.visual_intelligence.temporal import aggregate_temporal_state
 from local_asr_server.diagnostics import diagnostic
 
@@ -373,6 +376,21 @@ class PostMeetingVisualService:
         self, services, recording_id, payload, frames, candidates, routing_summary, *, model,
         progress_callback, routing_config, routing_artifact,
     ):
+        settings = load_settings()
+        generation_id = f"visual-run-{uuid.uuid4()}"
+        session_dir = services.recordings.session_dir(recording_id)
+        trace_path = session_dir / ".visual-staging" / f"trace-{generation_id}.jsonl"
+
+        from local_asr_server.visual_intelligence.trace_store import VisualTraceStore
+        trace_store = VisualTraceStore(
+            trace_file=trace_path,
+            recording_id=recording_id,
+            generation_id=generation_id,
+        )
+
+        trace_store.log_event("run_started", model=model, candidate_count=len(candidates))
+        trace_store.log_event("frame_captured", count=len(frames))
+
         fingerprint = self._processing_fingerprint(candidates, model)
         observations = services.recordings.begin_visual_processing(
             recording_id, fingerprint, prompt_version=TASK_PROMPT_VERSION,
@@ -388,8 +406,16 @@ class PostMeetingVisualService:
         last_shared_content_type = "unknown"
         completed = False
         processed_candidates = 0
+        chat_params = {}
+
         try:
             rejected_candidates = int(routing_summary.get("rejected_task_evaluations") or 0)
+            trace_store.log_event(
+                "routing_completed",
+                selected_candidates=len(candidates),
+                rejected_candidates=rejected_candidates,
+            )
+
             self._report_progress(
                 progress_callback, recording_id,
                 phase="processing", unit="candidates", routing_mode="v2",
@@ -397,24 +423,38 @@ class PostMeetingVisualService:
                 selected_candidates=len(candidates), rejected_candidates=rejected_candidates,
                 reused=resumed_observation_count,
             )
-            ready = services.runtime.ensure_llm_ready(
-                capability="image", reasoning="off", overrides={"local_llm_model": model},
-            )
-            client = self._client(ready["base_url"], model)
+            client = None
             frames_by_sequence = {int(item["sequence"]): item for item in frames}
-            inferred = skipped = failed = 0
+            ordered_frames = sorted(frames, key=lambda item: int(item["sequence"]))
+            previous_frame_by_sequence = {
+                int(frame["sequence"]): ordered_frames[index - 1] if index else None
+                for index, frame in enumerate(ordered_frames)
+            }
+            signature_cache: dict[int, FrameSignature] = {}
+            inferred = skipped = failed = qwen_calls = 0
+            local_ocr_bypasses = 0
+            ocr_attempts = 0
             consecutive_backend_failures = 0
             backend_error_message = "visual_backend_unavailable"
+
             for index, candidate in enumerate(candidates):
                 processed_candidates = index + 1
                 frame = frames_by_sequence[candidate.sequence]
                 observation_id = f"visual-{candidate.sequence}-{candidate.task.value}"
+
                 if observation_id in completed_observation_ids:
                     recovered = recovered_by_id[observation_id]
                     if candidate.task is VisualTask.SHARED_CONTENT:
                         last_shared_inference_timestamp = candidate.timestamp
                         last_shared_content_type = str(recovered.get("content_type") or "unknown")
                     decision = "resumed"
+                    trace_store.log_event(
+                        "candidate_selected",
+                        sequence=candidate.sequence,
+                        task=candidate.task.value,
+                        trigger=candidate.trigger.value,
+                        reason="recovered",
+                    )
                 elif candidate.task is VisualTask.SHARED_CONTENT and not should_infer_shared_candidate(
                     trigger=candidate.trigger.value,
                     timestamp=candidate.timestamp,
@@ -425,34 +465,114 @@ class PostMeetingVisualService:
                     skipped_by_cadence += 1
                     skipped += 1
                     decision = "cadence_skipped"
+                    trace_store.log_event(
+                        "candidate_rejected",
+                        sequence=candidate.sequence,
+                        task=candidate.task.value,
+                        trigger=candidate.trigger.value,
+                        reason="cadence_skipped",
+                    )
                 else:
                     try:
-                        from local_asr_server.local_llm_params import load_local_llm_params
-                        params = load_local_llm_params()
-                        chat_params = params.get("chat_params", {})
-                        task_max_tokens = (
-                            chat_params.get("shared_content_max_tokens", 768)
-                            if candidate.task is VisualTask.SHARED_CONTENT
-                            else chat_params.get("max_tokens", 512)
-                        )
-                        extra_params = {k: v for k, v in chat_params.items() if k not in ("temperature", "max_tokens", "shared_content_max_tokens")}
-                        raw = client.chat(
-                            prepare_candidate_message(candidate, Path(frame["path"])),
-                            temperature=chat_params.get("temperature", 0.0),
-                            max_tokens=task_max_tokens,
-                            **extra_params,
-                        )
-                        parsed = parse_visual_response(raw)
-                        normalized = normalize_task_response(candidate.task, parsed)
-                        observation = TaskAwareVisualProcessor.observation(candidate, normalized, model)
-                        observations.append(observation)
-                        services.recordings.append_visual_observation(recording_id, observation)
-                        if candidate.task is VisualTask.SHARED_CONTENT:
-                            last_shared_inference_timestamp = candidate.timestamp
-                            last_shared_content_type = observation["content_type"]
-                        inferred += 1
-                        consecutive_backend_failures = 0
-                        decision = "inferred"
+                        local_observation = None
+                        if candidate.task is VisualTask.MEETING_UI:
+                            participants = self._known_participants(payload, observations)
+                            previous_frame = previous_frame_by_sequence.get(candidate.sequence)
+                            if participants and previous_frame is not None:
+                                ocr_attempts += 1
+                                local_observation = self._local_speaker_observation(
+                                    candidate,
+                                    frame,
+                                    previous_frame,
+                                    participants,
+                                    signature_cache,
+                                    routing_config,
+                                )
+
+                        if local_observation is not None:
+                            observation = local_observation
+                            observations.append(observation)
+                            services.recordings.append_visual_observation(recording_id, observation)
+                            local_ocr_bypasses += 1
+                            consecutive_backend_failures = 0
+                            decision = "local_ocr_bypass"
+                            trace_store.log_event(
+                                "local_ocr_bypass",
+                                sequence=candidate.sequence,
+                                task=candidate.task.value,
+                                speaker=observation["active_speakers"][0],
+                                tile_index=observation["active_tile_index"],
+                            )
+                        else:
+                            from local_asr_server.local_llm_params import load_local_llm_params
+                            params = load_local_llm_params()
+                            chat_params = params.get("chat_params", {})
+                            task_max_tokens = (
+                                chat_params.get("shared_content_max_tokens", 768)
+                                if candidate.task is VisualTask.SHARED_CONTENT
+                                else chat_params.get("max_tokens", 512)
+                            )
+                            extra_params = {
+                                key: value for key, value in chat_params.items()
+                                if key not in (
+                                    "temperature",
+                                    "max_tokens",
+                                    "shared_content_max_tokens",
+                                )
+                            }
+
+                            trace_store.log_event(
+                                "inference_started",
+                                sequence=candidate.sequence,
+                                task=candidate.task.value,
+                                trigger=candidate.trigger.value,
+                            )
+
+                            if client is None:
+                                ready = services.runtime.ensure_llm_ready(
+                                    capability="image",
+                                    reasoning="off",
+                                    overrides={"local_llm_model": model},
+                                )
+                                client = self._client(ready["base_url"], model)
+                            inf_start = time.perf_counter()
+                            qwen_calls += 1
+                            raw = client.chat(
+                                prepare_candidate_message(candidate, Path(frame["path"])),
+                                temperature=chat_params.get("temperature", 0.0),
+                                max_tokens=task_max_tokens,
+                                **extra_params,
+                            )
+                            inf_duration = time.perf_counter() - inf_start
+
+                            trace_store.log_event(
+                                "inference_completed",
+                                sequence=candidate.sequence,
+                                task=candidate.task.value,
+                                trigger=candidate.trigger.value,
+                                duration_ms=int(inf_duration * 1000),
+                            )
+
+                            parsed = parse_visual_response(raw)
+                            normalized = normalize_task_response(candidate.task, parsed)
+                            observation = TaskAwareVisualProcessor.observation(candidate, normalized, model)
+                            observations.append(observation)
+                            services.recordings.append_visual_observation(recording_id, observation)
+
+                            if candidate.task is VisualTask.SHARED_CONTENT:
+                                last_shared_inference_timestamp = candidate.timestamp
+                                last_shared_content_type = observation["content_type"]
+
+                            inferred += 1
+                            consecutive_backend_failures = 0
+                            decision = "inferred"
+
+                            trace_store.log_event(
+                                "observation_persisted",
+                                sequence=candidate.sequence,
+                                task=candidate.task.value,
+                                trigger=candidate.trigger.value,
+                            )
                     except Exception as exc:
                         parse_errors += 1
                         failed += 1
@@ -462,6 +582,15 @@ class PostMeetingVisualService:
                             backend_error_message = str(exc)
                         else:
                             consecutive_backend_failures = 0
+
+                        trace_store.log_event(
+                            "response_invalid",
+                            sequence=candidate.sequence,
+                            task=candidate.task.value,
+                            trigger=candidate.trigger.value,
+                            error=str(exc),
+                        )
+
                         candidate_errors.append({
                             "sequence": candidate.sequence,
                             "task": candidate.task.value,
@@ -473,6 +602,15 @@ class PostMeetingVisualService:
                             "Visual candidate %s/%s failed: %s",
                             candidate.sequence, candidate.task.value, exc,
                         )
+
+                # Preview generation if enabled
+                if settings.get("visual_debug_previews_enabled", False):
+                    from local_asr_server.visual_intelligence.contracts import VISUAL_GENERATION_STAGING_DIR
+                    staging_previews_dir = session_dir / VISUAL_GENERATION_STAGING_DIR / generation_id / "previews"
+                    preview_file = staging_previews_dir / f"frame-{candidate.sequence:08d}.webp"
+                    if not preview_file.exists():
+                        self.save_preview(Path(frame["path"]), preview_file, roi=candidate.roi)
+
                 elapsed = time.perf_counter() - started
                 self._report_progress(
                     progress_callback, recording_id,
@@ -488,10 +626,14 @@ class PostMeetingVisualService:
                 )
                 if consecutive_backend_failures >= VISUAL_BACKEND_FAILURE_THRESHOLD:
                     raise VisualBackendUnavailable(backend_error_message)
+
             temporal = aggregate_temporal_state(observations)
+            trace_store.log_event("temporal_aggregation_completed")
+
             temporal["semantic_links"] = derive_visual_transcript_links(
                 temporal, payload.get("segments") or [],
             )
+
             elapsed = time.perf_counter() - started
             status = "completed" if not parse_errors else ("degraded" if observations else "failed")
             summary = {
@@ -507,6 +649,9 @@ class PostMeetingVisualService:
                 "candidate_errors": candidate_errors,
                 "resumed_observation_count": resumed_observation_count,
                 "skipped_by_content_cadence": skipped_by_cadence,
+                "ocr_attempt_count": ocr_attempts,
+                "ocr_bypass_count": local_ocr_bypasses,
+                "qwen_call_count": qwen_calls,
                 "routing_summary": self._compact_routing_summary(routing_summary),
                 "elapsed_seconds": round(elapsed, 3),
                 **diagnostic(
@@ -519,6 +664,9 @@ class PostMeetingVisualService:
                         "observations": len(observations), "parse_errors": parse_errors,
                         "skipped_by_content_cadence": skipped_by_cadence,
                         "resumed_observations": resumed_observation_count,
+                        "ocr_attempts": ocr_attempts,
+                        "ocr_bypasses": local_ocr_bypasses,
+                        "qwen_calls": qwen_calls,
                     },
                     duration_seconds=elapsed,
                 ),
@@ -532,11 +680,40 @@ class PostMeetingVisualService:
                 "model": model,
                 "prompt_version": TASK_PROMPT_VERSION,
             }
+
+            # Setup inputs config metadata for run.json
+            input_fingerprints = {}
+            for c in candidates:
+                input_fingerprints[str(c.sequence)] = f"ts={c.timestamp},task={c.task.value}"
+
+            run_config = {
+                "recording_id": recording_id,
+                "job_id": payload.get("job_id") or "",
+                "generation_id": generation_id,
+                "asr_provider": payload.get("stats", {}).get("asr", {}).get("provider", "local"),
+                "asr_model": payload.get("stats", {}).get("asr", {}).get("model", ""),
+                "diarization_enabled": bool(payload.get("stats", {}).get("speaker_diarization", {}).get("status") == "completed"),
+                "diarization_model": payload.get("stats", {}).get("speaker_diarization", {}).get("engine", ""),
+                "visual_enabled": True,
+                "visual_model": model,
+                "visual_routing_mode": "v2",
+                "visual_routing_config": asdict(routing_config),
+                "prompt_versions": {
+                    "meeting_ui": TASK_PROMPT_VERSION,
+                    "meeting_state": TASK_PROMPT_VERSION,
+                    "shared_content": TASK_PROMPT_VERSION,
+                },
+                "llm_parameters": chat_params,
+                "input_fingerprints": input_fingerprints,
+            }
+
+            trace_store.log_event("fusion_evaluated")
             services.recordings.replace_visual_intelligence_artifacts(
                 recording_id, observations, summary, document=document, routing=routing_artifact,
+                run_config=run_config, trace_path=trace_path,
             )
+
             speaker_observations = [item for item in observations if item.get("task") == VisualTask.MEETING_UI.value]
-            settings = load_settings()
             payload = apply_visual_speaker_mapping(
                 payload, speaker_observations,
                 minimum_observations=int(settings.get("visual_minimum_observations") or 3),
@@ -547,8 +724,11 @@ class PostMeetingVisualService:
             payload["visual_intelligence"] = temporal
             payload.setdefault("stats", {})["visual_intelligence"] = summary
             completed = True
+
+            trace_store.log_event("run_completed", status=status)
             return payload
         except VisualBackendUnavailable as exc:
+            trace_store.log_event("run_failed", error="visual_backend_unavailable", details=str(exc))
             logger.error(
                 "[Visual Circuit Breaker] recording=%s mode=v2 consecutive_failures=%d "
                 "processed=%d/%d staging_preserved=true error=%s",
@@ -586,6 +766,7 @@ class PostMeetingVisualService:
             }
             return payload
         except Exception as exc:
+            trace_store.log_event("run_failed", error=str(exc))
             logger.warning("Task-aware visual intelligence failed for %s: %s", recording_id, exc)
             payload.setdefault("stats", {})["visual_intelligence"] = {
                 "version": 2, "routing_mode": "v2", "model": model,
@@ -596,9 +777,39 @@ class PostMeetingVisualService:
             }
             return payload
         finally:
+            try:
+                trace_path.unlink(missing_ok=True)
+            except Exception:
+                pass
             if completed:
                 services.recordings.finish_visual_processing(recording_id)
                 services.recordings.cleanup_visual_frames(recording_id)
+
+    @staticmethod
+    def save_preview(image_path: Path, preview_path: Path, roi: tuple[float, float, float, float] | None = None) -> None:
+        from PIL import Image
+        try:
+            preview_path.parent.mkdir(parents=True, exist_ok=True)
+            with Image.open(image_path) as source:
+                img = source.convert("RGB")
+                if roi:
+                    width, height = img.size
+                    left, top, right, bottom = roi
+                    img = img.crop((int(left * width), int(top * height), int(right * width), int(bottom * height)))
+                w, h = img.size
+                max_side = 320
+                if max(w, h) > max_side:
+                    if w > h:
+                        new_w = max_side
+                        new_h = int(h * max_side / w)
+                    else:
+                        new_h = max_side
+                        new_w = int(w * max_side / h)
+                    resample = getattr(Image, "Resampling", Image).BILINEAR
+                    img = img.resize((new_w, new_h), resample)
+                img.save(preview_path, format="WEBP", quality=60)
+        except Exception as e:
+            logger.warning("Failed to save visual candidate preview: %s", e)
 
     @classmethod
     def _v2_observation(cls, candidate, parsed, model):
@@ -609,6 +820,92 @@ class PostMeetingVisualService:
         if not isinstance(routing_summary, dict):
             return routing_summary
         return {key: value for key, value in routing_summary.items() if key != "candidates"}
+
+    @staticmethod
+    def _known_participants(payload, observations) -> list[str]:
+        names: list[str] = []
+        for value in (
+            payload.get("participants"),
+            payload.get("meeting", {}).get("participants")
+            if isinstance(payload.get("meeting"), dict)
+            else None,
+        ):
+            if isinstance(value, list):
+                names.extend(str(item).strip() for item in value if str(item).strip())
+        for observation in observations:
+            value = observation.get("participants")
+            if isinstance(value, list):
+                names.extend(str(item).strip() for item in value if str(item).strip())
+        return list(dict.fromkeys(names))
+
+    @staticmethod
+    def _local_speaker_observation(
+        candidate,
+        frame,
+        previous_frame,
+        participants,
+        signature_cache,
+        routing_config,
+    ):
+        """Try the conservative local adapter; any failure falls back to Qwen."""
+        try:
+            previous_sequence = int(previous_frame["sequence"])
+            left_signature = signature_cache.get(previous_sequence)
+            if left_signature is None:
+                left_signature = calculate_signature(
+                    Path(previous_frame["path"]),
+                    participant_rows=routing_config.participant_grid_rows,
+                    participant_columns=routing_config.participant_grid_columns,
+                )
+                signature_cache[previous_sequence] = left_signature
+            right_signature = signature_cache.get(candidate.sequence)
+            if right_signature is None:
+                right_signature = calculate_signature(
+                    Path(frame["path"]),
+                    participant_rows=routing_config.participant_grid_rows,
+                    participant_columns=routing_config.participant_grid_columns,
+                )
+                signature_cache[candidate.sequence] = right_signature
+            tile_index = visual_adapter.detect_active_tile(
+                left_signature,
+                right_signature,
+                color_threshold=routing_config.speaker_tile_color_distance,
+            )
+            if tile_index is None:
+                return None
+            speaker_name = visual_adapter.extract_speaker_name(
+                Path(frame["path"]),
+                tile_index,
+                participants,
+                grid_rows=routing_config.participant_grid_rows,
+                grid_cols=routing_config.participant_grid_columns,
+            )
+            if not speaker_name:
+                return None
+            normalized = normalize_task_response(
+                candidate.task,
+                {
+                    "platform": "unknown",
+                    "layout": "unknown",
+                    "participants": participants,
+                    "active_speakers": [speaker_name],
+                    "evidence": ["active_tile_highlight", "native_vision_ocr"],
+                    "confidence": 0.95,
+                },
+            )
+            observation = TaskAwareVisualProcessor.observation(
+                candidate, normalized, "macos-vision-ocr",
+            )
+            observation["active_tile_index"] = tile_index
+            observation["inference_backend"] = "local_ocr"
+            return observation
+        except Exception as exc:
+            logger.warning(
+                "Local OCR speaker adapter failed for frame %s; falling back to Qwen: %s",
+                candidate.sequence,
+                exc,
+            )
+            return None
 
     @staticmethod
     def _processing_fingerprint(candidates, model: str) -> str:

@@ -704,6 +704,11 @@ export const ApiClient = {
     return (await request(`/v2/recordings/${recordingId}/visual-intelligence`, { signal })).json();
   },
 
+  async visualDebug(recordingId: string, page = 1, limit = 50, task?: string, signal?: AbortSignal): Promise<any> {
+    const url = `/v2/recordings/${recordingId}/visual-debug?page=${page}&limit=${limit}${task ? `&task=${task}` : ''}`;
+    return (await request(url, { signal })).json();
+  },
+
   async appendRecordingTrackChunk(recordingId: string, trackId: string, sequence: number, file: Blob): Promise<any> {
     const formData = new FormData();
     formData.append('file', file);

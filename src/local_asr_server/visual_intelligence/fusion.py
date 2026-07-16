@@ -62,23 +62,31 @@ def apply_visual_speaker_mapping(
             continue
         timestamp = float(observation.get("timestamp") or 0.0)
         confidence = max(0.0, min(1.0, float(observation.get("confidence") or 0.0)))
-        overlapping = []
-        for segment in segments:
-            cluster = segment.get("provider_speaker")
-            start = float(segment.get("start") or 0.0)
-            end = float(segment.get("end") or start)
-            if cluster and start <= timestamp <= end:
-                overlapping.append(segment)
-        # A selected conferencing window is evidence for computer-audio speakers,
-        # not for the local microphone. Prefer system, then mixed/unknown tracks.
-        system_matches = [item for item in overlapping if item.get("source") == "system"]
-        eligible = system_matches or [item for item in overlapping if item.get("source") != "mic"]
-        clusters = {str(item.get("provider_speaker")) for item in eligible}
-        # Multiple simultaneous provider clusters make a single visible name
-        # insufficient evidence for automatic attribution.
-        matched = eligible[0] if len(clusters) == 1 else None
-        if matched:
-            cluster = str(matched["provider_speaker"])
+        
+        cluster = observation.get("expected_cluster")
+        matched = None
+        if cluster:
+            turn_id = observation.get("diarization_turn_id")
+            if turn_id:
+                matched = next((item for item in segments if str(item.get("id")) == turn_id), None)
+            if not matched:
+                matched = next((item for item in segments if item.get("provider_speaker") == cluster and float(item.get("start") or 0.0) <= timestamp <= float(item.get("end") or 0.0)), None)
+        else:
+            overlapping = []
+            for segment in segments:
+                cluster_cand = segment.get("provider_speaker")
+                start = float(segment.get("start") or 0.0)
+                end = float(segment.get("end") or start)
+                if cluster_cand and start <= timestamp <= end:
+                    overlapping.append(segment)
+            system_matches = [item for item in overlapping if item.get("source") == "system"]
+            eligible = system_matches or [item for item in overlapping if item.get("source") != "mic"]
+            clusters = {str(item.get("provider_speaker")) for item in eligible}
+            matched = eligible[0] if len(clusters) == 1 else None
+            if matched:
+                cluster = str(matched["provider_speaker"])
+
+        if matched and cluster:
             independent = observation.get("independent_inference", True)
             if independent:
                 support[cluster][str(names[0])] += confidence

@@ -471,6 +471,22 @@ they reach temporal aggregation or speaker fusion, and persist the candidate
 validation cause for diagnostics. Observable share start/stop cycles create
 separate stable sessions; keyframes outside known share windows remain explicit
 as unassigned instead of being silently merged.
+
+For speaker candidates, v2 first compares participant-tile border signatures.
+When a single newly highlighted tile is found and macOS Vision OCR matches its
+visible label to a known participant, ClosedRoom persists a local observation
+and skips that Qwen call. Ambiguous highlights, missing labels, unavailable
+Vision support, and OCR errors abstain locally and fall back to Qwen. The
+deterministic quality fixture can be replayed without ASR or Qwen:
+
+```bash
+python scripts/replay_visual_intelligence.py
+```
+
+The report includes speaker precision/recall, false attribution and correct
+abstention, meeting-state transitions, shared-content keyframes, OCR bypasses,
+estimated Qwen call ratio, peak RSS and execution time.
+
 The canonical task-aware document is available from
 `GET /v2/recordings/<recording-id>/visual-intelligence`; the existing `/v1`
 response remains compatible. Version 2 also stores derived timestamp-overlap

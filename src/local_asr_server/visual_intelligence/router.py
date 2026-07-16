@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import bisect
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ from local_asr_server.visual_intelligence.contracts import (
 from local_asr_server.visual_intelligence.signatures import (
     FrameSignature,
     calculate_signature,
+    get_or_calculate_signature,
     hamming_distance,
     participant_tile_changed,
 )
@@ -29,32 +31,21 @@ class TaskAwareFrameRouter:
         if not frames:
             return [], self._summary(0, [])
         signatures: dict[int, FrameSignature] = {}
-        speaker_signatures: dict[int, FrameSignature] = {}
 
-        def signature(frame: dict[str, Any]) -> FrameSignature:
-            sequence = int(frame["sequence"])
-            if sequence not in signatures:
-                signatures[sequence] = calculate_signature(
-                    Path(frame["path"]),
-                    participant_rows=0,
-                    participant_columns=0,
-                )
-            return signatures[sequence]
-
-        def speaker_signature(frame: dict[str, Any]) -> FrameSignature:
-            sequence = int(frame["sequence"])
-            if sequence not in speaker_signatures:
-                speaker_signatures[sequence] = calculate_signature(
-                    Path(frame["path"]),
-                    participant_rows=self.config.participant_grid_rows,
-                    participant_columns=self.config.participant_grid_columns,
-                )
-            return speaker_signatures[sequence]
+        def get_sig(frame: dict[str, Any], calculate_tiles: bool = False) -> FrameSignature:
+            return get_or_calculate_signature(
+                Path(frame["path"]),
+                signatures,
+                int(frame["sequence"]),
+                calculate_tiles=calculate_tiles,
+                participant_rows=self.config.participant_grid_rows,
+                participant_columns=self.config.participant_grid_columns,
+            )
 
         candidates: list[FrameCandidate] = []
-        candidates.extend(self._speaker_candidates(frames, segments, speaker_signature))
-        candidates.extend(self._state_candidates(frames, signature))
-        candidates.extend(self._shared_candidates(frames, signature))
+        candidates.extend(self._speaker_candidates(frames, segments, get_sig))
+        candidates.extend(self._state_candidates(frames, get_sig))
+        candidates.extend(self._shared_candidates(frames, get_sig))
         unique: dict[tuple[int, VisualTask], FrameCandidate] = {}
         for candidate in candidates:
             unique.setdefault((candidate.sequence, candidate.task), candidate)
@@ -65,14 +56,21 @@ class TaskAwareFrameRouter:
         selected: list[FrameCandidate] = [self._candidate(frames[0], VisualTask.MEETING_UI, VisualTrigger.FIRST_FRAME)]
         diarized_targets = []
         frame_indexes = {int(frame["sequence"]): index for index, frame in enumerate(frames)}
+        frame_timestamps = [float(f["timestamp"]) for f in frames]
         processed_primary_sequences: set[int] = set()
         for segment in segments:
             if not segment.get("provider_speaker") or segment.get("source") == "mic":
                 continue
             target = float(segment.get("start") or 0.0) + self.config.speaker_delay_seconds
-            frame = next((item for item in frames if float(item["timestamp"]) >= target), None)
+            idx = bisect.bisect_left(frame_timestamps, target)
+            frame = frames[idx] if idx < len(frames) else None
             if frame:
-                selected.append(self._candidate(frame, VisualTask.MEETING_UI, VisualTrigger.DIARIZATION_TURN_START))
+                turn_id = str(segment.get("id") or "")
+                cluster = segment.get("provider_speaker")
+                selected.append(self._candidate(
+                    frame, VisualTask.MEETING_UI, VisualTrigger.DIARIZATION_TURN_START,
+                    diarization_turn_id=turn_id, expected_cluster=cluster
+                ))
                 diarized_targets.append(float(frame["timestamp"]))
                 primary_sequence = int(frame["sequence"])
                 if primary_sequence in processed_primary_sequences:
@@ -83,12 +81,13 @@ class TaskAwareFrameRouter:
                     if float(follow_up["timestamp"]) - target > self.config.speaker_local_window_seconds:
                         break
                     if participant_tile_changed(
-                        signature(frame), signature(follow_up),
+                        signature(frame, calculate_tiles=True), signature(follow_up, calculate_tiles=True),
                         dhash_distance=self.config.speaker_tile_dhash_distance,
                         color_threshold=self.config.speaker_tile_color_distance,
                     ):
                         selected.append(self._candidate(
                             follow_up, VisualTask.MEETING_UI, VisualTrigger.LOCAL_CHANGE,
+                            diarization_turn_id=turn_id, expected_cluster=cluster
                         ))
                         break
         if not diarized_targets:
@@ -105,8 +104,8 @@ class TaskAwareFrameRouter:
         previous = frames[0]
         last_selected = float(frames[0]["timestamp"])
         for frame in frames[1:]:
-            current_signature = signature(frame)
-            previous_signature = signature(previous)
+            current_signature = signature(frame, calculate_tiles=False)
+            previous_signature = signature(previous, calculate_tiles=False)
             changed_grids = sum(
                 hamming_distance(left, right) > self.config.structural_dhash_distance
                 for left, right in zip(current_signature.grid_hashes, previous_signature.grid_hashes)
@@ -134,8 +133,8 @@ class TaskAwareFrameRouter:
         last_selected = float(frames[0]["timestamp"])
         for frame in frames[1:]:
             changed = hamming_distance(
-                signature(frame).shared_roi_hash,
-                signature(previous).shared_roi_hash,
+                signature(frame, calculate_tiles=False).shared_roi_hash,
+                signature(previous, calculate_tiles=False).shared_roi_hash,
             ) > self.config.shared_roi_dhash_distance
             if changed:
                 pending = frame
@@ -149,7 +148,9 @@ class TaskAwareFrameRouter:
             previous = frame
         return selected
 
-    def _candidate(self, frame, task, trigger, *, shared=False) -> FrameCandidate:
+    def _candidate(
+        self, frame, task, trigger, *, shared=False, diarization_turn_id=None, expected_cluster=None
+    ) -> FrameCandidate:
         roi = None
         roi_source = None
         roi_confidence = None
@@ -178,6 +179,8 @@ class TaskAwareFrameRouter:
             roi_source=roi_source,
             roi_confidence=roi_confidence,
             roi_fallback=roi_fallback,
+            diarization_turn_id=diarization_turn_id,
+            expected_cluster=expected_cluster,
         )
 
     @staticmethod

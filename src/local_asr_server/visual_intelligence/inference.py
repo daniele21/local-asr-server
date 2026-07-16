@@ -153,15 +153,33 @@ def _nonnegative_int(value: Any) -> int | None:
 
 def prepare_candidate_message(candidate: FrameCandidate, image_path: Path) -> list[dict[str, Any]]:
     from local_llm_server.vision import prepare_image_message
-
-    if not candidate.roi:
-        return prepare_image_message(image_path, PROMPTS[candidate.task])
     from PIL import Image
 
+    if candidate.task == VisualTask.MEETING_STATE:
+        max_side = 768
+    elif candidate.task == VisualTask.MEETING_UI:
+        max_side = 1280
+    else:
+        max_side = 1600
+
     with Image.open(image_path) as source:
-        width, height = source.size
-        left, top, right, bottom = candidate.roi
-        crop = source.crop((int(left * width), int(top * height), int(right * width), int(bottom * height)))
+        img = source.convert("RGB")
+        if candidate.roi:
+            width, height = img.size
+            left, top, right, bottom = candidate.roi
+            img = img.crop((int(left * width), int(top * height), int(right * width), int(bottom * height)))
+        
+        w, h = img.size
+        if max(w, h) > max_side:
+            if w > h:
+                new_w = max_side
+                new_h = int(h * max_side / w)
+            else:
+                new_h = max_side
+                new_w = int(w * max_side / h)
+            resample = getattr(Image, "Resampling", Image).BILINEAR
+            img = img.resize((new_w, new_h), resample)
+
         with NamedTemporaryFile(suffix=".jpg") as temporary:
-            crop.convert("RGB").save(temporary.name, format="JPEG", quality=90)
+            img.save(temporary.name, format="JPEG", quality=85)
             return prepare_image_message(Path(temporary.name), PROMPTS[candidate.task])
