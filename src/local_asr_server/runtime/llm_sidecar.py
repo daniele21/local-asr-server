@@ -284,10 +284,21 @@ class LocalLLMSidecar:
         from local_asr_server.settings import load_settings
         settings = load_settings()
         visual_model = settings.get("visual_llm_model") or "qwen3-vl-4b"
-        if model != "custom":
-            cmd.extend(["--models", model, visual_model])
+
+        # Load models from local_llm_params.json
+        from local_asr_server.local_llm_params import load_local_llm_params
+        params = load_local_llm_params()
+        config_models = params.get("models")
+
+        if config_models and isinstance(config_models, dict):
+            models_to_load = list(config_models.keys())
         else:
-            cmd.extend(["--models", visual_model])
+            models_to_load = []
+            if model != "custom":
+                models_to_load.append(model)
+            models_to_load.append(visual_model)
+
+        cmd.extend(["--models"] + models_to_load)
         if model_path:
             cmd.extend(["--model-path", model_path])
         if backend:

@@ -576,6 +576,11 @@ Stopping a recording does not block on ASR inference. Instead, the meeting is sa
 * import/transcription page;
 * API endpoints.
 
+The Today, meeting, recording, and project entry points all open the same guided
+transcription workflow. The recording is preselected, then the user reviews the
+provider and ASR options, follows the shared progress view, and reaches the same
+result and recovery states.
+
 ### Transcribe uploaded audio
 
 ```bash

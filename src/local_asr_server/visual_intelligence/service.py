@@ -190,10 +190,15 @@ class PostMeetingVisualService:
                     decision = "duplicate_reused"
                 else:
                     try:
+                        from local_asr_server.local_llm_params import load_local_llm_params
+                        params = load_local_llm_params()
+                        chat_params = params.get("chat_params", {})
+                        extra_params = {k: v for k, v in chat_params.items() if k not in ("temperature", "max_tokens", "shared_content_max_tokens")}
                         raw = client.chat(
                             self._image_message(frame["path"]),
-                            temperature=0.0,
-                            max_tokens=512,
+                            temperature=chat_params.get("temperature", 0.0),
+                            max_tokens=chat_params.get("max_tokens", 512),
+                            **extra_params,
                         )
                         parsed = parse_visual_response(raw)
                         last_parsed = parsed
@@ -422,10 +427,20 @@ class PostMeetingVisualService:
                     decision = "cadence_skipped"
                 else:
                     try:
+                        from local_asr_server.local_llm_params import load_local_llm_params
+                        params = load_local_llm_params()
+                        chat_params = params.get("chat_params", {})
+                        task_max_tokens = (
+                            chat_params.get("shared_content_max_tokens", 768)
+                            if candidate.task is VisualTask.SHARED_CONTENT
+                            else chat_params.get("max_tokens", 512)
+                        )
+                        extra_params = {k: v for k, v in chat_params.items() if k not in ("temperature", "max_tokens", "shared_content_max_tokens")}
                         raw = client.chat(
                             prepare_candidate_message(candidate, Path(frame["path"])),
-                            temperature=0.0,
-                            max_tokens=768 if candidate.task is VisualTask.SHARED_CONTENT else 512,
+                            temperature=chat_params.get("temperature", 0.0),
+                            max_tokens=task_max_tokens,
+                            **extra_params,
                         )
                         parsed = parse_visual_response(raw)
                         normalized = normalize_task_response(candidate.task, parsed)

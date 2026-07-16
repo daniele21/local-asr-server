@@ -23,13 +23,13 @@ import { renderMarkdown } from '../utils/markdown';
 import { formatBytes, formatProjectDate, getDurationSeconds } from '../utils/formatters';
 import { useTranslation } from '../i18n/i18n';
 import { getDemoMeetings } from '../features/demo/demoData';
-import { TranscriptionModelModal, TranscriptionModelSelection } from '../components/ui/TranscriptionModelModal';
 import { AnalysisSetupModal, AnalysisSetupSelection } from '../components/ui/AnalysisSetupModal';
 import { Sheet, SheetContent, SheetHeader, SheetBody } from '../components/ui/Sheet';
 import { cn } from '../utils/cn';
 import { formatJobProgress } from '../utils/jobs';
 import { VisualIntelligencePanel } from '../components/meeting/VisualIntelligencePanel';
 import { useVisualIntelligence } from '../hooks/useVisualIntelligence';
+import { recordingTranscriptionRoute } from '../utils/transcriptionRoute';
 
 interface MeetingDetailPageProps {
   recordingId: string | null;
@@ -56,7 +56,6 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
   const [selectedAnalysisType, setSelectedAnalysisType] = useState('meeting_brief');
   const [error, setError] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
-  const [modelModalOpen, setModelModalOpen] = useState(false);
   const [analysisSetupOpen, setAnalysisSetupOpen] = useState(false);
   const [analysisPipelineTarget, setAnalysisPipelineTarget] = useState('meeting_default');
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -120,24 +119,12 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
     return () => window.clearInterval(timer);
   }, [meeting?.id, activeJobs.length, meeting?.analysis_runs.length]);
 
-  const startTranscription = async (selection: TranscriptionModelSelection = {}) => {
-    if (!meeting) return;
-    if (demoMode) return;
-    setBusyAction('transcription');
-    try {
-      await ApiClient.createTranscriptionJob(meeting.id, {
-        model: selection.model || undefined,
-        asr_provider: selection.asr_provider,
-        speechmatics_region: selection.speechmatics_region,
-        speechmatics_model: selection.speechmatics_model,
-        speechmatics_diarization: selection.speechmatics_diarization,
-      });
-      window.setTimeout(load, 700);
-    } catch (err: any) {
-      setError(err?.message || t('meeting.errorTranscriptionNotStarted'));
-    } finally {
-      setBusyAction(null);
-    }
+  const openTranscriptionWorkflow = () => {
+    if (!meeting || demoMode || isBusy) return;
+    navigateTo(
+      'transcription',
+      recordingTranscriptionRoute(meeting.id, meeting.transcription ? 'retranscribe' : 'transcribe'),
+    );
   };
 
   const openAnalysisSetup = (pipelineId = 'meeting_default') => {
@@ -430,7 +417,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
             <Button
               size="sm"
               disabled={demoMode}
-              onClick={() => setModelModalOpen(true)}
+              onClick={openTranscriptionWorkflow}
               className="shrink-0 w-full sm:w-auto shadow-cta"
             >
               <FileText className="h-4 w-4" />
@@ -701,7 +688,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                   disabled={demoMode || isBusy}
                   onClick={() => {
                     setDetailsOpen(false);
-                    setModelModalOpen(true);
+                    openTranscriptionWorkflow();
                   }}
                   className="w-full justify-start text-left text-xs"
                 >
@@ -784,15 +771,6 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
         </SheetContent>
       </Sheet>
 
-      <TranscriptionModelModal
-        isOpen={modelModalOpen}
-        onConfirm={(selection) => {
-          setModelModalOpen(false);
-          startTranscription(selection);
-        }}
-        onCancel={() => setModelModalOpen(false)}
-        demoMode={demoMode}
-      />
       <AnalysisSetupModal
         isOpen={analysisSetupOpen}
         onConfirm={(selection) => {

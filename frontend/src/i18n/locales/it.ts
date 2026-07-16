@@ -570,6 +570,8 @@ const it = {
     browseSelectDir: 'Cartella selezionata. Clicca su Salva per confermare.',
     browseError: 'Impossibile aprire la selezione cartella di sistema.',
     preselectSource: 'Seleziona prima una sorgente audio.',
+    preselectSourceError: 'Impossibile aprire la registrazione selezionata: {error}. Scegli un’altra sorgente o riprova.',
+    preselectResultError: 'Impossibile aprire la trascrizione selezionata: {error}. Selezionala di nuovo dallo storico.',
     renamePlaceholder: 'Nuovo titolo',
     projectPlaceholder: 'Nuovo nome progetto',
     assignProjectTitle: 'Assegna a Progetto',

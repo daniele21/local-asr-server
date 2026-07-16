@@ -570,6 +570,8 @@ const en = {
     browseSelectDir: 'Folder selected. Click Save to confirm.',
     browseError: 'Unable to open system directory selector.',
     preselectSource: 'Please select an audio source first.',
+    preselectSourceError: 'Could not open the selected recording: {error}. Choose another source or try again.',
+    preselectResultError: 'Could not open the selected transcription: {error}. Choose it again from history.',
     renamePlaceholder: 'New title',
     projectPlaceholder: 'New project name',
     assignProjectTitle: 'Assign to Project',

@@ -1031,6 +1031,135 @@ class VisualIntelligenceTests(unittest.TestCase):
             persisted = store.get_visual_intelligence(recording["id"])
             self.assertEqual(len(persisted["observations"]), 3)
 
+    def test_local_llm_params_config_file_loading_and_usage(self) -> None:
+        from local_asr_server.local_llm_params import load_local_llm_params
+        from local_asr_server.paths import get_local_llm_params_file
+        
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir) / "local_llm_params.json"
+            with patch("local_asr_server.local_llm_params.get_local_llm_params_file", return_value=tmp_path):
+                # 1. Test when the file does not exist (writes defaults)
+                self.assertFalse(tmp_path.exists())
+                params = load_local_llm_params()
+                self.assertTrue(tmp_path.exists())
+                
+                # Check nested models structure
+                self.assertIn("models", params)
+                self.assertIn("nemotron-nano-4b-q8", params["models"])
+                self.assertEqual(params["models"]["nemotron-nano-4b-q8"]["params"]["ctx_size"], 36466)
+                
+                # Check nested chat_params structure
+                self.assertEqual(params["chat_params"]["temperature"], 0.0)
+                self.assertEqual(params["chat_params"]["max_tokens"], 512)
+                self.assertEqual(params["chat_params"]["shared_content_max_tokens"], 768)
+                
+                # 2. Test when file contains custom settings
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    json.dump({
+                        "models": {
+                            "custom-model": {
+                                "params": {"ctx_size": 2048}
+                            }
+                        },
+                        "chat_params": {
+                            "temperature": 0.5,
+                            "max_tokens": 128,
+                            "top_p": 0.9,
+                        }
+                    }, f)
+                params_custom = load_local_llm_params()
+                self.assertIn("custom-model", params_custom["models"])
+                self.assertEqual(params_custom["models"]["custom-model"]["params"]["ctx_size"], 2048)
+                self.assertEqual(params_custom["chat_params"]["temperature"], 0.5)
+                self.assertEqual(params_custom["chat_params"]["max_tokens"], 128)
+                self.assertEqual(params_custom["chat_params"]["top_p"], 0.9)
+
+    def test_visual_service_passes_custom_params_to_client_chat(self) -> None:
+        from local_asr_server.local_llm_params import load_local_llm_params
+        
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = RecordingStore(root, use_settings_dir=False, catalog=CatalogStore(root / "catalog.db"))
+            recording = store.create(
+                title="Custom params test", mime_type="audio/wav", model="test", language="it",
+                capture_mode="pc_only", capture_backend="native",
+            )
+            store.stage_visual_frame(recording["id"], 0, 1.0, self._jpeg("blue"))
+            payload = {"segments": [], "stats": {}}
+            settings = {
+                "visual_intelligence_enabled": True,
+                "visual_llm_model": "qwen3-vl-4b",
+                "visual_routing_mode": "v1",
+                "visual_minimum_observations": 1,
+                "visual_minimum_margin": 0.0,
+            }
+            client = _Client()
+            service = PostMeetingVisualService(client_factory=lambda **_: client)
+            
+            # Setup custom parameters config file mocking (nested structure)
+            custom_config = {
+                "models": {},
+                "chat_params": {
+                    "temperature": 0.7,
+                    "max_tokens": 100,
+                    "top_p": 0.95,
+                }
+            }
+            
+            with patch("local_asr_server.visual_intelligence.service.load_settings", return_value=settings), \
+                 patch("local_asr_server.local_llm_params.load_local_llm_params", return_value=custom_config), \
+                 patch.object(service, "_image_message", return_value=[]):
+                service.process(SimpleNamespace(recordings=store, runtime=_Runtime()), recording["id"], payload)
+                
+            self.assertEqual(len(client.calls), 1)
+            call_kwargs = client.calls[0]["kwargs"]
+            self.assertEqual(call_kwargs.get("temperature"), 0.7)
+            self.assertEqual(call_kwargs.get("max_tokens"), 100)
+            self.assertEqual(call_kwargs.get("top_p"), 0.95)
+
+    def test_local_llm_server_registry_loads_config_file(self) -> None:
+        from local_llm_server.registry import load_registry
+        
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_home = Path(tmp_dir)
+            config_dir = tmp_home / "Library" / "Application Support" / "ClosedRoom"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            config_file = config_dir / "local_llm_params.json"
+            
+            # Setup ClosedRoom local_llm_params.json
+            with open(config_file, "w", encoding="utf-8") as f:
+                json.dump({
+                    "models": {
+                        "nemotron-nano-4b-q8": {
+                            "params": {
+                                "ctx_size": 36466,
+                                "n_gpu_layers": 42
+                            }
+                        },
+                        "qwen3-vl-4b": {
+                            "params": {
+                                "max_kv_size": 9999
+                            }
+                        }
+                    }
+                }, f)
+                
+            # Run load_registry inside mock home directory
+            with patch("pathlib.Path.home", return_value=tmp_home):
+                registry = load_registry()
+                
+            # Verify custom model parameter merging
+            self.assertIn("qwen3-vl-4b", registry["models"])
+            self.assertEqual(registry["models"]["qwen3-vl-4b"]["params"]["max_kv_size"], 9999)
+            self.assertEqual(registry["models"]["nemotron-nano-4b-q8"]["params"]["ctx_size"], 36466)
+            self.assertEqual(registry["models"]["nemotron-nano-4b-q8"]["params"]["n_gpu_layers"], 42)
+            
+            # Verify startup models default to config models when user/builtin startup_models not specified
+            self.assertIn("qwen3-vl-4b", registry["startup_models"])
+            self.assertIn("nemotron-nano-4b-q8", registry["startup_models"])
+
 
 if __name__ == "__main__":
     unittest.main()
+
+

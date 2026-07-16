@@ -34,6 +34,7 @@ import {
   RiskPanel,
   SectionHeader,
 } from '../components/workspace/MeetingWorkspace';
+import { recordingTranscriptionRoute } from '../utils/transcriptionRoute';
 import {
   TimeRangeState,
   extractActionItems,
@@ -665,7 +666,7 @@ export default function ProjectsPage({ navigateTo, demoMode = false }: ProjectsP
                   onCancelRename={() => setEditingRecordingId(null)}
                   onAssignProject={() => handleAssignProject(item.recording)}
                   onOpen={() => navigateTo('meeting', item.recording.id)}
-                  onTranscribe={() => navigateTo('transcription', `file-${item.recording.id}`)}
+                  onTranscribe={() => navigateTo('transcription', recordingTranscriptionRoute(item.recording.id))}
                   demoMode={demoMode}
                 />
               ))}

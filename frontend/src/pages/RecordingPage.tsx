@@ -13,6 +13,7 @@ import { Checkbox } from '../components/ui/Checkbox';
 import { ProjectPromptModal } from '../components/ui/ProjectPromptModal';
 import { formatBytes, formatProjectDate } from '../utils/formatters';
 import AudioIntelligencePanel from './recording/AudioIntelligencePanel';
+import { recordingTranscriptionRoute } from '../utils/transcriptionRoute';
 
 interface RecordingPageProps {
   detailId: string | null;
@@ -471,7 +472,7 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
                     if (transcription) {
                       navigateTo('transcription', transcription.id);
                     } else {
-                      navigateTo('transcription', `file-${recording.id}`);
+                      navigateTo('transcription', recordingTranscriptionRoute(recording.id));
                     }
                   }}
                 >
@@ -485,7 +486,7 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
                         ? "Sei sicuro di voler trascrivere nuovamente questo audio? La nuova trascrizione sostituirà quella precedente nei risultati principali."
                         : "Are you sure you want to transcribe this audio again? The new transcription will replace the previous one in the main results.";
                       if (window.confirm(confirmText)) {
-                        navigateTo('transcription', `retranscribe-${recording.id}`);
+                        navigateTo('transcription', recordingTranscriptionRoute(recording.id, 'retranscribe'));
                       }
                     }}
                   >
@@ -521,7 +522,7 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
               intelligence={audioIntelligence}
               loading={intelligenceLoading}
               hasTranscription={Boolean(transcription)}
-              onTranscribe={() => navigateTo('transcription', `file-${recording.id}`)}
+              onTranscribe={() => navigateTo('transcription', recordingTranscriptionRoute(recording.id))}
             />
           </div>
         )}

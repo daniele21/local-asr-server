@@ -97,14 +97,46 @@ def create_app(
     
     import logging
     logger = logging.getLogger("uvicorn.error")
-    llm_status = runtime_services.llm_status()
-    llm_mode = llm_status.get("mode", "disabled")
-    if llm_mode == "auto":
-        logger.info("Local LLM: mode is 'auto' (will start dynamically on demand on a free port)")
-    elif llm_mode == "external":
-        logger.info(f"Local LLM: mode is 'external' (using configured URL: {llm_status.get('url')})")
-    else:
-        logger.info("Local LLM: disabled")
+    # Defer LLM sidecar startup to FastAPI startup event so it runs exactly
+    # once (not at module import time when uvicorn --reload re-imports).
+    @app.on_event("startup")
+    def _start_llm_sidecar():
+        llm_status = runtime_services.llm_status()
+        llm_mode = llm_status.get("mode", "disabled")
+        
+        # Color formatting
+        GREEN = "\033[92m"
+        CYAN = "\033[96m"
+        YELLOW = "\033[93m"
+        BOLD = "\033[1m"
+        RESET = "\033[0m"
+
+        # Show ClosedRoom Web UI URL
+        print(f"\n{BOLD}{GREEN}[★] ClosedRoom Web UI: {RESET}{BOLD}http://127.0.0.1:1236/{RESET}\n")
+
+        if llm_mode == "auto":
+            # Skip if already running (e.g. reload re-import)
+            if llm_status.get("pid"):
+                print(f"Local LLM: sidecar already running (pid={llm_status['pid']})")
+                return
+            print("Local LLM: mode is 'auto' → starting sidecar...")
+            logger.info("Local LLM: mode is 'auto' → starting sidecar...")
+            try:
+                result = runtime_services.start_llm()
+                base_url = result.get("base_url", "")
+                pid = result.get("pid")
+                print(f"{BOLD}{CYAN}[★] Local LLM Server UI: {RESET}{BOLD}{base_url}/{RESET}  (pid={pid})\n")
+                logger.info(f"Local LLM: sidecar started → {base_url} (pid={pid})")
+            except Exception as e:
+                print(f"{YELLOW}Local LLM: failed to start sidecar: {e}{RESET}")
+                logger.warning(f"Failed to start local LLM sidecar at startup: {e}")
+        elif llm_mode == "external":
+            ext_url = llm_status.get("url", "")
+            print(f"\n{BOLD}{CYAN}[★] External LLM Server: {RESET}{BOLD}{ext_url}/{RESET}\n")
+            logger.info(f"Local LLM: mode is 'external' (using configured URL: {ext_url})")
+        else:
+            print("Local LLM: disabled")
+            logger.info("Local LLM: disabled")
 
     catalog_store = CatalogStore(catalog_path)
     app.state.prompts_file = catalog_path.parent / "prompts.json" if temp_root in catalog_path.resolve().parents else None
@@ -184,6 +216,12 @@ def create_app(
 
     # Mount root static files at the end so it doesn't override API routes
     app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="root_static")
+
+    @app.on_event("shutdown")
+    def shutdown_event():
+        print("Stopping local LLM sidecar...")
+        logger.info("Stopping local LLM sidecar...")
+        runtime_services.shutdown()
 
     return app
 

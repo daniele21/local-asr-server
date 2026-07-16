@@ -114,6 +114,12 @@ def get_prompts_file() -> Path:
     return get_app_support_dir() / "prompts.json"
 
 
+def get_local_llm_params_file() -> Path:
+    """Return the path to ``local_llm_params.json`` (not created here)."""
+    return get_app_support_dir() / "local_llm_params.json"
+
+
+
 
 def get_runtime_state_file() -> Path:
     """Return the local runtime state file path."""

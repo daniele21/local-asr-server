@@ -17,6 +17,7 @@ import {
   localizeJobStep,
 } from '../utils/jobs';
 import { transcriptionHasWarnings } from '../utils/diagnostics';
+import { parseRecordingTranscriptionRoute } from '../utils/transcriptionRoute';
 
 interface TranscriptionPageProps {
   detailPath: string | null;
@@ -224,24 +225,31 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
   // Handle URL Preselections (e.g. from Recording detail action)
   useEffect(() => {
     if (demoMode) return;
+    let cancelled = false;
+
     if (detailPath) {
-      if (detailPath.startsWith('file-') || detailPath.startsWith('retranscribe-')) {
-        const recordingId = detailPath.startsWith('file-')
-          ? detailPath.replace('file-', '')
-          : detailPath.replace('retranscribe-', '');
+      const recordingRoute = parseRecordingTranscriptionRoute(detailPath);
+      if (recordingRoute) {
+        const recordingId = recordingRoute.recordingId;
         // Load recording details and select it
         ApiClient.getRecording(recordingId).then(async (rec: Recording) => {
-          setSelectedRecordingId(rec.id);
           // Fetch audio blob
           const blob = await ApiClient.recordingAudio(rec.id);
+          if (cancelled) return;
           const ext = rec.audio_file.split('.').pop() || 'webm';
           const fileObj = new File([blob], `${rec.title}.${ext}`, { type: rec.mime_type || blob.type });
-          
+
+          setSelectedRecordingId(rec.id);
           handleSelectAudioFile(fileObj);
-        }).catch(() => {});
+        }).catch((err: any) => {
+          if (cancelled) return;
+          setSelectedRecordingId(null);
+          showToast(t('transcription.preselectSourceError', { error: err?.message || String(err) }), 'error');
+        });
       } else {
         // It's a transcription ID, load and display results
         ApiClient.getTranscription(detailPath).then((tr) => {
+          if (cancelled) return;
           setTranscriptionResult(tr);
           setStep('results');
           if (tr.analysis) {
@@ -249,9 +257,16 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
           } else {
             setResultTab('text');
           }
-        }).catch(() => {});
+        }).catch((err: any) => {
+          if (cancelled) return;
+          showToast(t('transcription.preselectResultError', { error: err?.message || String(err) }), 'error');
+        });
       }
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, [demoMode, detailPath]);
 
   const handleSelectAudioFile = (file: File) => {

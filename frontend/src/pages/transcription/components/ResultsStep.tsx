@@ -10,6 +10,7 @@ import { useToast } from '../../../context/ToastContext';
 import { ProjectPromptModal } from '../../../components/ui/ProjectPromptModal';
 import { Badge } from '../../../components/ui/Badge';
 import { diagnosticWarnings, transcriptionDiagnostics, transcriptionHasWarnings } from '../../../utils/diagnostics';
+import { recordingTranscriptionRoute } from '../../../utils/transcriptionRoute';
 
 function energyLabel(energy?: string | null) {
   if (!energy) return null;
@@ -37,6 +38,7 @@ export default function ResultsStep({
 }: ResultsStepProps) {
   const { t, lang } = useTranslation();
   const { showToast } = useToast();
+  const recordingId = transcriptionResult.recording_id;
   const [isSplitting, setIsSplitting] = useState(false);
   const [projectName, setProjectName] = useState<string>('');
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
@@ -194,7 +196,7 @@ export default function ResultsStep({
               ✂️ {lang === 'it' ? 'Dividi' : 'Split'}
             </Button>
           )}
-          {transcriptionResult.recording_id && (
+          {recordingId && (
             <Button
               variant="ghost"
               onClick={() => {
@@ -202,7 +204,7 @@ export default function ResultsStep({
                   ? "Sei sicuro di voler trascrivere nuovamente questo audio? La nuova trascrizione sostituirà quella precedente nei risultati principali."
                   : "Are you sure you want to transcribe this audio again? The new transcription will replace the previous one in the main results.";
                 if (window.confirm(confirmText)) {
-                  navigateTo('transcription', `retranscribe-${transcriptionResult.recording_id}`);
+                  navigateTo('transcription', recordingTranscriptionRoute(recordingId, 'retranscribe'));
                 }
               }}
               disabled={isSplitting}
