@@ -92,6 +92,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
   const currentMicDbRef = useRef<number>(-120);
   const currentSysDbRef = useRef<number>(-120);
   const bcRef = useRef<BroadcastChannel | null>(null);
+  const visualCaptureLabelRef = useRef('');
 
   // Canvas Ref
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -274,8 +275,10 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
       signalLevel: '-∞ dB',
       signalLevelMic: '-∞ dB',
       signalLevelSystem: '-∞ dB',
-      progressText: t('recording.progressNone')
+      progressText: t('recording.progressNone'),
+      visualCaptureLabel: ''
     });
+    visualCaptureLabelRef.current = '';
 
     // Hide native overlay
     ApiClient.toggleOverlay(false).catch(() => {});
@@ -346,7 +349,8 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
           signalLevel: signalLevelRef.current,
           signalLevelMic: signalLevelMicRef.current,
           signalLevelSystem: signalLevelSystemRef.current,
-          progressText: progressTextRef.current
+          progressText: progressTextRef.current,
+          visualCaptureLabel: visualCaptureLabelRef.current
         });
       }
     };
@@ -399,7 +403,14 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     }
   };
 
-  const startRecording = useCallback(async (title: string, projectName = '', language = '', mode: 'both' | 'mic_only' | 'pc_only' = 'both', visualWindowId?: number) => {
+  const startRecording = useCallback(async (
+    title: string,
+    projectName = '',
+    language = '',
+    mode: 'both' | 'mic_only' | 'pc_only' = 'both',
+    visualWindowId?: number,
+    visualCaptureLabel = '',
+  ) => {
     if (!window.MediaRecorder || !navigator.mediaDevices?.getUserMedia) {
       showToast(t('recording.unsupportedBrowser'), 'error');
       return;
@@ -409,6 +420,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
     setFallbackNotice(null);
     setStatusText(t('recording.audioSetupTitle'));
     setStatusState('working');
+    visualCaptureLabelRef.current = visualWindowId !== undefined ? visualCaptureLabel : '';
     try {
       let capabilityCheckFailed = false;
       const capabilities = captureCapabilities || await ApiClient.captureCapabilities().catch(() => {
@@ -491,7 +503,8 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
                   signalLevel: signalLevelRef.current,
                   signalLevelMic: signalLevelMicRef.current,
                   signalLevelSystem: signalLevelSystemRef.current,
-                  progressText: progressTextRef.current
+                  progressText: progressTextRef.current,
+                  visualCaptureLabel: visualCaptureLabelRef.current
                 });
               }, 300);
 
@@ -783,7 +796,8 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
           signalLevel: signalLevelRef.current,
           signalLevelMic: signalLevelMicRef.current,
           signalLevelSystem: signalLevelSystemRef.current,
-          progressText: progressTextRef.current
+          progressText: progressTextRef.current,
+          visualCaptureLabel: visualCaptureLabelRef.current
         });
       }, 300);
 
@@ -806,6 +820,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
       setProgressText(t('recording.progressSaving'));
 
     } catch (error: any) {
+      visualCaptureLabelRef.current = '';
       releaseMedia();
       await restoreAudioRoute();
       setStatusText(t('common.error'));

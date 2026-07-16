@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BarChart3, ChevronDown, FolderKanban, Languages, Mic, Moon, Palette, PlayCircle, Settings, Sparkles, Sun } from 'lucide-react';
+import { BarChart3, ChevronDown, ExternalLink, FolderKanban, Languages, Mic, Moon, Palette, PlayCircle, Settings, Sparkles, Sun } from 'lucide-react';
 import { I18nProvider, useTranslation } from './i18n/i18n';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { ApiClient } from './api/apiClient';
@@ -29,6 +29,7 @@ function MainApp() {
   const [defaultModel, setDefaultModel] = useState('');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [moreOpen, setMoreOpen] = useState(false);
+  const [openingLocalLlmUi, setOpeningLocalLlmUi] = useState(false);
   const [routeDetail, setRouteDetail] = useState<string | null>(null);
   const [tourStep, setTourStep] = useState<TourStepId | null>(null);
   const [tourReturnHash, setTourReturnHash] = useState('');
@@ -63,6 +64,38 @@ function MainApp() {
       window.location.reload();
     } catch (err: any) {
       showToast(err.message || 'Error clearing mock data', 'error');
+    }
+  };
+
+  const openLocalLlmUi = async () => {
+    const popup = window.open('', 'ClosedRoomLocalLlmUi');
+    if (!popup) {
+      showToast(t('header.localLlmPopupBlocked'), 'warning');
+      return;
+    }
+
+    popup.opener = null;
+    setOpeningLocalLlmUi(true);
+
+    try {
+      let service = await ApiClient.getLlmService();
+      if (!service.url && service.mode === 'auto') {
+        service = await ApiClient.startLlmService();
+      }
+      if (!service.url) {
+        throw new Error(service.error || t('header.localLlmUnavailable'));
+      }
+
+      popup.location.replace(service.url);
+      popup.focus();
+    } catch (err) {
+      popup.close();
+      const message = err instanceof Error && err.message
+        ? err.message
+        : t('header.localLlmUnavailable');
+      showToast(message, 'error');
+    } finally {
+      setOpeningLocalLlmUi(false);
     }
   };
 
@@ -299,6 +332,21 @@ function MainApp() {
             <Mic className="w-4 h-4" />
             <span>{t('header.newMeeting')}</span>
           </Button>
+
+          {!isDemoActive && (
+            <Button
+              onClick={openLocalLlmUi}
+              variant="secondary"
+              size="md"
+              isLoading={openingLocalLlmUi}
+              title={t('header.localLlmUiTitle')}
+              aria-label={t('header.localLlmUiTitle')}
+              className="shrink-0"
+            >
+              {!openingLocalLlmUi && <ExternalLink className="h-4 w-4" />}
+              <span className="hidden xl:inline">{t('header.localLlmUi')}</span>
+            </Button>
+          )}
 
           {/* Server status */}
           {!isDemoActive && (

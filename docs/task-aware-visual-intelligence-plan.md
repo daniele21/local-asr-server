@@ -47,7 +47,7 @@ Al 14 luglio 2026 il repository possiede gia:
   minore o uguale a 2;
 - un unico prompt/schema per partecipanti e speaker attivo;
 - persistenza incrementale in `visual_observations.jsonl`, summary, metadata e
-  catalogo, seguita dal cleanup dei JPEG;
+  catalogo, preservando i JPEG come artefatti della registrazione;
 - mapping conservativo sui cluster provider tramite numero minimo di
   osservazioni e margine;
 - diagnostica di errori, degradazioni e fallback.

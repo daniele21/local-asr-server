@@ -82,6 +82,12 @@ from local_asr_server.runtime.models import (
     DEFAULT_LOCAL_LLM_PORT,
     LOCAL_SERVICE_HOST,
 )
+from local_asr_server.runtime.port_manager import (
+    PortInUseError,
+    clear_api_runtime,
+    prepare_api_port,
+    register_api_runtime,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -131,12 +137,8 @@ class _ServerThread(threading.Thread):
             self.ready.set()
             return
 
-        settings = load_settings()
-        recordings_dir = Path(settings.get("recordings_dir", f"~/Recordings/{APP_NAME}")).expanduser()
-
-
         app = create_app(
-            recordings_dir=recordings_dir,
+            recordings_dir=None,
         )
         self._app = app
         app.state.window_manager = self.app_instance.window_manager
@@ -230,18 +232,12 @@ def _select_app_port() -> int:
     )
 
     for port in candidate_ports:
-        status = _get_server_status(port)
-        if _is_reusable_server(status):
+        try:
+            prepare_api_port(port)
+            register_api_runtime(port)
             return port
-        if status:
-            logger.warning(
-                "Port %s is served by another ClosedRoom build (%s); trying another port.",
-                port,
-                status.get("bundle_display_name") or status.get("server") or "unknown",
-            )
-            continue
-        if not _is_port_open(port):
-            return port
+        except PortInUseError as exc:
+            logger.warning("%s Trying another port.", exc)
 
     raise RuntimeError("No available local port found for ClosedRoom.")
 
@@ -693,6 +689,7 @@ class ClosedRoomApp(rumps.App):
         self._status_timer.stop()
         self.window_manager.close()
         self._server_thread.stop()
+        clear_api_runtime(self.app_port)
         rumps.quit_application()
 
 

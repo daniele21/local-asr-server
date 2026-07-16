@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ApiClient, Recording, Transcription, VisualProcessingProgress } from '../api/apiClient';
+import { ApiClient, ASRTrackProgress, Recording, Transcription, VisualProcessingProgress } from '../api/apiClient';
 import { DEFAULTS } from '../api/config';
 import { useTranslation } from '../i18n/i18n';
 import { useToast } from '../context/ToastContext';
@@ -10,9 +10,12 @@ import ResultsStep from './transcription/components/ResultsStep';
 import { TourTranscriptionResult } from '../features/tour/TourTranscriptionResult';
 import { asrConfigFromSettings } from '../features/config/asrConfig';
 import {
+  formatASRTrackProgressLog,
+  formatASRTrackProgressStatus,
   formatVisualProgressLog,
   formatVisualProgressStatus,
   getTranscriptionActiveStep,
+  isASRTrackProgress,
   isVisualProcessingProgress,
   localizeJobStep,
 } from '../utils/jobs';
@@ -141,6 +144,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
   const [livePreviewText, setLivePreviewText] = useState('');
   const [elapsedTime, setElapsedTime] = useState('0.0s');
   const [visualProgress, setVisualProgress] = useState<VisualProcessingProgress | null>(null);
+  const [asrProgress, setASRProgress] = useState<ASRTrackProgress | null>(null);
 
   // Results State
   const [transcriptionResult, setTranscriptionResult] = useState<Transcription | null>(null);
@@ -152,6 +156,8 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
   const abortControllerRef = useRef<AbortController | null>(null);
   const timerIntervalRef = useRef<any>(null);
   const lastVisualProgressRef = useRef('');
+  const lastASRProgressRef = useRef('');
+  const lastJobStepRef = useRef('');
 
   const loadRecordings = async () => {
     try {
@@ -381,7 +387,10 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
     setLiveConsoleLines([]);
     setLivePreviewText('');
     setVisualProgress(null);
+    setASRProgress(null);
     lastVisualProgressRef.current = '';
+    lastASRProgressRef.current = '';
+    lastJobStepRef.current = '';
     setProgressPercent(0);
     setProgressStep('queued');
     setProgressStatus(t('transcription.preparing'));
@@ -417,8 +426,38 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
         while (!['completed', 'failed', 'cancelled'].includes(currentJob.status)) {
           setProgressPercent(currentJob.progress || 10);
           setProgressStep(currentJob.current_step || currentJob.status);
-          if (isVisualProcessingProgress(currentJob.progress_detail)) {
+          const currentStepName = currentJob.current_step || currentJob.status;
+          if (currentStepName !== lastJobStepRef.current) {
+            lastJobStepRef.current = currentStepName;
+            setLiveConsoleLines((previous) => [
+              ...previous,
+              t('transcription.jobStepLog', {
+                step: localizeJobStep(currentStepName, t),
+                progress: currentJob.progress || 0,
+              }),
+            ].slice(-500));
+          }
+          if (isASRTrackProgress(currentJob.progress_detail)) {
             const detail = currentJob.progress_detail;
+            setVisualProgress(null);
+            setASRProgress(detail);
+            setProgressStatus(formatASRTrackProgressStatus(detail, t));
+            const fingerprint = [
+              detail.track_id,
+              detail.track_index,
+              detail.processed_audio_seconds,
+              detail.track_percent,
+            ].join(':');
+            if (fingerprint !== lastASRProgressRef.current) {
+              lastASRProgressRef.current = fingerprint;
+              setLiveConsoleLines((previous) => [
+                ...previous,
+                formatASRTrackProgressLog(detail, t),
+              ].slice(-500));
+            }
+          } else if (isVisualProcessingProgress(currentJob.progress_detail)) {
+            const detail = currentJob.progress_detail;
+            setASRProgress(null);
             setVisualProgress(detail);
             setProgressStatus(formatVisualProgressStatus(detail, t));
             const fingerprint = [
@@ -437,6 +476,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
             }
           } else {
             setVisualProgress(null);
+            setASRProgress(null);
             setProgressStatus(localizeJobStep(currentJob.current_step || currentJob.status, t));
           }
           await new Promise((resolve) => setTimeout(resolve, 800));
@@ -673,6 +713,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
           liveConsoleLines={liveConsoleLines}
           elapsedTime={elapsedTime}
           visualProgress={visualProgress}
+          asrProgress={asrProgress}
         />
       )}
 
@@ -685,6 +726,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
           resultTab={resultTab}
           setResultTab={setResultTab}
           navigateTo={navigateTo}
+          onTranscriptionUpdated={setTranscriptionResult}
         />
       )}
     </div>

@@ -361,6 +361,20 @@ In development with reload, ClosedRoom uses a separate default port:
 http://127.0.0.1:1237
 ```
 
+Before binding its API port, ClosedRoom performs a singleton ownership check.
+Every previous verified ClosedRoom API process is terminated gracefully (and
+force-stopped only after a timeout), including orphan processes missing from
+the runtime state or using another development port. The requested port is then
+awaited until free, and the new process records its PID and port atomically in:
+
+```text
+~/Library/Application Support/ClosedRoom/runtime-state.json
+```
+
+Ports owned by unrelated applications are never terminated: startup fails
+explicitly or, in menu bar mode, tries another reserved ClosedRoom port.
+Normal, reload and menu bar modes are mutually exclusive API instances.
+
 ### 3. Start with a local downloaded model
 
 ```bash
@@ -446,9 +460,9 @@ to diarization and, when enabled, lists the
 shareable macOS windows and requires an explicit window selection; leaving the
 selector disabled records no images. A separate ScreenCaptureKit stream samples
 only that window at low frequency without changing the audio capture stream.
-Staged frames are private temporary data in the recording directory and are
-removed after processing, including failed Qwen runs. Only structured
-observations and a compact summary persist.
+Captured frames are private recording artifacts stored in the recording
+directory. They remain available after processing, including failed or repeated
+Qwen runs, together with the structured observations and compact summary.
 
 For controlled rollout, `visual_routing_mode=shadow` leaves the v1 Qwen calls
 and user-visible mapping unchanged while persisting explainable candidate and
@@ -497,10 +511,10 @@ A terminal visual run replaces its complete artifact set, so a later v1 run
 removes stale v2 documents and routing. Disabling the feature preserves the
 last completed generation; an enabled run with no frames records a coherent
 degraded result.
-Task-aware recovery retains a validated checkpoint and private frame staging
-for up to 24 hours. Terminal artifacts are staged under one generation ID and
-metadata/catalog updates happen last; incomplete mixed generations are not
-served by the API.
+Task-aware recovery retains a validated checkpoint for up to 24 hours, while
+captured frames remain part of the recording without a processing TTL.
+Terminal artifacts are staged under one generation ID and metadata/catalog
+updates happen last; incomplete mixed generations are not served by the API.
 The Meeting detail page loads this versioned document progressively and shows
 an observed timeline, expandable shared-content moments, and speaker mappings
 as accepted, needing review, or explicitly abstained. Raw tuning thresholds
@@ -596,6 +610,25 @@ The Today, meeting, recording, and project entry points all open the same guided
 transcription workflow. The recording is preselected, then the user reviews the
 provider and ASR options, follows the shared progress view, and reaches the same
 result and recovery states.
+
+During local-track analysis, recording jobs report the active microphone or
+system track, processed audio versus total duration, elapsed time and
+percentage. Nemotron and verbose Whisper timestamps drive a measured ETA;
+before the first timestamp the UI marks the estimate as calculating and keeps
+publishing heartbeat entries instead of appearing stuck.
+
+FluidAudio speaker clusters are rendered in the transcript even when visual
+speaker attribution is unavailable. ClosedRoom uses an accepted Qwen VL name
+when present, otherwise assigns stable `Speaker N` labels. The result view lets
+users rename every cluster later; saving a name updates both segments and the
+full-text export without rerunning ASR.
+
+The recordings directory shown in Settings is also the runtime storage source
+for CLI and menu-bar launches unless `--recordings-dir` is explicitly supplied.
+Older recordings under `~/Recordings/local-asr` remain readable. Captured
+meeting frames are available from the transcription result even after a visual
+backend failure, while Qwen VL's internal server receives a free dynamic port
+to prevent stale-process collisions.
 
 ### Transcribe uploaded audio
 
@@ -827,7 +860,8 @@ curl -b /tmp/closedroom.cookies \
 
 Frame sequence and meeting-relative timestamp must be monotonic. Each frame
 must be a JPEG no larger than 5 MB and can only be staged while the recording
-is active.
+is active. Captured JPEGs remain available with the recording until the
+recording itself is explicitly deleted.
 
 ### Runtime Service Status
 

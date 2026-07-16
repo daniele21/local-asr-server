@@ -18,6 +18,14 @@ class CliPortTests(unittest.TestCase):
         args = _build_parser().parse_args(["serve", "--reload", "--port", "1240"])
         self.assertEqual(_resolve_serve_port(args), 1240)
 
+    def test_recordings_directory_defaults_to_persisted_settings(self) -> None:
+        args = _build_parser().parse_args(["serve"])
+        self.assertIsNone(args.recordings_dir)
+
+    def test_recordings_directory_can_be_explicitly_overridden(self) -> None:
+        args = _build_parser().parse_args(["serve", "--recordings-dir", "/tmp/closedroom"])
+        self.assertEqual(args.recordings_dir, "/tmp/closedroom")
+
 
 if __name__ == "__main__":
     unittest.main()

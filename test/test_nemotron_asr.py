@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 import types
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from unittest.mock import Mock, patch
 
 from local_asr_server.asr_models import NEMOTRON_BACKEND, NEMOTRON_STREAMING_MODEL
@@ -22,9 +24,10 @@ class NemotronASRTests(unittest.TestCase):
         stt.load = Mock(return_value=model)
         package = types.ModuleType("mlx_audio")
 
-        with patch.dict(sys.modules, {"mlx_audio": package, "mlx_audio.stt": stt}), patch(
-            "local_asr_server.transcriber.resolve_model", side_effect=lambda value: value
-        ):
+        output = StringIO()
+        with redirect_stdout(output), patch.dict(
+            sys.modules, {"mlx_audio": package, "mlx_audio.stt": stt}
+        ), patch("local_asr_server.transcriber.resolve_model", side_effect=lambda value: value):
             result = _transcribe(
                 audio_path="/tmp/audio.wav", model=NEMOTRON_STREAMING_MODEL,
                 language="it", task="transcribe", word_timestamps=False,
@@ -37,6 +40,7 @@ class NemotronASRTests(unittest.TestCase):
         self.assertEqual(result["text"], "Ciao dal modello")
         self.assertEqual(result["segments"], [{"id": 0, "start": 1.25, "end": 2.5, "text": "Ciao dal modello"}])
         self.assertEqual(result["metadata"]["backend"], NEMOTRON_BACKEND)
+        self.assertIn("ASR_PROGRESS:2.500", output.getvalue())
 
     def test_nemotron_empty_stream_returns_empty_transcription(self) -> None:
         model = Mock()

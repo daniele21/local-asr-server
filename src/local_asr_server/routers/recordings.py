@@ -93,6 +93,37 @@ async def append_visual_frame(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@router.get("/v1/recordings/{recording_id}/visual-frames")
+def list_visual_frames(recording_id: str, request: Request):
+    try:
+        frames = get_services(request.app).recordings.list_visual_frames(recording_id)
+        return {
+            "items": [
+                {
+                    "sequence": int(frame["sequence"]),
+                    "timestamp": float(frame["timestamp"]),
+                    "url": f"/v1/recordings/{recording_id}/visual-frames/{int(frame['sequence'])}",
+                }
+                for frame in frames
+            ],
+            "total": len(frames),
+        }
+    except RecordingNotFound as exc:
+        raise HTTPException(status_code=404, detail="Recording not found") from exc
+
+
+@router.get("/v1/recordings/{recording_id}/visual-frames/{sequence}")
+def get_visual_frame(recording_id: str, sequence: int, request: Request):
+    try:
+        frames = get_services(request.app).recordings.list_visual_frames(recording_id)
+        frame = next((item for item in frames if int(item["sequence"]) == sequence), None)
+        if frame is None:
+            raise HTTPException(status_code=404, detail="Visual frame not found")
+        return FileResponse(Path(frame["path"]), media_type="image/jpeg")
+    except RecordingNotFound as exc:
+        raise HTTPException(status_code=404, detail="Recording not found") from exc
+
+
 @router.get("/v1/recordings/{recording_id}/visual-intelligence")
 def get_visual_intelligence(recording_id: str, request: Request):
     try:

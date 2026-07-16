@@ -353,7 +353,7 @@ CORS non è aperto implicitamente: le origin ammesse provengono da configurazion
 ├── intelligence.json                  # metriche conversazionali
 ├── visual_observations.jsonl          # evidenze Qwen strutturate
 ├── visual_summary.json                # summary visual intelligence
-└── .visual-staging/                    # JPEG temporanei; retry backend, TTL 24h
+└── .visual-staging/                    # JPEG persistenti della registrazione
 ```
 
 Durante l'upload browser vengono usati file parziali. La finalizzazione rende
@@ -456,13 +456,14 @@ supera `speaker_diarization_minimum_overlap`. Il valore assegnato ha forma
 4. accetta solo nomi e indicatori visibili, senza face recognition;
 5. persiste osservazioni e summary;
 6. applica un mapping conservativo solo a cluster speaker già esistenti;
-7. elimina i JPEG dopo un esito terminale normale.
+7. conserva i JPEG come artefatti della registrazione per consultazione e retry.
 
 Dopo tre errori infrastrutturali consecutivi dal backend visuale, un circuit
 breaker interrompe le richieste residue, marca il checkpoint come
 `retryable_failure` e conserva lo staging. Il successivo avvio non riusa dalla
-cache l'arricchimento fallito e può ritentare gli stessi frame; se il retry non
-avviene, il cleanup centralizzato elimina checkpoint e JPEG dopo 24 ore. Gli
+cache l'arricchimento fallito e può ritentare gli stessi frame. Il cleanup
+centralizzato elimina dopo 24 ore soltanto checkpoint e staging della
+generazione incompleta, senza cancellare i JPEG catturati. Gli
 errori di validazione di singole risposte restano invece degradazioni locali e
 non aprono il circuit breaker.
 
@@ -489,11 +490,13 @@ Durante il processing v2, `visual_processing_checkpoint.json` conserva soltanto
 il fingerprint della configurazione/candidati, la versione prompt e il tempo di
 aggiornamento. Le osservazioni indipendenti già
 scritte in JSONL vengono riusate dopo un arresto di processo con fingerprint
-identico; a completamento checkpoint e JPEG di staging vengono eliminati. I
+identico; a completamento viene eliminato il checkpoint, mentre i JPEG restano
+associati alla registrazione. I
 `semantic_links` persistono solo ID e intervalli dei segmenti, non una seconda
 copia del testo o delle label speaker.
-Checkpoint e staging recuperabili hanno retention centralizzata di 24 ore e
-sono ripuliti da `RecordingStore` all'avvio. Gli artefatti terminali vengono
+Checkpoint e staging di generazione recuperabili hanno retention centralizzata
+di 24 ore e sono ripuliti da `RecordingStore` all'avvio; i frame catturati non
+scadono. Gli artefatti terminali vengono
 prima scritti in `.visual-generation-staging/<generation_id>` e poi promossi;
 summary, documento, routing e metadata condividono lo stesso `generation_id`.
 Metadata e catalogo sono aggiornati per ultimi, e le API rifiutano generazioni
@@ -666,7 +669,7 @@ mano. `static_vanilla_backup/` è una copia legacy, non la superficie runtime.
 - cambio configurazione LLM provoca restart controllato del sidecar;
 - diarizzazione, Qwen e audio intelligence salvano errore/stato ma non bloccano
   il transcript;
-- lo staging visuale viene eliminato nel blocco `finally`;
+- i checkpoint visuali terminali vengono chiusi senza eliminare i frame;
 - scritture settings e principali JSON di registrazione usano file temporaneo e
   `os.replace`.
 
@@ -681,7 +684,7 @@ mano. `static_vanilla_backup/` è una copia legacy, non la superficie runtime.
 - secret rimossi dalle risposte e dai metadata;
 - hash delle credenziali, non credenziali, nelle cache key;
 - selezione esplicita della finestra per acquisizione visuale;
-- frame visuali temporanei e cleanup post-processing;
+- frame visuali persistenti nella directory privata della registrazione;
 - bundle helper con usage description macOS e code signing.
 
 ### Assunzioni

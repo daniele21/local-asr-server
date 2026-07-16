@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
+from pydantic import BaseModel, Field
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
 from local_asr_server.recordings import RecordingConflict, RecordingNotFound
@@ -43,6 +44,10 @@ from local_asr_server.asr_provider import ASR_PROVIDER_LOCAL
 logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter()
+
+
+class SpeakerNamesRequest(BaseModel):
+    names: dict[str, str] = Field(default_factory=dict)
 
 
 def _get_transcribe_file_sync():
@@ -647,6 +652,21 @@ def delete_transcription(transcription_id: str, request: Request):
     if not success:
         raise HTTPException(status_code=404, detail="Transcription not found")
     return {"ok": True}
+
+
+@router.patch("/v1/transcriptions/{transcription_id}/speakers")
+def update_transcription_speakers(
+    transcription_id: str,
+    body: SpeakerNamesRequest,
+    request: Request,
+):
+    try:
+        return get_services(request.app).transcriptions.update_speaker_names(
+            transcription_id,
+            body.names,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/v1/transcriptions/{transcription_id}/split")

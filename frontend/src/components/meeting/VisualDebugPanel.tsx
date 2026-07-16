@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { ApiClient } from '../../api/apiClient';
 import { useTranslation } from '../../i18n/i18n';
 import { 
-  Terminal, ShieldAlert, CheckCircle2, AlertTriangle, Cpu, ListFilter, 
-  Search, Eye, Clock, Image as ImageIcon, ChevronRight, ChevronLeft
+  Terminal, ShieldAlert, CheckCircle2, AlertTriangle, Cpu, ListFilter,
+  Clock, Image as ImageIcon
 } from 'lucide-react';
 import { Badge } from '../ui/Badge';
 
@@ -17,7 +17,7 @@ function timestamp(value: number): string {
 }
 
 export function VisualDebugPanel({ recordingId }: Props) {
-  const { t, lang } = useTranslation();
+  const { lang } = useTranslation();
   const [activeTab, setActiveTab] = useState<'overview' | 'candidates' | 'detail' | 'timeline'>('overview');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +63,7 @@ export function VisualDebugPanel({ recordingId }: Props) {
 
   if (!debugData) return null;
 
-  const { run_config, metrics, result, traces, candidates, observations, pagination } = debugData;
+  const { run_config, metrics, traces, candidates, observations } = debugData;
 
   // Map candidates with traces to find decisions/outcomes
   const candidatesWithDetails = (candidates || []).map((cand: any) => {

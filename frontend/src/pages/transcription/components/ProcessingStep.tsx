@@ -1,7 +1,7 @@
 import { Card } from '../../../components/ui/Card';
 import { TaskProcessingLoader } from '../../../components/workspace/TaskProcessingLoader';
 import { useTranslation } from '../../../i18n/i18n';
-import type { VisualProcessingProgress } from '../../../api/apiClient';
+import type { ASRTrackProgress, VisualProcessingProgress } from '../../../api/apiClient';
 import { CheckCircle2, ChevronDown, Circle, Loader2 } from 'lucide-react';
 import { formatVisualEta, getTranscriptionFinalizationSteps } from '../../../utils/jobs';
 
@@ -14,6 +14,7 @@ interface ProcessingStepProps {
   liveConsoleLines: string[];
   elapsedTime: string;
   visualProgress: VisualProcessingProgress | null;
+  asrProgress: ASRTrackProgress | null;
 }
 
 export default function ProcessingStep({
@@ -25,15 +26,31 @@ export default function ProcessingStep({
   liveConsoleLines,
   elapsedTime,
   visualProgress,
+  asrProgress,
 }: ProcessingStepProps) {
   const { t } = useTranslation();
-  const steps = [
-    t('workspace.loaderTranscriptionStep1'),
-    t('workspace.loaderTranscriptionStep2'),
-    t('workspace.loaderTranscriptionStep3'),
-    t('workspace.loaderTranscriptionStep4'),
-    t('workspace.loaderTranscriptionStep5'),
-  ];
+  const boundaries = [[0, 20], [20, 45], [45, 82], [82, 95], [95, 100]];
+  const currentBoundary = boundaries[activeStep] || boundaries[0];
+  const defaultStepProgress = Math.max(
+    0,
+    Math.min(100, ((progressPercent - currentBoundary[0]) / (currentBoundary[1] - currentBoundary[0])) * 100),
+  );
+  const measuredStepProgress = asrProgress && (activeStep === 1 || activeStep === 2)
+    ? asrProgress.track_percent
+    : visualProgress && activeStep === 4 && visualProgress.total > 0
+      ? (visualProgress.processed / visualProgress.total) * 100
+      : defaultStepProgress;
+  const activeEta = asrProgress && (activeStep === 1 || activeStep === 2)
+    ? t('workspace.loaderStepEta', { eta: formatVisualEta(asrProgress.eta_seconds, t) })
+    : visualProgress && activeStep === 4
+      ? t('workspace.loaderStepEta', { eta: formatVisualEta(visualProgress.eta_seconds, t) })
+      : t('workspace.loaderStepEtaUnavailable');
+  const steps = [1, 2, 3, 4, 5].map((number, index) => ({
+    label: t(`workspace.loaderTranscriptionStep${number}`),
+    objective: t(`workspace.loaderTranscriptionStep${number}Objective`),
+    progress: index === activeStep ? measuredStepProgress : undefined,
+    eta: index === activeStep ? activeEta : undefined,
+  }));
   const finalizationSteps = getTranscriptionFinalizationSteps(currentStep, t);
   const activeFinalizationStep = finalizationSteps.find((item) => item.status === 'active');
 

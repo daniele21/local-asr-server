@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import signal
 import shutil
 import socket
 import subprocess
@@ -187,15 +189,22 @@ class LocalLLMSidecar:
                 "local-llm-server non è installato o non è importabile.",
                 503,
             )
+        self._terminate_stale_vision_workers()
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
         self._port = self._select_port()
-        cmd = self._build_command(port=self._port, **config.__dict__)
+        vision_port = self._select_port()
+        cmd = self._build_command(port=self._port, vision_port=vision_port, **config.__dict__)
         try:
             import logging
             logger = logging.getLogger("uvicorn.error")
             logger.info(f"Starting local LLM server on port {self._port} (model: {model})")
             log_handle = self.log_file.open("ab")
-            self._process = subprocess.Popen(cmd, stdout=log_handle, stderr=subprocess.STDOUT)
+            self._process = subprocess.Popen(
+                cmd,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
             self._started_at = time.time()
             self._last_error = None
             self._process_config = config
@@ -209,11 +218,17 @@ class LocalLLMSidecar:
         if process is None:
             return {"stopped": True}
         if process.poll() is None:
-            process.terminate()
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                process.terminate()
             try:
                 process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
-                process.kill()
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    process.kill()
                 process.wait(timeout=timeout)
         self._process = None
         self._port = None
@@ -263,6 +278,40 @@ class LocalLLMSidecar:
         return bool(shutil.which("local-llm-server")) or importlib.util.find_spec("local_llm_server") is not None
 
     @staticmethod
+    def _terminate_stale_vision_workers() -> None:
+        """Clean up orphaned mlx_vlm.server children left by an unclean sidecar stop."""
+        try:
+            found = subprocess.run(
+                ["pgrep", "-f", "mlx_vlm.server"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return
+        for value in found.stdout.split():
+            try:
+                pid = int(value)
+            except ValueError:
+                continue
+            if pid == os.getpid():
+                continue
+            try:
+                command = subprocess.run(
+                    ["ps", "-p", str(pid), "-o", "command="],
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                    check=False,
+                ).stdout
+                if "-m mlx_vlm.server" not in command:
+                    continue
+                os.kill(pid, signal.SIGTERM)
+            except (OSError, subprocess.SubprocessError):
+                continue
+
+    @staticmethod
     def _vision_runtime_available() -> bool:
         return importlib.util.find_spec("mlx_vlm") is not None
 
@@ -277,10 +326,13 @@ class LocalLLMSidecar:
         startup_timeout: int | None,
         llama_server_bin: str,
         port: int,
+        vision_port: int | None = None,
     ) -> list[str]:
         binary = shutil.which("local-llm-server")
         cmd = [binary, "serve"] if binary else [sys.executable, "-m", "local_llm_server", "serve"]
         cmd.extend(["--host", self.host, "--port", str(port), "--enable-admin-api"])
+        if vision_port is not None:
+            cmd.extend(["--mlx-vlm-server-port", str(vision_port)])
         from local_asr_server.settings import load_settings
         settings = load_settings()
         visual_model = settings.get("visual_llm_model") or "qwen3-vl-4b"

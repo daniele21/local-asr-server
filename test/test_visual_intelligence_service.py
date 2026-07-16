@@ -510,7 +510,7 @@ class VisualIntelligenceTests(unittest.TestCase):
             v2 = store.get_visual_intelligence_v2(recording["id"])
             self.assertEqual(v2["schema_version"], 2)
             self.assertEqual(v2["document"], persisted["document"])
-            self.assertEqual(store.list_visual_frames(recording["id"]), [])
+            self.assertEqual(len(store.list_visual_frames(recording["id"])), 3)
 
     def test_v2_progressive_ocr_bypasses_qwen_for_known_speaker_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -706,7 +706,7 @@ class VisualIntelligenceTests(unittest.TestCase):
             self.assertEqual(result["stats"]["visual_intelligence"]["resumed_observation_count"], 1)
             self.assertEqual(len(store.get_visual_intelligence_v2(recording["id"])["document"]["observations"]), 3)
             self.assertFalse((session_dir / VISUAL_PROCESSING_CHECKPOINT).exists())
-            self.assertEqual(store.list_visual_frames(recording["id"]), [])
+            self.assertEqual(len(store.list_visual_frames(recording["id"])), 1)
 
     def test_recovery_rejects_invalid_observations_and_expired_staging(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -714,6 +714,9 @@ class VisualIntelligenceTests(unittest.TestCase):
             store = RecordingStore(root, use_settings_dir=False)
             recording = store.create(
                 title="Recovery", mime_type="audio/wav", model="test", language="it",
+            )
+            store.stage_visual_frame(
+                recording["id"], 0, 0.0, self._jpeg("blue", pattern=True),
             )
             store.begin_visual_processing(recording["id"], "fingerprint", prompt_version=3)
             store.append_visual_observation(recording["id"], {
@@ -736,6 +739,7 @@ class VisualIntelligenceTests(unittest.TestCase):
             os.utime(checkpoint, (old, old))
             self.assertEqual(store.cleanup_orphaned_visual_processing(now=checkpoint.stat().st_mtime + VISUAL_RECOVERY_TTL_SECONDS + 1), 1)
             self.assertFalse(checkpoint.exists())
+            self.assertEqual(len(store.list_visual_frames(recording["id"])), 1)
 
     def test_visual_generation_is_shared_and_partial_promotion_is_hidden(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -872,7 +876,7 @@ class VisualIntelligenceTests(unittest.TestCase):
             self.assertEqual(outcome["requested_routing_mode"], "shadow")
             self.assertEqual(outcome["routing_mode"], "v1")
             self.assertEqual(outcome["fallback_reason"], "task_aware_router_failed")
-            self.assertEqual(store.list_visual_frames(recording["id"]), [])
+            self.assertEqual(len(store.list_visual_frames(recording["id"])), 2)
 
     def test_enabled_visual_intelligence_without_frames_is_explicitly_degraded(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -918,7 +922,7 @@ class VisualIntelligenceTests(unittest.TestCase):
         self.assertNotIn("speaker_name", result["segments"][0])
         self.assertEqual(result["segments"][1]["speaker_name"], "Salvo")
 
-    def test_post_meeting_processing_persists_observations_and_removes_frames(self) -> None:
+    def test_post_meeting_processing_persists_observations_and_frames(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             store = RecordingStore(root, use_settings_dir=False, catalog=CatalogStore(root / "catalog.db"))
@@ -950,7 +954,7 @@ class VisualIntelligenceTests(unittest.TestCase):
             self.assertEqual(len(client.calls), 3)
             self.assertNotIn("response_format", client.calls[0]["kwargs"])
             self.assertIn("Salvo: Ciao", result["text"])
-            self.assertEqual(store.list_visual_frames(recording["id"]), [])
+            self.assertEqual(len(store.list_visual_frames(recording["id"])), 3)
             persisted = store.get_visual_intelligence(recording["id"])
             self.assertEqual(persisted["summary"]["observation_count"], 3)
             self.assertEqual(len(persisted["observations"]), 3)
@@ -1037,7 +1041,7 @@ class VisualIntelligenceTests(unittest.TestCase):
                         {"segments": [], "stats": {}},
                     )
                 self.assertEqual(result["stats"]["visual_intelligence"]["status"], expected)
-                self.assertEqual(store.list_visual_frames(recording["id"]), [])
+                self.assertEqual(len(store.list_visual_frames(recording["id"])), 2)
 
     def test_backend_circuit_breaker_preserves_frames_for_retry(self) -> None:
         class UnavailableClient:
@@ -1104,7 +1108,7 @@ class VisualIntelligenceTests(unittest.TestCase):
                 )
 
             self.assertEqual(recovered["stats"]["visual_intelligence"]["status"], "completed")
-            self.assertEqual(store.list_visual_frames(recording["id"]), [])
+            self.assertEqual(len(store.list_visual_frames(recording["id"])), 5)
             self.assertFalse(checkpoint.exists())
 
     def test_frame_deduplication_skips_identical_frames(self) -> None:

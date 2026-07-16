@@ -253,6 +253,7 @@ def _transcribe(
     logprob_threshold: float | None = DEFAULT_LOGPROB_THRESHOLD,
     no_speech_threshold: float | None = DEFAULT_NO_SPEECH_THRESHOLD,
     hallucination_silence_threshold: float | None = None,
+    audio_duration_seconds: float | None = None,
 ) -> dict:
     """Run the selected ASR runtime while preserving the shared result shape."""
     if is_nemotron_model(model):
@@ -270,7 +271,10 @@ def _transcribe(
             audio_path,
             language=nemotron_language,
         ):
-            pass
+            sentences = getattr(generated, "sentences", []) or []
+            if sentences:
+                processed = max(float(sentence.end) for sentence in sentences)
+                print(f"ASR_PROGRESS:{processed:.3f}")
         if generated is None:
             return {
                 "text": "",
@@ -539,6 +543,7 @@ def transcribe_file_sync(
     verbose: Optional[bool] = None,
     vad_guided: bool = VAD_GUIDED_DEFAULT,
     vad_post_filter: bool = VAD_POST_FILTER_DEFAULT,
+    audio_duration_seconds: float | None = None,
 ) -> dict:
     """Run transcription synchronously for the given file."""
     if vad_guided:
@@ -564,6 +569,7 @@ def transcribe_file_sync(
         temperature=temperature,
         condition_on_previous_text=condition_on_previous_text,
         verbose=verbose,
+        audio_duration_seconds=audio_duration_seconds,
     )
     return _postprocess_full_track_result(audio_path, result, vad_post_filter=vad_post_filter)
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -23,6 +25,26 @@ class RecordingStoreTests(unittest.TestCase):
             model="test-model",
             language="it",
         )
+
+    def test_atomic_json_writes_use_independent_temporary_files(self) -> None:
+        target = self.root / "state.json"
+        errors = []
+
+        def write(index: int) -> None:
+            try:
+                self.store._write_json_atomic(target, {"index": index})
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=write, args=(index,)) for index in range(12)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(errors, [])
+        self.assertIn(json.loads(target.read_text())["index"], range(12))
+        self.assertEqual(list(self.root.glob(".*.tmp")), [])
 
     def test_persists_chunks_in_order_and_finalizes_audio(self) -> None:
         recording = self.create_recording()

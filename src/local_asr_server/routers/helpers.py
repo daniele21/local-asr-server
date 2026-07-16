@@ -8,6 +8,7 @@ from typing import Any, TYPE_CHECKING
 from local_asr_server.transcription_quality import dedupe_cross_track_segments
 from local_asr_server.asr_models import get_asr_backend
 from local_asr_server.asr_provider import ASR_PROVIDER_LOCAL, public_asr_metadata
+from local_asr_server.speaker_labels import apply_speaker_labels
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -83,7 +84,7 @@ def _merge_track_transcriptions(
     if backend:
         asr_metadata["backend"] = backend
 
-    return {
+    return apply_speaker_labels({
         "text": "\n".join(text_lines),
         "language": ", ".join(languages) if languages else (language or "it"),
         "segments": segments,
@@ -99,7 +100,7 @@ def _merge_track_transcriptions(
             "cross_track_deduplication_enabled": True,
             **asr_metadata,
         },
-    }
+    })
 
 
 def _build_projects(app: FastAPI) -> dict:

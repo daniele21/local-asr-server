@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Final, Protocol
+from typing import Any, Callable, Final, Protocol
 
 from local_asr_server.asr_models import get_asr_backend
 from local_asr_server.env import get_env_var
@@ -42,6 +42,8 @@ class ASRRequest:
     provider: str = ASR_PROVIDER_LOCAL
     provider_options: dict[str, Any] = field(default_factory=dict)
     job: Any = None
+    progress_callback: Callable[[dict[str, Any]], None] | None = None
+    audio_duration_seconds: float | None = None
 
 
 class ASRProvider(Protocol):
@@ -70,6 +72,8 @@ class LocalMlxASRProvider:
                 vad_guided=request.vad_guided,
                 vad_post_filter=request.vad_post_filter,
                 job=request.job,
+                progress_callback=request.progress_callback,
+                audio_duration_seconds=request.audio_duration_seconds,
             )
             payload = dict(result or {})
             payload.setdefault("model", request.model)

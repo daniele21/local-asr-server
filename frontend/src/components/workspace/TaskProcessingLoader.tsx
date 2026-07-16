@@ -4,12 +4,19 @@ import { cn } from '../../utils/cn';
 export interface TaskProcessingLoaderProps {
   title: string;
   description: string;
-  steps: string[];
+  steps: Array<string | TaskProcessingStep>;
   activeStep?: number;
   progress?: number;
   variant?: 'transcription' | 'analysis' | 'project';
   compact?: boolean;
   helperText?: string;
+}
+
+export interface TaskProcessingStep {
+  label: string;
+  objective: string;
+  progress?: number;
+  eta?: string;
 }
 
 const variantTone = {
@@ -71,13 +78,17 @@ export function TaskProcessingLoader({
 
           <ol className={cn('stagger-list mt-5 grid gap-2', compact ? 'grid-cols-1' : 'sm:grid-cols-2')}>
             {steps.map((step, index) => {
+              const item = typeof step === 'string' ? { label: step, objective: '' } : step;
               const completed = index < safeActiveStep;
               const active = index === safeActiveStep;
+              const stepProgress = completed ? 100 : active
+                ? Math.max(0, Math.min(100, item.progress ?? 0))
+                : 0;
               return (
                 <li
-                  key={step}
+                  key={item.label}
                   className={cn(
-                    'flex items-center gap-2 rounded-xl border px-3 py-2 text-xs transition-premium',
+                    'flex items-start gap-2 rounded-xl border px-3 py-3 text-xs transition-premium',
                     completed && 'border-success/25 bg-success/10 text-success',
                     active && 'border-accent/45 bg-accent/10 text-text-primary shadow-[0_0_24px_var(--accent-glow)]',
                     !completed && !active && 'border-border-subtle bg-bg-glass text-text-muted'
@@ -90,7 +101,32 @@ export function TaskProcessingLoader({
                   ) : (
                     <Circle className="h-4 w-4 shrink-0" />
                   )}
-                  <span className="min-w-0 truncate">{step}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-medium">{item.label}</span>
+                      <span className="shrink-0 font-mono text-[10px]">
+                        {completed ? '100%' : active ? `${Math.round(stepProgress)}%` : '0%'}
+                      </span>
+                    </div>
+                    {item.objective && (
+                      <p className="mt-1 text-[11px] leading-relaxed text-text-secondary">
+                        {item.objective}
+                      </p>
+                    )}
+                    {active && (
+                      <>
+                        <div className="mt-2 h-1 overflow-hidden rounded-full bg-bg-surface">
+                          <div
+                            className="primary-gradient-surface h-full rounded-full transition-all duration-300"
+                            style={{ width: `${stepProgress}%` }}
+                          />
+                        </div>
+                        {item.eta && (
+                          <p className="mt-1.5 text-[10px] font-medium text-text-muted">{item.eta}</p>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </li>
               );
             })}

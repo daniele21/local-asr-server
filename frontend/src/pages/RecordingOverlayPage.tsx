@@ -14,6 +14,7 @@ export default function RecordingOverlayPage() {
   const [title, setTitle] = useState('');
   const [captureBackend, setCaptureBackend] = useState<'browser' | 'native'>('browser');
   const [captureMode, setCaptureMode] = useState<string>('both');
+  const [visualCaptureLabel, setVisualCaptureLabel] = useState('');
   const [bytesWritten, setBytesWritten] = useState(0);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -71,6 +72,7 @@ export default function RecordingOverlayPage() {
         setTimer(data.timer);
         setSignalLevelMic(data.signalLevelMic || '-∞ dB');
         setSignalLevelSystem(data.signalLevelSystem || '-∞ dB');
+        setVisualCaptureLabel(data.visualCaptureLabel || '');
 
         // Auto-close browser popup after a short delay when recording completes
         if (!data.isRecording && window.name === 'ClosedRoomOverlay') {
@@ -314,6 +316,16 @@ export default function RecordingOverlayPage() {
             <div className="col-span-2 font-medium truncate text-white border-b border-white/5 pb-1 mb-1">
               🎙️ {title || t('recording.noActiveRecording') || 'Nessuna registrazione attiva'}
             </div>
+            {visualCaptureLabel && (
+              <div
+                className="col-span-2 flex items-center gap-1.5 rounded-md border border-cyan-300/25 bg-cyan-300/10 px-2 py-1 text-cyan-100"
+                title={visualCaptureLabel}
+              >
+                <span aria-hidden="true">◉</span>
+                <span className="shrink-0 font-semibold">{t('recording.visualCaptureActive')}:</span>
+                <span className="truncate">{visualCaptureLabel}</span>
+              </div>
+            )}
             <div>
               <span className="opacity-50">Backend:</span> <span className="font-semibold text-white/90 capitalize">{captureBackend}</span>
             </div>
@@ -339,15 +351,27 @@ export default function RecordingOverlayPage() {
           </div>
         ) : (
           // Compact view
-          <div className="text-[11px] text-white/80 truncate font-medium flex items-center justify-between">
-            <span className="truncate pr-2">
-              {isStopping 
-                ? t('recording.finalizing') || 'Terminazione...' 
-                : isRecording 
-                ? `${t('recording.statusRecording').replace('...', '')}: ${title || t('recording.noActiveRecording')}` 
-                : t('recording.statusReady') || 'In attesa...'}
-            </span>
-            {errorMsg && <span className="text-red-400 text-[9px] shrink-0 font-semibold">⚠️ Errore</span>}
+          <div className="flex min-w-0 flex-col gap-1 text-[11px] font-medium text-white/80">
+            <div className="flex min-w-0 items-center justify-between">
+              <span className="truncate pr-2">
+                {isStopping
+                  ? t('recording.finalizing') || 'Terminazione...'
+                  : isRecording
+                  ? `${t('recording.statusRecording').replace('...', '')}: ${title || t('recording.noActiveRecording')}`
+                  : t('recording.statusReady') || 'In attesa...'}
+              </span>
+              {errorMsg && <span className="text-red-400 text-[9px] shrink-0 font-semibold">⚠️ Errore</span>}
+            </div>
+            {visualCaptureLabel && (
+              <div
+                className="flex min-w-0 items-center gap-1 rounded border border-cyan-300/20 bg-cyan-300/10 px-1.5 py-0.5 text-[9px] text-cyan-100"
+                title={visualCaptureLabel}
+              >
+                <span className="shrink-0" aria-hidden="true">◉</span>
+                <span className="shrink-0 font-semibold">{t('recording.visualCaptureActive')}:</span>
+                <span className="truncate">{visualCaptureLabel}</span>
+              </div>
+            )}
           </div>
         )}
       </div>

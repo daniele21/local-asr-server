@@ -108,7 +108,6 @@ class PostMeetingVisualService:
             return payload
         if not settings.get("visual_intelligence_enabled"):
             services.recordings.finish_visual_processing(recording_id)
-            services.recordings.cleanup_visual_frames(recording_id)
             return payload
         model = str(settings.get("visual_llm_model") or "qwen3-vl-4b")
         routing_mode = requested_routing_mode
@@ -370,7 +369,6 @@ class PostMeetingVisualService:
         finally:
             if not preserve_staging:
                 services.recordings.finish_visual_processing(recording_id)
-                services.recordings.cleanup_visual_frames(recording_id)
 
     def _process_v2(
         self, services, recording_id, payload, frames, candidates, routing_summary, *, model,
@@ -783,7 +781,6 @@ class PostMeetingVisualService:
                 pass
             if completed:
                 services.recordings.finish_visual_processing(recording_id)
-                services.recordings.cleanup_visual_frames(recording_id)
 
     @staticmethod
     def save_preview(image_path: Path, preview_path: Path, roi: tuple[float, float, float, float] | None = None) -> None:

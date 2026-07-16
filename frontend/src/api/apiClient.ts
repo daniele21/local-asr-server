@@ -141,7 +141,7 @@ export interface TranscriptionJob {
   status: string;
   current_step: string;
   progress: number;
-  progress_detail?: VisualProcessingProgress | Record<string, unknown> | null;
+  progress_detail?: VisualProcessingProgress | ASRTrackProgress | Record<string, unknown> | null;
   error?: string | null;
   result?: any;
   created_at: number;
@@ -170,6 +170,21 @@ export interface VisualProcessingProgress {
   task?: string | null;
   trigger?: string | null;
   decision?: string | null;
+}
+
+export interface ASRTrackProgress {
+  schema_version: number;
+  kind: 'asr_track_progress';
+  phase: string;
+  track_id?: string | null;
+  track_label?: string | null;
+  track_index: number;
+  track_count: number;
+  processed_audio_seconds: number;
+  audio_duration_seconds?: number | null;
+  track_percent: number;
+  elapsed_seconds: number;
+  eta_seconds?: number | null;
 }
 
 export interface AnalysisJobCreated {
@@ -294,6 +309,8 @@ export interface TranscriptionSegment {
   source?: 'mixed' | 'mic' | 'system';
   channel?: 'mixed' | 'mic' | 'system' | string;
   speaker_label?: string;
+  speaker_name?: string;
+  provider_speaker?: string;
   pause_before?: number;
   speech_rate_wpm?: number;
   energy?: 'low' | 'medium_low' | 'medium' | 'high' | string | null;
@@ -340,6 +357,12 @@ export interface AudioIntelligence {
     mock?: boolean;
   }>;
   segments?: TranscriptionSegment[];
+}
+
+export interface RecordingVisualFrame {
+  sequence: number;
+  timestamp: number;
+  url: string;
 }
 
 export interface MergedSource {
@@ -402,6 +425,7 @@ export interface Transcription {
         speaker_cluster: string;
         display_name?: string | null;
         status: string;
+        source?: string;
         observation_count?: number;
         distinct_turn_count?: number;
         temporal_support_seconds?: number;
@@ -939,6 +963,18 @@ export const ApiClient = {
 
   async splitTranscription(id: string): Promise<{ ok: boolean; restored_ids: string[] }> {
     return (await request(`/v1/transcriptions/${id}/split`, { method: 'POST' })).json();
+  },
+
+  async recordingVisualFrames(recordingId: string): Promise<{ items: RecordingVisualFrame[]; total: number }> {
+    return (await request(`/v1/recordings/${recordingId}/visual-frames`)).json();
+  },
+
+  async updateTranscriptionSpeakers(id: string, names: Record<string, string>): Promise<Transcription> {
+    return (await request(`/v1/transcriptions/${id}/speakers`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ names }),
+    })).json();
   },
 
   async testAudioRoute(): Promise<any> {

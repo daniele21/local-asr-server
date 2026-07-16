@@ -1,4 +1,4 @@
-import type { TranscriptionJob, VisualProcessingProgress } from '../api/apiClient';
+import type { ASRTrackProgress, TranscriptionJob, VisualProcessingProgress } from '../api/apiClient';
 
 type Translate = (key: string, replacements?: Record<string, string | number>) => string;
 
@@ -70,6 +70,42 @@ export function isVisualProcessingProgress(
   detail: TranscriptionJob['progress_detail'],
 ): detail is VisualProcessingProgress {
   return Boolean(detail && detail.kind === 'visual_processing_progress');
+}
+
+export function isASRTrackProgress(
+  detail: TranscriptionJob['progress_detail'],
+): detail is ASRTrackProgress {
+  return Boolean(detail && detail.kind === 'asr_track_progress');
+}
+
+export function formatDuration(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return '—';
+  const rounded = Math.max(0, Math.round(seconds));
+  const minutes = Math.floor(rounded / 60);
+  const remainder = rounded % 60;
+  return `${minutes}:${String(remainder).padStart(2, '0')}`;
+}
+
+export function formatASRTrackProgressStatus(detail: ASRTrackProgress, translate: Translate): string {
+  return translate('transcription.asrTrackProgress', {
+    track: detail.track_label || detail.track_id || detail.track_index,
+    current: detail.track_index,
+    total: detail.track_count,
+    processed: formatDuration(detail.processed_audio_seconds),
+    duration: formatDuration(detail.audio_duration_seconds),
+    percent: detail.track_percent,
+    eta: formatVisualEta(detail.eta_seconds, translate),
+  });
+}
+
+export function formatASRTrackProgressLog(detail: ASRTrackProgress, translate: Translate): string {
+  return translate('transcription.asrTrackLog', {
+    track: detail.track_label || detail.track_id || detail.track_index,
+    processed: formatDuration(detail.processed_audio_seconds),
+    duration: formatDuration(detail.audio_duration_seconds),
+    elapsed: formatDuration(detail.elapsed_seconds),
+    eta: formatVisualEta(detail.eta_seconds, translate),
+  });
 }
 
 export function formatVisualEta(seconds: number | null | undefined, translate: Translate): string {

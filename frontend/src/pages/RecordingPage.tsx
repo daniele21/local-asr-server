@@ -20,6 +20,9 @@ interface RecordingPageProps {
   navigateTo: (page: string, detail?: string | null) => void;
 }
 
+const captureWindowLabel = (source: CaptureWindow) =>
+  [source.application_name, source.title].filter(Boolean).join(' — ');
+
 export default function RecordingPage({ detailId, navigateTo }: RecordingPageProps) {
   const { t, lang } = useTranslation();
   const { showToast } = useToast();
@@ -85,6 +88,10 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
     ? (sourceMode === 'pc_only' || recorder.capturePermissions?.microphone === 'authorized')
     : (sourceMode === 'pc_only' || recorder.microphones.length > 0 || recorder.selectedMicrophone === '');
   const visualCaptureSelected = visualIntelligenceEnabled && selectedVisualWindowId !== '';
+  const selectedVisualWindow = captureWindows.find((window) => String(window.id) === selectedVisualWindowId);
+  const visualCaptureLabel = selectedVisualWindow
+    ? captureWindowLabel(selectedVisualWindow)
+    : '';
   const computerReady = nativeCaptureReady
     ? ((sourceMode === 'mic_only' && !visualCaptureSelected) || recorder.capturePermissions?.screen_capture === 'granted')
     : (!needsComputerAudio || Boolean(recorder.audioRouteStatus?.ready_to_record) || recorder.systemDevices.length > 0);
@@ -744,7 +751,7 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
                           </option>
                           {captureWindows.map((window) => (
                             <option key={window.id} value={window.id}>
-                              {window.application_name} — {window.title}
+                              {captureWindowLabel(window)}
                             </option>
                           ))}
                         </Select>
@@ -766,6 +773,26 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
                     <p className="text-xs text-text-muted">
                       {t('recording.visualModelDesc', { model: visualModel || t('common.notAvailable') })}
                     </p>
+                    {visualCaptureLabel && (
+                      <div
+                        className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${
+                          recorder.isRecording
+                            ? 'border-success/35 bg-success/10 text-success'
+                            : 'border-accent/30 bg-accent/10 text-text-secondary'
+                        }`}
+                      >
+                        <span className={recorder.isRecording ? 'animate-pulse' : ''} aria-hidden="true">◉</span>
+                        <p>
+                          <strong>
+                            {recorder.isRecording
+                              ? t('recording.visualCaptureActive')
+                              : t('recording.visualCaptureSelected')}
+                          </strong>
+                          {' '}
+                          {visualCaptureLabel}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -788,6 +815,7 @@ export default function RecordingPage({ detailId, navigateTo }: RecordingPagePro
                       '',
                       sourceMode,
                       visualCaptureSelected ? Number(selectedVisualWindowId) : undefined,
+                      visualCaptureSelected ? visualCaptureLabel : '',
                     )}
                     disabled={recorder.isVerifying || !readyToRecord}
                   >

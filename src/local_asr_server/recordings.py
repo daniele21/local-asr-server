@@ -414,10 +414,6 @@ class RecordingStore:
                 frames.append({**item, "path": path})
         return sorted(frames, key=lambda item: int(item["sequence"]))
 
-    def cleanup_visual_frames(self, recording_id: str) -> None:
-        session_dir, _ = self._load(recording_id)
-        shutil.rmtree(session_dir / ".visual-staging", ignore_errors=True)
-
     def reset_visual_observations(self, recording_id: str) -> None:
         with self._lock_for(recording_id):
             session_dir, _ = self._load(recording_id)
@@ -663,7 +659,7 @@ class RecordingStore:
             shutil.rmtree(session_dir / VISUAL_GENERATION_STAGING_DIR, ignore_errors=True)
 
     def cleanup_orphaned_visual_processing(self, *, now: float | None = None) -> int:
-        """Remove expired visual checkpoints/staging while preserving resumable runs."""
+        """Remove expired processing state without deleting captured meeting frames."""
         now = time.time() if now is None else now
         removed = 0
         if not self.root.exists():
@@ -677,7 +673,6 @@ class RecordingStore:
                 continue
             session_dir = checkpoint.parent
             checkpoint.unlink(missing_ok=True)
-            shutil.rmtree(session_dir / ".visual-staging", ignore_errors=True)
             shutil.rmtree(session_dir / VISUAL_GENERATION_STAGING_DIR, ignore_errors=True)
             removed += 1
         for staging in self.root.glob(f"*/*/{VISUAL_GENERATION_STAGING_DIR}"):
@@ -997,7 +992,14 @@ class RecordingStore:
         except ValueError as exc:
             raise RecordingNotFound(recording_id) from exc
 
-        matches = list(self.root.glob(f"*/{normalized_id}/metadata.json"))
+        roots = [self.root]
+        if self._default_root not in roots:
+            roots.append(self._default_root)
+        matches = [
+            match
+            for root in roots
+            for match in root.glob(f"*/{normalized_id}/metadata.json")
+        ]
         if len(matches) != 1:
             raise RecordingNotFound(recording_id)
         metadata_path = matches[0]
@@ -1007,10 +1009,16 @@ class RecordingStore:
         return metadata_path.parent, metadata
 
     def _session_dir(self, metadata: dict[str, Any]) -> Path:
-        path = (self.root / metadata["relative_dir"]).resolve()
-        if self.root not in path.parents:
-            raise RecordingConflict("Invalid recording path")
-        return path
+        roots = [self.root]
+        if self._default_root not in roots:
+            roots.append(self._default_root)
+        candidates = []
+        for root in roots:
+            path = (root / metadata["relative_dir"]).resolve()
+            if root not in path.parents:
+                raise RecordingConflict("Invalid recording path")
+            candidates.append(path)
+        return next((path for path in candidates if path.exists()), candidates[0])
 
     def _part_path(self, session_dir: Path, metadata: dict[str, Any]) -> Path:
         return session_dir / f"recording{metadata['extension']}.part"
@@ -1106,28 +1114,37 @@ class RecordingStore:
         self._write_json_atomic(session_dir / "metadata.json", metadata)
 
     def _write_json_atomic(self, path: Path, data: dict[str, Any]) -> None:
-        temp_path = path.with_suffix(path.suffix + ".tmp")
-        with temp_path.open("w", encoding="utf-8") as output:
-            json.dump(data, output, ensure_ascii=False, indent=2)
-            output.flush()
-            os.fsync(output.fileno())
-        temp_path.replace(path)
+        temp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            with temp_path.open("w", encoding="utf-8") as output:
+                json.dump(data, output, ensure_ascii=False, indent=2)
+                output.flush()
+                os.fsync(output.fileno())
+            temp_path.replace(path)
+        finally:
+            temp_path.unlink(missing_ok=True)
 
     def _write_text_atomic(self, path: Path, text: str) -> None:
-        temp_path = path.with_suffix(path.suffix + ".tmp")
-        with temp_path.open("w", encoding="utf-8") as output:
-            output.write(text)
-            output.flush()
-            os.fsync(output.fileno())
-        temp_path.replace(path)
+        temp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            with temp_path.open("w", encoding="utf-8") as output:
+                output.write(text)
+                output.flush()
+                os.fsync(output.fileno())
+            temp_path.replace(path)
+        finally:
+            temp_path.unlink(missing_ok=True)
 
     def _write_bytes_atomic(self, path: Path, content: bytes) -> None:
-        temp_path = path.with_suffix(path.suffix + ".tmp")
-        with temp_path.open("wb") as output:
-            output.write(content)
-            output.flush()
-            os.fsync(output.fileno())
-        temp_path.replace(path)
+        temp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            with temp_path.open("wb") as output:
+                output.write(content)
+                output.flush()
+                os.fsync(output.fileno())
+            temp_path.replace(path)
+        finally:
+            temp_path.unlink(missing_ok=True)
 
     def _write_timeline(self, session_dir: Path, metadata: dict[str, Any]) -> None:
         timeline = metadata.get("timeline")

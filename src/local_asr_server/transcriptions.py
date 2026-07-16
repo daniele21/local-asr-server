@@ -8,6 +8,7 @@ from typing import Any
 
 from local_asr_server.catalog import CatalogStore
 from local_asr_server.settings import load_settings
+from local_asr_server.speaker_labels import apply_speaker_labels
 
 
 class TranscriptionStore:
@@ -82,7 +83,9 @@ class TranscriptionStore:
         if not file_name:
             return None
         try:
-            return json.loads((self.root / file_name).read_text(encoding="utf-8"))
+            return apply_speaker_labels(
+                json.loads((self.root / file_name).read_text(encoding="utf-8"))
+            )
         except (OSError, json.JSONDecodeError):
             return None
 
@@ -195,7 +198,7 @@ class TranscriptionStore:
         item = self.catalog.get_transcription(transcription_id)
         if not item:
             raise FileNotFoundError("Transcription not found")
-        return item
+        return apply_speaker_labels(item)
 
     def find_for_recording(self, recording_id: str, audio_filename: str = "") -> dict[str, Any] | None:
         return self.catalog.find_transcription_for_recording(recording_id, audio_filename)
@@ -221,6 +224,19 @@ class TranscriptionStore:
 
         self.catalog.update_analysis(transcription_id, analysis_payload)
         return data
+
+    def update_speaker_names(self, transcription_id: str, names: dict[str, str]) -> dict[str, Any]:
+        file_name = self._file_name_for(transcription_id)
+        if not file_name:
+            raise FileNotFoundError("Transcription not found")
+        json_path = self.root / file_name
+        if not json_path.exists():
+            raise FileNotFoundError("Transcription export not found")
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+        updated = apply_speaker_labels(data, names)
+        self._write_export_files(json_path.stem, updated)
+        self.catalog.upsert_transcription(updated, file_name=file_name)
+        return updated
 
     def delete(self, transcription_id: str) -> bool:
         file_name = self._file_name_for(transcription_id)

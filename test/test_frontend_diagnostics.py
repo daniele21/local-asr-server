@@ -55,6 +55,13 @@ class FrontendDiagnosticContractTests(unittest.TestCase):
         self.assertIn("recording.visualWindowLabel", page)
         self.assertIn("ApiClient.captureWindows()", page)
         self.assertIn("recording.visualNeedsDiarization", page)
+        self.assertIn("recording.visualCaptureActive", page)
+
+        overlay = (ROOT / "frontend/src/pages/RecordingOverlayPage.tsx").read_text(encoding="utf-8")
+        recorder = (ROOT / "frontend/src/hooks/useRecorder.ts").read_text(encoding="utf-8")
+        self.assertIn("visualCaptureLabel", overlay)
+        self.assertIn("recording.visualCaptureActive", overlay)
+        self.assertIn("visualCaptureLabelRef", recorder)
 
     def test_transcription_result_surfaces_degraded_outcomes(self) -> None:
         page = (ROOT / "frontend/src/pages/TranscriptionPage.tsx").read_text(encoding="utf-8")

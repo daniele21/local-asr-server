@@ -66,6 +66,12 @@ class RecordingApiTests(unittest.TestCase):
         )
         self.assertEqual(uploaded.status_code, 202)
         self.assertEqual(uploaded.json()["sequence"], 0)
+        listed = self.client.get(f"/v1/recordings/{recording_id}/visual-frames")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.json()["total"], 1)
+        frame = self.client.get(f"/v1/recordings/{recording_id}/visual-frames/0")
+        self.assertEqual(frame.status_code, 200)
+        self.assertEqual(frame.content, b"\xff\xd8\xffjpeg")
         self.client.post(f"/v1/recordings/{recording_id}/stop")
         rejected = self.client.post(
             f"/v1/recordings/{recording_id}/visual-frames",

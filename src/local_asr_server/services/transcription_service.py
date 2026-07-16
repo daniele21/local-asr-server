@@ -38,6 +38,7 @@ from local_asr_server.transcriber import (
 from local_asr_server.transcription_quality import audio_stats, is_near_silent_track
 from local_asr_server.visual_intelligence import PostMeetingVisualService
 from local_asr_server.diagnostics import attach_diagnostics, diagnostic, log_diagnostic
+from local_asr_server.speaker_labels import apply_speaker_labels
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -81,6 +82,8 @@ class TranscriptionService:
             provider=provider_name,
             provider_options=kwargs.pop("provider_options", {}) or {},
             job=kwargs.get("job"),
+            progress_callback=kwargs.get("progress_callback"),
+            audio_duration_seconds=kwargs.get("audio_duration_seconds"),
         )
         if provider_name == ASR_PROVIDER_SPEECHMATICS:
             return SpeechmaticsBatchASRProvider().transcribe(request)
@@ -222,8 +225,42 @@ class TranscriptionService:
                 raise RuntimeError("Transcription job cancelled")
             step = "transcribing_system" if track.get("id") == "system" else "transcribing_mic"
             job_event(step, step, 20 + int(index / total_tracks * 60))
-            result = self._skip_near_silent_track(audio_path, track)
+            result, track_stats = self._inspect_track(audio_path, track)
             if result is None:
+                track_started_at = time.perf_counter()
+
+                def asr_progress(
+                    detail: dict[str, Any],
+                    *,
+                    current_index: int = index,
+                    current_track: dict[str, Any] = track,
+                    current_step: str = step,
+                    current_stats: dict[str, float] = track_stats,
+                ) -> None:
+                    elapsed = max(0.0, time.perf_counter() - track_started_at)
+                    duration = float(current_stats.get("duration_seconds") or 0.0)
+                    processed = min(duration, max(0.0, float(detail.get("processed_audio_seconds") or 0.0)))
+                    track_percent = min(99, int((processed / duration) * 100)) if duration > 0 and processed > 0 else 0
+                    eta = None
+                    if processed > 0 and duration > processed:
+                        eta = max(0.0, elapsed * ((duration - processed) / processed))
+                    overall = 20 + int(((current_index + track_percent / 100) / total_tracks) * 60)
+                    payload = {
+                        "schema_version": 1,
+                        "kind": "asr_track_progress",
+                        "phase": detail.get("phase") or "transcribing",
+                        "track_id": current_track.get("id"),
+                        "track_label": current_track.get("label") or current_track.get("id"),
+                        "track_index": current_index + 1,
+                        "track_count": total_tracks,
+                        "processed_audio_seconds": round(processed, 2),
+                        "audio_duration_seconds": round(duration, 2) if duration > 0 else None,
+                        "track_percent": track_percent,
+                        "elapsed_seconds": round(elapsed, 2),
+                        "eta_seconds": round(eta, 2) if eta is not None else None,
+                    }
+                    job_event(current_step, current_step, overall, component_outcome=payload)
+
                 result = self.transcribe_cached(
                     audio_path,
                     engine=engine,
@@ -239,6 +276,9 @@ class TranscriptionService:
                     vad_post_filter=body.vad_post_filter,
                     asr_provider=provider,
                     provider_options=provider_options,
+                    job=job,
+                    progress_callback=asr_progress,
+                    audio_duration_seconds=track_stats.get("duration_seconds"),
                 )
             public_track = next(
                 (item for item in recording.get("audio_tracks", []) if item.get("id") == track["id"]),
@@ -314,6 +354,7 @@ class TranscriptionService:
             job_event("visual_processing", "visual_processing", 90, component_outcome=visual_outcome)
         if payload.get("speaker_attribution"):
             payload.setdefault("stats", {})["speaker_attribution"] = payload["speaker_attribution"]
+        payload = apply_speaker_labels(payload)
         job_event("audio_intelligence", "audio_intelligence", 92)
         payload = self._attach_audio_intelligence(store, recording_id, track_paths, payload)
         audio_outcome = payload.get("stats", {}).get("audio_intelligence")
@@ -383,7 +424,10 @@ class TranscriptionService:
         return hashlib.sha256(encoded).hexdigest()
 
     @staticmethod
-    def _skip_near_silent_track(audio_path: Path, track: dict[str, Any]) -> dict[str, Any] | None:
+    def _inspect_track(
+        audio_path: Path,
+        track: dict[str, Any],
+    ) -> tuple[dict[str, Any] | None, dict[str, float]]:
         try:
             from local_asr_server.audio_intelligence.audio_io import load_audio_samples
 
@@ -394,9 +438,9 @@ class TranscriptionService:
                 track.get("id"),
                 exc,
             )
-            return None
+            return None, {}
         if not is_near_silent_track(stats):
-            return None
+            return None, stats
         logger.warning(
             "[ASR Quality] Skipping near-silent track %s: rms=%.6f peak=%.6f",
             track.get("id"),
@@ -411,7 +455,7 @@ class TranscriptionService:
                 "skip_reason": "near_silent_track",
                 "audio_stats": stats,
             },
-        }
+        }, stats
 
     @staticmethod
     def _attach_audio_intelligence(

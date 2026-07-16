@@ -59,8 +59,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     serve.add_argument(
         "--recordings-dir",
-        default="~/Recordings/local-asr",
-        help="Directory used to persist call recordings and transcripts.",
+        default=None,
+        help=(
+            "Override the recordings directory. By default the server follows "
+            "the path saved in ClosedRoom Settings."
+        ),
     )
     serve.add_argument(
         "--llm-port",
@@ -256,11 +259,18 @@ def main() -> None:
         return
 
     from local_asr_server.server import create_app
+    from local_asr_server.runtime.port_manager import (
+        clear_api_runtime,
+        prepare_api_port,
+        register_api_runtime,
+    )
 
     port = _resolve_serve_port(args)
+    prepare_api_port(port, host=args.host)
+    register_api_runtime(port, host=args.host)
     app = create_app(
         default_model=args.model,
-        recordings_dir=Path(args.recordings_dir).expanduser(),
+        recordings_dir=Path(args.recordings_dir).expanduser() if args.recordings_dir else None,
     )
 
     llm_process = None
@@ -321,6 +331,7 @@ def main() -> None:
                 reload=False,
             )
     finally:
+        clear_api_runtime(port, host=args.host)
         if llm_process:
             print("Stopping local LLM server...")
             llm_process.terminate()
@@ -348,7 +359,15 @@ def _run_transcribe_worker() -> None:
                 line = "".join(self._buffer).rstrip("\r\n")
                 self._buffer = []
                 if line:
-                    if line.startswith("DOWNLOAD_PROGRESS:"):
+                    if line.startswith("ASR_PROGRESS:"):
+                        processed = float(line.split(":", 1)[1])
+                        sys.__stdout__.write(json.dumps({
+                            "type": "progress",
+                            "phase": "transcribing",
+                            "processed_audio_seconds": processed,
+                        }, ensure_ascii=False) + "\n")
+                        sys.__stdout__.flush()
+                    elif line.startswith("DOWNLOAD_PROGRESS:"):
                         parts = line.split(":")
                         if len(parts) >= 4:
                             percent = float(parts[1])
@@ -377,3 +396,7 @@ def _run_transcribe_worker() -> None:
         sys.__stdout__.write(json.dumps({"type": "error", "message": err_msg}, ensure_ascii=False) + "\n")
         sys.__stdout__.flush()
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

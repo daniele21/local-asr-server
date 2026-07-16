@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import signal
 import unittest
 from unittest.mock import Mock, patch
 
@@ -11,11 +12,27 @@ from local_asr_server.runtime.llm_sidecar import (
 
 
 class LocalLLMSidecarTests(unittest.TestCase):
+    def test_stale_vision_cleanup_only_terminates_matching_worker(self) -> None:
+        with (
+            patch("local_asr_server.runtime.llm_sidecar.subprocess.run") as run,
+            patch("local_asr_server.runtime.llm_sidecar.os.kill") as kill,
+        ):
+            run.side_effect = [
+                Mock(stdout="123\n456\n"),
+                Mock(stdout="python -m mlx_vlm.server --port 8092\n"),
+                Mock(stdout="python unrelated.py\n"),
+            ]
+
+            LocalLLMSidecar._terminate_stale_vision_workers()
+
+        kill.assert_called_once_with(123, signal.SIGTERM)
+
     def test_build_command_keeps_registry_model_when_overriding_model_path(self) -> None:
         sidecar = LocalLLMSidecar()
         with (
             patch("local_asr_server.runtime.llm_sidecar.shutil.which", return_value="local-llm"),
-            patch("local_asr_server.settings.load_settings", return_value={"visual_llm_model": "qwen3-vl-4b"})
+            patch("local_asr_server.settings.load_settings", return_value={"visual_llm_model": "qwen3-vl-4b"}),
+            patch("local_asr_server.local_llm_params.load_local_llm_params", return_value={}),
         ):
             command = sidecar._build_command(
                 model="voxtral-mini-3b",
@@ -26,13 +43,14 @@ class LocalLLMSidecarTests(unittest.TestCase):
                 startup_timeout=120,
                 llama_server_bin="/opt/bin/llama-server",
                 port=45678,
+                vision_port=45679,
             )
 
         self.assertEqual(
             command,
             [
                 "local-llm", "serve", "--host", "127.0.0.1", "--port", "45678",
-                "--enable-admin-api",
+                "--enable-admin-api", "--mlx-vlm-server-port", "45679",
                 "--models", "voxtral-mini-3b", "qwen3-vl-4b", "--model-path", "/models/voxtral.gguf",
                 "--backend", "llama_server", "--mmproj-path", "/models/mmproj.gguf",
                 "--ctx-size", "32768", "--startup-timeout", "120",

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
-import { ApiClient, Transcription, TranscriptionSegment } from '../../../api/apiClient';
+import { ApiClient, RecordingVisualFrame, Transcription, TranscriptionSegment } from '../../../api/apiClient';
 import { useTranslation } from '../../../i18n/i18n';
 import { formatTime } from '../../../utils/formatters';
 import { countTranscriptWords, getTranscriptionAsrMetadata } from '../../../utils/transcriptionMetadata';
@@ -25,6 +25,7 @@ interface ResultsStepProps {
   resultTab: 'text' | 'segments' | 'raw' | 'analysis';
   setResultTab: (tab: 'text' | 'segments' | 'raw' | 'analysis') => void;
   navigateTo: (page: string, detail?: string | null) => void;
+  onTranscriptionUpdated: (transcription: Transcription) => void;
 }
 
 export default function ResultsStep({
@@ -35,6 +36,7 @@ export default function ResultsStep({
   resultTab,
   setResultTab,
   navigateTo,
+  onTranscriptionUpdated,
 }: ResultsStepProps) {
   const { t, lang } = useTranslation();
   const { showToast } = useToast();
@@ -44,6 +46,9 @@ export default function ResultsStep({
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [projectsList, setProjectsList] = useState<string[]>([]);
   const [recordingTitles, setRecordingTitles] = useState<Map<string, string>>(new Map());
+  const [speakerNames, setSpeakerNames] = useState<Record<string, string>>({});
+  const [isSavingSpeakers, setIsSavingSpeakers] = useState(false);
+  const [visualFrames, setVisualFrames] = useState<RecordingVisualFrame[]>([]);
 
   const loadProjectInfo = async () => {
     try {
@@ -89,6 +94,38 @@ export default function ResultsStep({
   useEffect(() => {
     loadProjectInfo();
   }, [transcriptionResult]);
+
+  useEffect(() => {
+    if (!recordingId) {
+      setVisualFrames([]);
+      return;
+    }
+    ApiClient.recordingVisualFrames(recordingId)
+      .then((result) => setVisualFrames(result.items || []))
+      .catch(() => setVisualFrames([]));
+  }, [recordingId]);
+
+  useEffect(() => {
+    const mappings = transcriptionResult.stats?.speaker_attribution?.mappings || [];
+    setSpeakerNames(Object.fromEntries(
+      mappings.map((item) => [item.speaker_cluster, item.display_name || '']),
+    ));
+  }, [transcriptionResult]);
+
+  const handleSaveSpeakerNames = async () => {
+    const transcriptionId = transcriptionResult.id || transcriptionResult.saved_id;
+    if (!transcriptionId) return;
+    try {
+      setIsSavingSpeakers(true);
+      const updated = await ApiClient.updateTranscriptionSpeakers(transcriptionId, speakerNames);
+      onTranscriptionUpdated(updated);
+      showToast(t('transcription.speakerNamesSaved'), 'success');
+    } catch (err: any) {
+      showToast(t('transcription.speakerNamesSaveError', { error: err.message }), 'error');
+    } finally {
+      setIsSavingSpeakers(false);
+    }
+  };
 
   const handleConfirmProject = async (newProjName: string) => {
     try {
@@ -169,8 +206,8 @@ export default function ResultsStep({
 
   return (
     <div className="flex flex-col gap-5 animate-in fade-in duration-150">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-border-subtle pb-3 gap-3">
-        <div>
+      <div className="flex flex-col xl:flex-row xl:items-start justify-between border-b border-border-subtle pb-3 gap-3">
+        <div className="min-w-0">
           <span className="text-xs font-bold text-accent tracking-widest uppercase">
             {t('transcription.resultTitle')}
           </span>
@@ -190,7 +227,7 @@ export default function ResultsStep({
             )}
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex max-w-full flex-wrap justify-start gap-2 xl:justify-end">
           {transcriptionResult.merged_sources && transcriptionResult.merged_sources.length > 0 && (
             <Button variant="danger" onClick={handleSplit} isLoading={isSplitting} disabled={isSplitting}>
               ✂️ {lang === 'it' ? 'Dividi' : 'Split'}
@@ -276,6 +313,93 @@ export default function ResultsStep({
                 <span key={item.speaker_cluster}>{item.speaker_cluster} → {item.display_name}</span>
               ))}
             </div>
+          </div>
+        </section>
+      )}
+
+      {speakerMappings.length > 0 && (
+        <section className="rounded-xl border border-border-subtle bg-bg-glass p-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">
+                {t('transcription.speakerNamesTitle')}
+              </h3>
+              <p className="mt-1 text-xs leading-relaxed text-text-secondary">
+                {t('transcription.speakerNamesDesc')}
+              </p>
+            </div>
+            <Button
+              size="sm"
+              onClick={handleSaveSpeakerNames}
+              isLoading={isSavingSpeakers}
+              disabled={isSavingSpeakers}
+            >
+              {t('transcription.speakerNamesSave')}
+            </Button>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {speakerMappings.map((mapping, index) => (
+              <label
+                key={mapping.speaker_cluster}
+                className="rounded-xl border border-border-subtle bg-bg-surface p-3"
+              >
+                <span className="flex items-center justify-between gap-3 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                  <span>{t('transcription.speakerCluster', { number: index + 1 })}</span>
+                  <code className="normal-case tracking-normal">{mapping.speaker_cluster}</code>
+                </span>
+                <input
+                  value={speakerNames[mapping.speaker_cluster] || ''}
+                  onChange={(event) => setSpeakerNames((previous) => ({
+                    ...previous,
+                    [mapping.speaker_cluster]: event.target.value,
+                  }))}
+                  placeholder={t('transcription.speakerNamePlaceholder', { number: index + 1 })}
+                  className="mt-2 w-full rounded-lg border border-border-subtle bg-bg-elevated px-3 py-2 text-sm text-text-primary outline-none transition-colors focus:border-border-focus"
+                  maxLength={120}
+                />
+                <span className="mt-1.5 block text-[10px] text-text-muted">
+                  {mapping.source === 'visual'
+                    ? t('transcription.speakerNameVisual')
+                    : mapping.source === 'manual'
+                      ? t('transcription.speakerNameManual')
+                      : t('transcription.speakerNameDiarization')}
+                </span>
+              </label>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {visualFrames.length > 0 && (
+        <section className="rounded-xl border border-border-subtle bg-bg-glass p-4">
+          <div>
+            <h3 className="text-sm font-semibold text-text-primary">
+              {t('transcription.capturedFramesTitle')}
+            </h3>
+            <p className="mt-1 text-xs text-text-secondary">
+              {t('transcription.capturedFramesDesc', { count: visualFrames.length })}
+            </p>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {visualFrames.map((frame) => (
+              <figure
+                key={frame.sequence}
+                className="overflow-hidden rounded-xl border border-border-subtle bg-bg-surface"
+              >
+                <a href={frame.url} target="_blank" rel="noreferrer">
+                  <img
+                    src={frame.url}
+                    alt={t('transcription.capturedFrameAlt', { sequence: frame.sequence })}
+                    loading="lazy"
+                    className="aspect-video w-full object-cover transition-transform duration-200 hover:scale-[1.02]"
+                  />
+                </a>
+                <figcaption className="flex items-center justify-between gap-2 px-2.5 py-2 text-[10px] text-text-muted">
+                  <span>#{frame.sequence}</span>
+                  <span>{formatTime(frame.timestamp)}</span>
+                </figcaption>
+              </figure>
+            ))}
           </div>
         </section>
       )}
