@@ -23,10 +23,10 @@ class VadGuidedTranscriptionTests(unittest.TestCase):
             "verbose": None,
         }
 
-    def test_vad_guided_is_disabled_by_default(self) -> None:
-        self.assertFalse(VAD_GUIDED_DEFAULT)
-        self.assertFalse(TranscribePathRequest(file="/tmp/meeting.wav").vad_guided)
-        self.assertFalse(TranscribeRecordingRequest().vad_guided)
+    def test_vad_guided_is_enabled_by_default(self) -> None:
+        self.assertTrue(VAD_GUIDED_DEFAULT)
+        self.assertTrue(TranscribePathRequest(file="/tmp/meeting.wav").vad_guided)
+        self.assertTrue(TranscribeRecordingRequest().vad_guided)
         self.assertFalse(TranscribePathRequest(file="/tmp/meeting.wav").condition_on_previous_text)
         self.assertFalse(TranscribeRecordingRequest().condition_on_previous_text)
 

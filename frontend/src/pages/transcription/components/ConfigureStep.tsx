@@ -4,11 +4,12 @@ import { Button } from '../../../components/ui/Button';
 import { Select } from '../../../components/ui/Select';
 import { Input } from '../../../components/ui/Input';
 import { Checkbox } from '../../../components/ui/Checkbox';
-import { ASR_PROVIDERS, LANGUAGES, MODELS, SPEECHMATICS_DIARIZATION, SPEECHMATICS_MODELS, SPEECHMATICS_REGIONS, TASKS } from '../../../api/config';
+import { ASR_PROVIDERS, DIARIZATION_PROVIDERS, LANGUAGES, MODELS, SPEECHMATICS_MODELS, SPEECHMATICS_REGIONS, TASKS } from '../../../api/config';
 import { useTranslation } from '../../../i18n/i18n';
 
 interface ConfigureStepProps {
   selectedFile: File | null;
+  selectedRecordingId: string | null;
   isProcessing: boolean;
   goToUploadStep: () => void;
   targetLanguage: string;
@@ -23,8 +24,10 @@ interface ConfigureStepProps {
   setSpeechmaticsRegion: (region: string) => void;
   speechmaticsModel: string;
   setSpeechmaticsModel: (model: string) => void;
-  speechmaticsDiarization: string;
-  setSpeechmaticsDiarization: (mode: string) => void;
+  diarizationProvider: string;
+  setDiarizationProvider: (provider: string) => void;
+  visualIntelligenceEnabled: boolean;
+  setVisualIntelligenceEnabled: (enabled: boolean) => void;
   modelCacheStatus: string;
   temperature: string;
   setTemperature: (temp: string) => void;
@@ -40,6 +43,7 @@ interface ConfigureStepProps {
 
 export default function ConfigureStep({
   selectedFile,
+  selectedRecordingId,
   isProcessing,
   goToUploadStep,
   targetLanguage,
@@ -54,8 +58,10 @@ export default function ConfigureStep({
   setSpeechmaticsRegion,
   speechmaticsModel,
   setSpeechmaticsModel,
-  speechmaticsDiarization,
-  setSpeechmaticsDiarization,
+  diarizationProvider,
+  setDiarizationProvider,
+  visualIntelligenceEnabled,
+  setVisualIntelligenceEnabled,
   modelCacheStatus,
   temperature,
   setTemperature,
@@ -156,7 +162,7 @@ export default function ConfigureStep({
           </div>
 
           {asrProvider === 'speechmatics' && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Select label="Speechmatics region" value={speechmaticsRegion} onChange={(e) => setSpeechmaticsRegion(e.target.value)}>
                 {SPEECHMATICS_REGIONS.map((region) => (
                   <option key={region.value} value={region.value}>{region.label}</option>
@@ -167,11 +173,58 @@ export default function ConfigureStep({
                   <option key={model.value} value={model.value}>{model.label}</option>
                 ))}
               </Select>
-              <Select label="Diarization" value={speechmaticsDiarization} onChange={(e) => setSpeechmaticsDiarization(e.target.value)}>
-                {SPEECHMATICS_DIARIZATION.map((mode) => (
-                  <option key={mode.value} value={mode.value}>{mode.label}</option>
-                ))}
-              </Select>
+            </div>
+          )}
+
+          <div className="mt-3 border-t border-border-subtle pt-4 flex flex-col gap-3">
+            <Select
+              label={t('transcription.initialDiarizationLabel')}
+              value={diarizationProvider}
+              onChange={(e) => setDiarizationProvider(e.target.value)}
+            >
+              {DIARIZATION_PROVIDERS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {t(option.labelKey)}
+                </option>
+              ))}
+            </Select>
+            <p className="text-xs text-text-muted">
+              {t('transcription.initialDiarizationDesc')}
+            </p>
+            {diarizationProvider === 'speechmatics' && (
+              <>
+                {asrProvider !== 'speechmatics' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Select label={t('transcription.rediarizationRegion')} value={speechmaticsRegion} onChange={(e) => setSpeechmaticsRegion(e.target.value)}>
+                      {SPEECHMATICS_REGIONS.map((region) => (
+                        <option key={region.value} value={region.value}>{region.label}</option>
+                      ))}
+                    </Select>
+                    <Select label={t('transcription.rediarizationModel')} value={speechmaticsModel} onChange={(e) => setSpeechmaticsModel(e.target.value)}>
+                      {SPEECHMATICS_MODELS.map((model) => (
+                        <option key={model.value} value={model.value}>{model.label}</option>
+                      ))}
+                    </Select>
+                  </div>
+                )}
+                <p className="text-xs text-warning">
+                  {t('transcription.initialDiarizationCloudNotice')}
+                </p>
+              </>
+            )}
+          </div>
+
+          {selectedRecordingId && (
+            <div className="mt-3 border-t border-border-subtle pt-4 flex flex-col gap-2">
+              <Checkbox
+                variant="toggle"
+                label={t('transcription.visualIntelligenceLabel')}
+                checked={visualIntelligenceEnabled}
+                onChange={(e) => setVisualIntelligenceEnabled(e.target.checked)}
+              />
+              <p className="text-xs text-text-muted">
+                {t('transcription.visualIntelligenceDesc')}
+              </p>
             </div>
           )}
 

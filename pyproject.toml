@@ -27,6 +27,9 @@ dependencies = [
     # Audio preprocessing for Voxtral multimodal analysis
     "soundfile>=0.12.0",
     "numpy>=1.24.0",
+    # Exposed directly in the transcription workflow, so development installs
+    # must support Speechmatics without requiring a hidden optional extra.
+    "speechmatics-batch>=0.5.0",
 ]
 
 [project.optional-dependencies]
@@ -40,10 +43,9 @@ app = [
 build = [
     "pyinstaller>=6.0",
 ]
-# Speechmatics Batch ASR — install with: uv pip install -e ".[speechmatics]"
-speechmatics = [
-    "speechmatics-batch>=0.5.0",
-]
+# Backward-compatible extra for existing setup commands. The SDK is now a core
+# dependency because Speechmatics diarization is selectable in the main UI.
+speechmatics = []
 
 [project.scripts]
 local-asr = "local_asr_server.cli:main"

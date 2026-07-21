@@ -14,6 +14,8 @@ from local_asr_server.asr_provider import (
     ASR_PROVIDER_SPEECHMATICS,
     ASRRequest,
     LocalMlxASRProvider,
+    VAD_GUIDED_DEFAULT,
+    VAD_POST_FILTER_DEFAULT,
     asr_backend_for,
     normalize_asr_provider,
     public_asr_metadata,
@@ -28,6 +30,10 @@ from local_asr_server.schemas import TranscribeRecordingRequest
 from local_asr_server.settings import load_settings
 from local_asr_server.speechmatics_asr import SpeechmaticsBatchASRProvider
 from local_asr_server.speaker_diarization import LocalSpeakerDiarizationService
+from local_asr_server.transcription_diarization import (
+    DIARIZATION_PROVIDER_DISABLED,
+    DIARIZATION_PROVIDERS,
+)
 from local_asr_server.transcriber import (
     _clean_nan_values,
     generate_cache_key,
@@ -43,13 +49,14 @@ from local_asr_server.speaker_labels import apply_speaker_labels
 
 logger = logging.getLogger("uvicorn.error")
 
-RECORDING_PIPELINE_CACHE_VERSION = 1
+RECORDING_PIPELINE_CACHE_VERSION = 2
 RECORDING_PIPELINE_SETTING_KEYS = (
     "speaker_diarization_enabled",
     "speaker_diarization_minimum_overlap",
     "visual_intelligence_enabled",
     "visual_llm_model",
     "visual_routing_mode",
+    "visual_frame_similarity_threshold",
     "visual_minimum_observations",
     "visual_minimum_margin",
     "visual_minimum_distinct_turns",
@@ -77,8 +84,8 @@ class TranscriptionService:
             temperature=kwargs.get("temperature"),
             condition_on_previous_text=bool(kwargs.get("condition_on_previous_text", False)),
             verbose=kwargs.get("verbose"),
-            vad_guided=bool(kwargs.get("vad_guided", False)),
-            vad_post_filter=bool(kwargs.get("vad_post_filter", False)),
+            vad_guided=bool(kwargs.get("vad_guided", VAD_GUIDED_DEFAULT)),
+            vad_post_filter=bool(kwargs.get("vad_post_filter", VAD_POST_FILTER_DEFAULT)),
             provider=provider_name,
             provider_options=kwargs.pop("provider_options", {}) or {},
             job=kwargs.get("job"),
@@ -179,6 +186,30 @@ class TranscriptionService:
     ) -> dict[str, Any]:
         started_at = time.perf_counter()
         settings = load_settings()
+        visual_intelligence_enabled = (
+            bool(body.visual_intelligence_enabled)
+            if body.visual_intelligence_enabled is not None
+            else bool(settings.get("visual_intelligence_enabled"))
+        )
+        pipeline_settings = {
+            **settings,
+            "visual_intelligence_enabled": visual_intelligence_enabled,
+        }
+        requested_diarization = body.diarization_provider
+        selected_diarization_provider = (
+            str(requested_diarization).strip().lower()
+            if requested_diarization is not None
+            else (
+                ASR_PROVIDER_LOCAL
+                if settings.get("speaker_diarization_enabled", False)
+                else DIARIZATION_PROVIDER_DISABLED
+            )
+        )
+        if (
+            selected_diarization_provider != DIARIZATION_PROVIDER_DISABLED
+            and selected_diarization_provider not in DIARIZATION_PROVIDERS
+        ):
+            raise ValueError(f"Unsupported diarization provider: {requested_diarization}")
         provider, provider_model, provider_options, public_options = self.resolve_asr(
             settings,
             provider=body.asr_provider,
@@ -296,8 +327,11 @@ class TranscriptionService:
         pipeline_cache_key = self.recording_pipeline_cache_key(
             recording_id=recording_id,
             track_results=track_results,
-            settings=settings,
+            settings=pipeline_settings,
             visual_input_fingerprint=visual_input_fingerprint,
+            diarization_provider=selected_diarization_provider,
+            diarization_region=body.speechmatics_region,
+            diarization_model=body.speechmatics_model,
         )
         if (
             cached_pipeline is not None
@@ -313,7 +347,16 @@ class TranscriptionService:
             return cached_pipeline
 
         job_event("diarizing", "diarizing", 82)
-        diarization = self.diarization.process(store, recording_id, track_paths, track_results)
+        diarization = self._process_initial_diarization(
+            app,
+            store,
+            recording_id,
+            track_paths,
+            track_results,
+            provider=selected_diarization_provider,
+            speechmatics_region=body.speechmatics_region,
+            speechmatics_model=body.speechmatics_model,
+        )
         job_event("diarizing", "diarizing", 83, component_outcome=diarization)
         job_event("merging", "merging", 85)
         payload = _merge_track_transcriptions(
@@ -347,7 +390,8 @@ class TranscriptionService:
 
         job_event("visual_processing", "visual_processing", 88)
         payload = self.visual.process(
-            get_services(app), recording_id, payload, progress_callback=visual_progress
+            get_services(app), recording_id, payload, progress_callback=visual_progress,
+            enabled=visual_intelligence_enabled,
         )
         visual_outcome = payload.get("stats", {}).get("visual_intelligence")
         if visual_outcome:
@@ -394,6 +438,9 @@ class TranscriptionService:
         track_results: list[dict[str, Any]],
         settings: dict[str, Any],
         visual_input_fingerprint: str,
+        diarization_provider: str | None = None,
+        diarization_region: str | None = None,
+        diarization_model: str | None = None,
     ) -> str:
         """Fingerprint every input that affects post-ASR segment organization."""
         material = {
@@ -401,12 +448,128 @@ class TranscriptionService:
             "recording_id": recording_id,
             "track_results": track_results,
             "settings": {key: settings.get(key) for key in RECORDING_PIPELINE_SETTING_KEYS},
+            "diarization": {
+                "provider": diarization_provider,
+                "region": diarization_region,
+                "model": diarization_model,
+            },
             "visual_input_fingerprint": visual_input_fingerprint,
         }
         encoded = json.dumps(
             _clean_nan_values(material), sort_keys=True, separators=(",", ":"), ensure_ascii=False,
         ).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
+
+    @staticmethod
+    def _process_initial_diarization(
+        app: Any,
+        store: RecordingStore,
+        recording_id: str,
+        track_paths: list[tuple[dict[str, Any], Path]],
+        track_results: list[dict[str, Any]],
+        *,
+        provider: str,
+        speechmatics_region: str | None,
+        speechmatics_model: str | None,
+    ) -> dict[str, Any]:
+        if provider == DIARIZATION_PROVIDER_DISABLED:
+            return {
+                "status": "disabled",
+                "provider": provider,
+                **diagnostic("speaker_diarization", "disabled"),
+            }
+
+        paths_by_id = {str(track["id"]): path for track, path in track_paths}
+        assigned_by_track: dict[str, int] = {}
+        clusters_by_track: dict[str, list[str]] = {}
+        summaries: list[dict[str, Any]] = []
+        try:
+            for item in track_results:
+                track_id = str(item["track"]["id"])
+                result = item["result"]
+                if track_id == "mic":
+                    assigned = 0
+                    for segment in result.get("segments") or []:
+                        segment["track_id"] = track_id
+                        segment["provider_speaker"] = "mic:S1"
+                        segment["speaker_label"] = str(
+                            item["track"].get("label") or item["track"].get("source") or "Tu"
+                        )
+                        assigned += 1
+                    assigned_by_track[track_id] = assigned
+                    clusters_by_track[track_id] = ["mic:S1"] if assigned else []
+                    continue
+                audio_path = paths_by_id.get(track_id)
+                if audio_path is None:
+                    continue
+                updated = get_services(app).diarization.process_audio_payload(
+                    audio_path,
+                    {
+                        **result,
+                        "language": result.get("language"),
+                        "stats": {},
+                    },
+                    provider=provider,
+                    track_id=track_id,
+                    speechmatics_region=speechmatics_region,
+                    speechmatics_model=speechmatics_model,
+                )
+                item["result"] = {
+                    **result,
+                    "segments": updated.get("segments") or [],
+                    "metadata": updated.get("metadata") or result.get("metadata") or {},
+                }
+                summary = updated.get("stats", {}).get("speaker_diarization") or {}
+                summaries.append(summary)
+                assigned_by_track[track_id] = int(summary.get("assigned_segments") or 0)
+                clusters_by_track[track_id] = list(
+                    (summary.get("clusters_by_track") or {}).get(track_id) or []
+                )
+
+            engine = next(
+                (str(summary.get("engine")) for summary in summaries if summary.get("engine")),
+                provider,
+            )
+            combined = {
+                "status": "completed",
+                "engine": engine,
+                "provider": provider,
+                "assigned_segments": sum(assigned_by_track.values()),
+                "assigned_segments_by_track": assigned_by_track,
+                "cluster_count": sum(len(items) for items in clusters_by_track.values()),
+                "clusters_by_track": clusters_by_track,
+                "text_preserved": True,
+                "rerun": False,
+                **diagnostic(
+                    "speaker_diarization",
+                    "completed",
+                    requested_backend=engine,
+                    actual_backend=engine,
+                    counts={
+                        "assigned_segments": sum(assigned_by_track.values()),
+                        "clusters": sum(len(items) for items in clusters_by_track.values()),
+                        "tracks": len(assigned_by_track),
+                    },
+                    details={"provider": provider, "text_preserved": True},
+                ),
+            }
+            store.save_speaker_diarization(recording_id, combined)
+            return combined
+        except Exception as exc:
+            logger.warning("Initial diarization failed for recording %s: %s", recording_id, exc)
+            failure = {
+                "status": "failed",
+                "provider": provider,
+                **diagnostic(
+                    "speaker_diarization",
+                    "failed",
+                    requested_backend=provider,
+                    error=str(exc),
+                    details={"provider": provider, "text_preserved": True},
+                ),
+            }
+            store.save_speaker_diarization(recording_id, failure)
+            return failure
 
     @staticmethod
     def visual_input_fingerprint(frames: list[dict[str, Any]]) -> str:

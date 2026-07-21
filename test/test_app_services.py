@@ -8,7 +8,7 @@ from local_asr_server.app_services import AppServices, get_services, install_com
 
 class AppServicesTests(unittest.TestCase):
     def _services(self) -> AppServices:
-        values = [object() for _ in range(9)]
+        values = [object() for _ in range(10)]
         return AppServices(*values)
 
     def test_install_exposes_legacy_aliases(self) -> None:

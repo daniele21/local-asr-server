@@ -212,9 +212,26 @@ def _build_meeting(app: FastAPI, recording: dict[str, Any], *, compact: bool = F
         )
         existing = {run["id"] for run in runs}
         runs.extend(run for run in transcription_runs if run["id"] not in existing)
+    related_jobs = get_services(app).transcription_jobs.list(
+        scope_type="recording",
+        scope_id=recording["id"],
+        limit=50,
+    )
+    if transcription:
+        related_jobs.extend(
+            get_services(app).transcription_jobs.list(
+                scope_type="transcription",
+                scope_id=transcription["id"],
+                limit=50,
+            )
+        )
     jobs = [
         _compact_job(job)
-        for job in get_services(app).transcription_jobs.list(scope_type="recording", scope_id=recording["id"], limit=50)
+        for job in sorted(
+            {job["id"]: job for job in related_jobs}.values(),
+            key=lambda item: item.get("created_at") or 0,
+            reverse=True,
+        )
     ]
     latest_by_type: dict[str, dict[str, Any]] = {}
     for run in sorted(runs, key=lambda item: item.get("created_at") or 0, reverse=True):

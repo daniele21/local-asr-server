@@ -4,6 +4,8 @@ from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any
 
+from local_asr_server.settings import DEFAULT_VISUAL_FRAME_SIMILARITY_THRESHOLD
+
 MAX_VISUAL_FRAME_BYTES = 5 * 1024 * 1024
 VISUAL_OBSERVATIONS_FILE = "visual_observations.jsonl"
 VISUAL_SUMMARY_FILE = "visual_summary.json"
@@ -66,7 +68,7 @@ class VisualTrigger(str, Enum):
 @dataclass(frozen=True)
 class VisualRoutingConfig:
     mode: str = "v1"
-    dhash_distance: int = 2
+    dhash_distance: int = DEFAULT_VISUAL_FRAME_SIMILARITY_THRESHOLD
     structural_dhash_distance: int = 12
     shared_roi_dhash_distance: int = 10
     speaker_delay_seconds: float = 0.5

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional
 from pydantic import BaseModel
 
-from local_asr_server.transcriber import VAD_GUIDED_DEFAULT, VAD_POST_FILTER_DEFAULT
+from local_asr_server.asr_provider import VAD_GUIDED_DEFAULT, VAD_POST_FILTER_DEFAULT
 
 ANALYSIS_SETTING_OVERRIDE_FIELDS = (
     "llm_provider",
@@ -103,6 +103,7 @@ class TranscribePathRequest(BaseModel):
     speechmatics_region: Optional[str] = None
     speechmatics_model: Optional[str] = None
     speechmatics_diarization: Optional[str] = None
+    diarization_provider: Optional[str] = None
 
 class CreateRecordingRequest(BaseModel):
     title: Optional[str] = None
@@ -160,6 +161,7 @@ class SettingsRequest(BaseModel):
     visual_intelligence_enabled: Optional[bool] = None
     visual_llm_model: Optional[str] = None
     visual_routing_mode: Optional[str] = None
+    visual_frame_similarity_threshold: Optional[int] = None
     visual_minimum_observations: Optional[int] = None
     visual_minimum_margin: Optional[float] = None
     visual_minimum_distinct_turns: Optional[int] = None
@@ -185,6 +187,8 @@ class TranscribeRecordingRequest(BaseModel):
     speechmatics_region: Optional[str] = None
     speechmatics_model: Optional[str] = None
     speechmatics_diarization: Optional[str] = None
+    diarization_provider: Optional[str] = None
+    visual_intelligence_enabled: Optional[bool] = None
 
 class OverlayRequest(BaseModel):
     show: bool
@@ -205,6 +209,12 @@ class CaptureEnsurePermissionsRequest(BaseModel):
 
 class TranscriptionJobRequest(TranscribeRecordingRequest):
     pass
+
+
+class DiarizationJobRequest(BaseModel):
+    provider: str = "local"
+    speechmatics_region: Optional[str] = None
+    speechmatics_model: Optional[str] = None
 
 
 class MockDataRequest(BaseModel):

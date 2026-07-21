@@ -399,7 +399,15 @@ export interface Transcription {
     speaker_diarization?: {
       status: string;
       engine?: string;
+      provider?: string;
       assigned_segments?: number;
+      assigned_segments_by_track?: Record<string, number>;
+      cluster_count?: number;
+      clusters_by_track?: Record<string, string[]>;
+      assigned_cluster_count?: number;
+      unassigned_clusters_by_track?: Record<string, string[]>;
+      text_preserved?: boolean;
+      rerun?: boolean;
       error?: string;
     };
     visual_intelligence?: {
@@ -430,6 +438,7 @@ export interface Transcription {
         distinct_turn_count?: number;
         temporal_support_seconds?: number;
         margin?: number;
+        transcript_segment_count?: number;
       }>;
     };
     [key: string]: unknown;
@@ -514,6 +523,7 @@ export interface Settings {
   visual_intelligence_enabled?: boolean;
   visual_llm_model?: string;
   visual_routing_mode?: 'v1' | 'shadow' | 'v2';
+  visual_frame_similarity_threshold?: number;
   visual_minimum_observations?: number;
   visual_minimum_margin?: number;
   visual_minimum_distinct_turns?: number;
@@ -769,6 +779,8 @@ export const ApiClient = {
     speechmatics_region?: string;
     speechmatics_model?: string;
     speechmatics_diarization?: string;
+    diarization_provider?: string;
+    visual_intelligence_enabled?: boolean;
   }): Promise<Transcription> {
     return request(`/v1/recordings/${recordingId}/transcriptions`, {
       method: 'POST',
@@ -792,8 +804,22 @@ export const ApiClient = {
     speechmatics_region?: string;
     speechmatics_model?: string;
     speechmatics_diarization?: string;
+    diarization_provider?: string;
+    visual_intelligence_enabled?: boolean;
   }): Promise<TranscriptionJob> {
     return (await request(`/v1/recordings/${recordingId}/transcription-jobs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })).json();
+  },
+
+  async createDiarizationJob(transcriptionId: string, payload: {
+    provider: 'local' | 'speechmatics' | string;
+    speechmatics_region?: string;
+    speechmatics_model?: string;
+  }): Promise<TranscriptionJob> {
+    return (await request(`/v1/transcriptions/${transcriptionId}/diarization-jobs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

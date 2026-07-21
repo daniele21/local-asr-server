@@ -32,6 +32,21 @@ def build_meeting_diagnostic_report(
     jobs = job_store.list_jobs(
         job_type="transcription", scope_type="recording", scope_id=recording_id, limit=20
     )
+    transcription_id = (transcription or {}).get("id")
+    if transcription_id:
+        jobs.extend(
+            job_store.list_jobs(
+                job_type="diarization",
+                scope_type="transcription",
+                scope_id=transcription_id,
+                limit=20,
+            )
+        )
+        jobs = sorted(
+            {job["id"]: job for job in jobs}.values(),
+            key=lambda item: item.get("created_at") or 0,
+            reverse=True,
+        )
     events = [
         event
         for job in jobs

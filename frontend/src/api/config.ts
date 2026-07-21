@@ -49,6 +49,12 @@ export const SPEECHMATICS_DIARIZATION = [
   { value: 'speaker', label: 'Speaker diarization' },
 ];
 
+export const DIARIZATION_PROVIDERS = [
+  { value: 'none', labelKey: 'transcription.initialDiarizationDisabled' },
+  { value: 'local', labelKey: 'transcription.initialDiarizationLocal' },
+  { value: 'speechmatics', labelKey: 'transcription.initialDiarizationSpeechmatics' },
+];
+
 export const GEMINI_MODELS = [
   { value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
   { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview' },
@@ -84,7 +90,7 @@ export const DEFAULTS = {
   temperature: '0.0',
   wordTimestamps: false,
   conditionOnPreviousText: false,
-  vadGuided: false,
+  vadGuided: true,
   asrProvider: 'local',
   speechmaticsModel: 'standard',
   speechmaticsRegion: 'eu',

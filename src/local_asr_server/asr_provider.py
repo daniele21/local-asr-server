@@ -24,6 +24,8 @@ SPEECHMATICS_DIARIZATION_MODES: Final = ("none", "speaker")
 DEFAULT_SPEECHMATICS_REGION: Final = SPEECHMATICS_REGION_EU
 DEFAULT_SPEECHMATICS_MODEL: Final = "standard"
 DEFAULT_SPEECHMATICS_DIARIZATION: Final = "none"
+VAD_GUIDED_DEFAULT: Final = True
+VAD_POST_FILTER_DEFAULT: Final = True
 
 
 @dataclass(frozen=True)
@@ -37,8 +39,8 @@ class ASRRequest:
     temperature: float | None = None
     condition_on_previous_text: bool = False
     verbose: bool | None = None
-    vad_guided: bool = False
-    vad_post_filter: bool = False
+    vad_guided: bool = VAD_GUIDED_DEFAULT
+    vad_post_filter: bool = VAD_POST_FILTER_DEFAULT
     provider: str = ASR_PROVIDER_LOCAL
     provider_options: dict[str, Any] = field(default_factory=dict)
     job: Any = None

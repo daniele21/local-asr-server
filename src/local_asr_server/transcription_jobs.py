@@ -11,12 +11,17 @@ from local_asr_server.jobs import JobStore
 from local_asr_server.jobs.models import TERMINAL_JOB_STATUSES
 
 TRANSCRIPTION_JOB_TYPE = "transcription"
+DIARIZATION_JOB_TYPE = "diarization"
 
 
 @dataclass
 class TranscriptionJob:
     id: str
-    recording_id: str
+    recording_id: str | None
+    job_type: str = TRANSCRIPTION_JOB_TYPE
+    scope_type: str = "recording"
+    scope_id: str | None = None
+    payload: dict[str, Any] = field(default_factory=dict)
     status: str = "queued"
     current_step: str = "queued"
     progress: int = 0
@@ -31,9 +36,9 @@ class TranscriptionJob:
     def public(self) -> dict[str, Any]:
         return {
             "id": self.id,
-            "type": TRANSCRIPTION_JOB_TYPE,
-            "scope_type": "recording",
-            "scope_id": self.recording_id,
+            "type": self.job_type,
+            "scope_type": self.scope_type,
+            "scope_id": self.scope_id or self.recording_id,
             "recording_id": self.recording_id,
             "status": self.status,
             "current_step": self.current_step,
@@ -52,17 +57,33 @@ class TranscriptionJobManager:
         self._jobs: dict[str, TranscriptionJob] = {}
         self._store = store
 
-    def create(self, recording_id: str, runner: Callable[[TranscriptionJob], dict[str, Any]]) -> dict[str, Any]:
-        job = TranscriptionJob(id=str(uuid.uuid4()), recording_id=recording_id)
+    def create(
+        self,
+        recording_id: str | None,
+        runner: Callable[[TranscriptionJob], dict[str, Any]],
+        *,
+        job_type: str = TRANSCRIPTION_JOB_TYPE,
+        scope_type: str = "recording",
+        scope_id: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        job = TranscriptionJob(
+            id=str(uuid.uuid4()),
+            recording_id=recording_id,
+            job_type=job_type,
+            scope_type=scope_type,
+            scope_id=scope_id or recording_id,
+            payload=payload or {},
+        )
         with self._lock:
             self._jobs[job.id] = job
         if self._store is not None:
             self._store.create(
                 job_id=job.id,
-                job_type=TRANSCRIPTION_JOB_TYPE,
-                scope_type="recording",
-                scope_id=recording_id,
-                payload={"recording_id": recording_id},
+                job_type=job.job_type,
+                scope_type=job.scope_type,
+                scope_id=job.scope_id,
+                payload=job.payload or {"recording_id": recording_id},
             )
             job.events.put(job.public())
         else:
@@ -94,9 +115,9 @@ class TranscriptionJobManager:
             return [
                 job.public()
                 for job in sorted(jobs, key=lambda item: item.created_at, reverse=True)
-                if (job_type is None or job_type == TRANSCRIPTION_JOB_TYPE)
-                and (scope_type is None or scope_type == "recording")
-                and (scope_id is None or scope_id == job.recording_id)
+                if (job_type is None or job_type == job.job_type)
+                and (scope_type is None or scope_type == job.scope_type)
+                and (scope_id is None or scope_id == (job.scope_id or job.recording_id))
             ][:limit]
         return [
             self._stored_public(job)
@@ -225,7 +246,10 @@ class TranscriptionJobManager:
             "type": stored["type"],
             "scope_type": stored["scope_type"],
             "scope_id": stored["scope_id"],
-            "recording_id": stored["scope_id"] if stored["scope_type"] == "recording" else None,
+            "recording_id": (
+                (stored.get("payload") or {}).get("recording_id")
+                or (stored["scope_id"] if stored["scope_type"] == "recording" else None)
+            ),
             "status": stored["status"],
             "current_step": stored["current_step"],
             "progress": stored["progress"],

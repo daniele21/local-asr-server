@@ -39,6 +39,18 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
     showToast(t('transcription.successTitle'), 'success');
   };
 
+  const openCompletedTranscription = (result: Transcription, recordingId?: string | null) => {
+    const canonicalRecordingId = result.recording_id || recordingId;
+    if (canonicalRecordingId) {
+      navigateTo('meeting', canonicalRecordingId);
+      return;
+    }
+    const transcriptionId = result.id || result.saved_id;
+    if (transcriptionId) {
+      navigateTo('transcription', transcriptionId);
+    }
+  };
+
   const [projectItemsMap, setProjectItemsMap] = useState<Map<string, { transcription: any; analysis: any }>>(new Map());
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -127,7 +139,9 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
   const [asrProvider, setAsrProvider] = useState(DEFAULTS.asrProvider);
   const [speechmaticsRegion, setSpeechmaticsRegion] = useState(DEFAULTS.speechmaticsRegion);
   const [speechmaticsModel, setSpeechmaticsModel] = useState(DEFAULTS.speechmaticsModel);
-  const [speechmaticsDiarization, setSpeechmaticsDiarization] = useState(DEFAULTS.speechmaticsDiarization);
+  const [diarizationProvider, setDiarizationProvider] = useState('none');
+  const [visualIntelligenceEnabled, setVisualIntelligenceEnabled] = useState(false);
+  const [speechmaticsConfigured, setSpeechmaticsConfigured] = useState(false);
   const [temperature, setTemperature] = useState('');
   const [wordTimestamps, setWordTimestamps] = useState(false);
   const [conditionOnPrevious, setConditionOnPrevious] = useState(DEFAULTS.conditionOnPreviousText);
@@ -193,7 +207,9 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
       setAsrProvider(asr.provider);
       setSpeechmaticsRegion(asr.speechmaticsRegion);
       setSpeechmaticsModel(asr.speechmaticsModel);
-      setSpeechmaticsDiarization(asr.speechmaticsDiarization);
+      setDiarizationProvider(settings.speaker_diarization_enabled ? 'local' : 'none');
+      setVisualIntelligenceEnabled(Boolean(settings.visual_intelligence_enabled));
+      setSpeechmaticsConfigured(Boolean(settings.speechmatics_api_key_configured));
       setWordTimestamps(asr.wordTimestamps);
       setConditionOnPrevious(asr.conditionOnPrevious);
     } catch {}
@@ -311,19 +327,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
   const selectRecording = async (recording: Recording) => {
     const status = projectItemsMap.get(recording.id);
     if (status?.transcription?.id) {
-      try {
-        const tr = await ApiClient.getTranscription(status.transcription.id);
-        setTranscriptionResult(tr);
-        setStep('results');
-        if (tr.analysis) {
-          setResultTab('analysis');
-        } else {
-          setResultTab('text');
-        }
-        navigateTo('transcription', tr.id);
-      } catch (err: any) {
-        showToast(`Errore nel caricamento della trascrizione: ${err.message}`, 'error');
-      }
+      navigateTo('meeting', recording.id);
       return;
     }
 
@@ -382,6 +386,16 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
   // Live Audio Streaming Transcription parser
   const startTranscription = async () => {
     if (!selectedFile) return;
+    if (diarizationProvider === 'speechmatics' && !speechmaticsConfigured) {
+      showToast(t('transcription.rediarizationSpeechmaticsMissingKey'), 'error');
+      return;
+    }
+    if (
+      diarizationProvider === 'speechmatics'
+      && !window.confirm(t('transcription.initialDiarizationCloudConfirm'))
+    ) {
+      return;
+    }
     
     setIsProcessing(true);
     setLiveConsoleLines([]);
@@ -420,7 +434,13 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
           asr_provider: asrProvider,
           speechmatics_region: speechmaticsRegion,
           speechmatics_model: speechmaticsModel,
-          speechmatics_diarization: speechmaticsDiarization,
+          speechmatics_diarization: (
+            asrProvider === 'speechmatics' && diarizationProvider === 'speechmatics'
+              ? 'speaker'
+              : 'none'
+          ),
+          diarization_provider: diarizationProvider,
+          visual_intelligence_enabled: visualIntelligenceEnabled,
         });
         let currentJob = job;
         while (!['completed', 'failed', 'cancelled'].includes(currentJob.status)) {
@@ -491,9 +511,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
         setStep('results');
         setResultTab('text');
         showTranscriptionOutcome(result);
-        if (result.saved_id) {
-          navigateTo('transcription', result.saved_id);
-        }
+        openCompletedTranscription(result, selectedRecordingId);
         return;
       }
 
@@ -512,7 +530,13 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
       formData.append('asr_provider', asrProvider);
       formData.append('speechmatics_region', speechmaticsRegion);
       formData.append('speechmatics_model', speechmaticsModel);
-      formData.append('speechmatics_diarization', speechmaticsDiarization);
+      formData.append(
+        'speechmatics_diarization',
+        asrProvider === 'speechmatics' && diarizationProvider === 'speechmatics'
+          ? 'speaker'
+          : 'none',
+      );
+      formData.append('diarization_provider', diarizationProvider);
       if (temperature) formData.append('temperature', temperature);
 
       const duration = audioDuration || audioRef.current?.duration || 0;
@@ -569,9 +593,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
               setStep('results');
               setResultTab('text');
               showTranscriptionOutcome(event.data);
-              if (event.data.saved_id) {
-                navigateTo('transcription', event.data.saved_id);
-              }
+              openCompletedTranscription(event.data, selectedRecordingId);
             }
           } catch (err) {
             console.error('Line parse error:', err, line);
@@ -662,7 +684,10 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
           handleCardProjectChange={handleCardProjectChange}
           handleCardTitleChange={handleCardTitleChange}
           selectRecording={selectRecording}
-          handleSelectAudioFile={handleSelectAudioFile}
+          handleSelectAudioFile={(file) => {
+            setSelectedRecordingId(null);
+            handleSelectAudioFile(file);
+          }}
           fileInputRef={fileInputRef}
           onMerge={handleMergeTranscriptions}
           isMerging={isMerging}
@@ -673,6 +698,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
       {step === 'transcribe' && !isProcessing && (
         <ConfigureStep
           selectedFile={selectedFile}
+          selectedRecordingId={selectedRecordingId}
           isProcessing={isProcessing}
           goToUploadStep={goToUploadStep}
           targetLanguage={targetLanguage}
@@ -687,8 +713,10 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
           setSpeechmaticsRegion={setSpeechmaticsRegion}
           speechmaticsModel={speechmaticsModel}
           setSpeechmaticsModel={setSpeechmaticsModel}
-          speechmaticsDiarization={speechmaticsDiarization}
-          setSpeechmaticsDiarization={setSpeechmaticsDiarization}
+          diarizationProvider={diarizationProvider}
+          setDiarizationProvider={setDiarizationProvider}
+          visualIntelligenceEnabled={visualIntelligenceEnabled}
+          setVisualIntelligenceEnabled={setVisualIntelligenceEnabled}
           modelCacheStatus={modelCacheStatus}
           temperature={temperature}
           setTemperature={setTemperature}

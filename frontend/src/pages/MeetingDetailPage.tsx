@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import {
   ArrowLeft,
   ChevronDown,
@@ -12,6 +12,7 @@ import {
   PlayCircle,
   RefreshCw,
   Sparkles,
+  Users,
   XCircle,
 } from 'lucide-react';
 import { ApiClient, AnalysisRun, Meeting, MeetingDiagnostics } from '../api/apiClient';
@@ -31,6 +32,8 @@ import { VisualIntelligencePanel } from '../components/meeting/VisualIntelligenc
 import { VisualDebugPanel } from '../components/meeting/VisualDebugPanel';
 import { useVisualIntelligence } from '../hooks/useVisualIntelligence';
 import { recordingTranscriptionRoute } from '../utils/transcriptionRoute';
+import { SpeakerDiarizationEditor } from '../components/meeting/SpeakerDiarizationEditor';
+import TranscriptTextView from '../components/transcription/TranscriptTextView';
 
 interface MeetingDetailPageProps {
   recordingId: string | null;
@@ -61,7 +64,19 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
   const [analysisPipelineTarget, setAnalysisPipelineTarget] = useState('meeting_default');
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [showAudioPlayer, setShowAudioPlayer] = useState(false);
-  const [transcriptExpanded, setTranscriptExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState<'transcript' | 'analysis' | 'speakers'>('transcript');
+  const [currentTime, setCurrentTime] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const handleTimestampClick = (time: number) => {
+    setShowAudioPlayer(true);
+    setTimeout(() => {
+      if (audioRef.current) {
+        audioRef.current.currentTime = time;
+        audioRef.current.play().catch(() => {});
+      }
+    }, 100);
+  };
   const visualEnabled = meeting?.transcription?.stats?.visual_intelligence?.version === 2;
   const { data: visualData, loading: visualLoading, error: visualError } = useVisualIntelligence(
     demoMode ? null : recordingId, visualEnabled,
@@ -289,7 +304,14 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                 {lang === 'it' ? 'Nascondi' : 'Hide'}
               </button>
             </div>
-            <audio controls src={`/v1/recordings/${meeting.id}/audio`} className="h-9 w-full" autoPlay />
+            <audio
+              ref={audioRef}
+              controls
+              src={`/v1/recordings/${meeting.id}/audio`}
+              className="h-9 w-full"
+              autoPlay
+              onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+            />
           </div>
         )}
       </section>
@@ -468,107 +490,249 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
 
         {/* Content Section: Analysis Card (Full Width) */}
         <main className="flex flex-col gap-5 w-full">
-          <div className="surface-primary rounded-xl overflow-hidden border border-border-subtle shadow-premium">
-            <div className="px-4 py-3 border-b border-border-subtle bg-bg-elevated flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-accent animate-pulse" />
-                <h3 className="text-sm font-semibold text-text-primary">{t('meeting.analysisTitle')}</h3>
-              </div>
-              <div className="flex items-center gap-2">
-                {meeting.transcription && (
-                  <div className="relative">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setMoreOpen((open) => !open)}
-                      aria-expanded={moreOpen}
-                      className="h-7 text-xs text-text-muted hover:text-text-primary"
-                    >
-                      <Sparkles className="h-3.5 w-3.5 text-accent" />
-                      <span>{lang === 'it' ? 'Esegui Analisi' : 'Run Analysis'}</span>
-                      <ChevronDown className="h-3 w-3" />
-                    </Button>
-                    {moreOpen && (
-                      <div className="absolute right-0 top-8 z-40 w-48 rounded-lg border border-border-subtle bg-bg-surface p-1 shadow-premium">
-                        <button
-                          type="button"
-                          disabled={demoMode || isBusy}
-                          onClick={() => {
-                            setMoreOpen(false);
-                            openAnalysisSetup('meeting_default');
-                          }}
-                          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50"
-                        >
-                          <Sparkles className="h-3.5 w-3.5" />
-                          {t('meeting.analyzeDetail')}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={demoMode || isBusy}
-                          onClick={() => {
-                            setMoreOpen(false);
-                            openAnalysisSetup('meeting_deep');
-                          }}
-                          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50"
-                        >
-                          <ListChecks className="h-3.5 w-3.5" />
-                          {t('meeting.deepDetail')}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-                <span className="text-xs text-text-muted border-l border-border-subtle pl-2.5">
-                  {meeting.analysis_runs.length} run
+          {/* Tab bar */}
+          <div className="flex border border-border-subtle bg-bg-surface/30 p-1 rounded-xl gap-1">
+            <button
+              onClick={() => setActiveTab('transcript')}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer",
+                activeTab === 'transcript'
+                  ? "bg-accent text-white shadow-sm"
+                  : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+              )}
+            >
+              <FileText className="w-4 h-4" />
+              <span>{t('meeting.tabTranscript')}</span>
+              {meeting.transcription && (
+                <span className={cn(
+                  "ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold border",
+                  activeTab === 'transcript' ? "bg-white/20 border-white/20 text-white" : "bg-bg-elevated border-border-subtle text-text-secondary"
+                )}>
+                  {meeting.transcription.segments?.length || 0}
                 </span>
-              </div>
-            </div>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab('analysis')}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer",
+                activeTab === 'analysis'
+                  ? "bg-accent text-white shadow-sm"
+                  : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+              )}
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>{t('meeting.tabAnalysis')}</span>
+              {meeting.analysis_runs.length > 0 && (
+                <span className={cn(
+                  "ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold border",
+                  activeTab === 'analysis' ? "bg-white/20 border-white/20 text-white" : "bg-bg-elevated border-border-subtle text-text-secondary"
+                )}>
+                  {meeting.analysis_runs.length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab('speakers')}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer",
+                activeTab === 'speakers'
+                  ? "bg-accent text-white shadow-sm"
+                  : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+              )}
+            >
+              <Users className="w-4 h-4" />
+              <span>{t('meeting.tabSpeakers')}</span>
+              {speakerMappings.length > 0 && (
+                <span className={cn(
+                  "ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold border",
+                  activeTab === 'speakers' ? "bg-white/20 border-white/20 text-white" : "bg-bg-elevated border-border-subtle text-text-secondary"
+                )}>
+                  {speakerMappings.length}
+                </span>
+              )}
+            </button>
+          </div>
 
-            {/* Smart Analysis Tabs (Show only generated or default brief if none exist) */}
-            <div className="flex flex-wrap gap-1 p-2 border-b border-border-subtle bg-bg-surface/50">
-              {analysisTypes
-                .filter((type) => meeting.latest_analysis?.[type] || (!Object.keys(meeting.latest_analysis || {}).length && type === 'meeting_brief'))
-                .map((type) => {
-                  const run = meeting.latest_analysis?.[type];
-                  return (
-                    <button
-                      key={type}
-                      onClick={() => setSelectedAnalysisType(type)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200 cursor-pointer ${
-                        selectedAnalysisType === type
-                          ? 'bg-accent text-white border-accent shadow-sm'
-                          : 'bg-bg-elevated text-text-secondary border-border-subtle hover:bg-bg-hover hover:text-text-primary'
-                      }`}
-                    >
-                      {analysisLabel(type)}
-                      {run && <CheckCircle2 className="inline-block ml-1.5 w-3.5 h-3.5 text-white" />}
-                    </button>
-                  );
-                })}
-            </div>
-
-            <div className="p-5 sm:p-6 bg-bg-elevated min-h-[220px]">
-              {selectedRun ? (
-                <div className="max-w-none prose prose-invert prose-sm">
-                  {renderMarkdown(runMarkdown(selectedRun))}
-                </div>
-              ) : (
-                <div className="text-center py-12">
-                  <Sparkles className="w-8 h-8 mx-auto text-text-muted mb-3" />
-                  <p className="text-sm text-text-secondary">{t('meeting.noAnalysisAvailable', { type: analysisLabel(selectedAnalysisType) })}</p>
-                  {!isBusy && meeting.transcription && (
+          {/* Active Tab Content */}
+          <div className="flex flex-col gap-5 w-full">
+            {activeTab === 'transcript' && (
+              <div className="surface-primary rounded-xl border border-border-subtle shadow-premium overflow-hidden">
+                {meeting.transcription && !demoMode && (
+                  <div className="px-4 py-3 border-b border-border-subtle bg-bg-elevated flex items-center justify-between gap-3">
+                    <span className="text-xs text-text-secondary font-medium">
+                      {meeting.transcription?.text && (
+                        <span>
+                          {meeting.transcription.text.split(/\s+/).filter(Boolean).length} {lang === 'it' ? 'parole' : 'words'}
+                        </span>
+                      )}
+                    </span>
                     <Button
                       size="sm"
                       variant="secondary"
-                      onClick={() => openAnalysisSetup('meeting_default')}
-                      className="mt-4"
+                      onClick={() => navigateTo('transcription', meeting.transcription?.id || null)}
                     >
-                      {lang === 'it' ? 'Avvia analisi ora' : 'Start analysis now'}
+                      {t('meeting.openTranscriptTools')}
                     </Button>
+                  </div>
+                )}
+                {meeting.transcription?.segments?.length ? (
+                  <div className="p-4 sm:p-5 bg-bg-elevated">
+                    <TranscriptTextView
+                      segments={meeting.transcription.segments}
+                      speakerMappings={speakerMappings}
+                      onTimestampClick={handleTimestampClick}
+                      currentTime={currentTime}
+                    />
+                  </div>
+                ) : meeting.transcription?.text ? (
+                  <div className="p-5 bg-bg-elevated">
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-text-secondary">
+                      {meeting.transcription.text}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="text-center py-16 bg-bg-elevated">
+                    <FileText className="w-8 h-8 mx-auto text-text-muted mb-3" />
+                    <p className="text-sm text-text-secondary">{t('meeting.transcriptNotAvailable')}</p>
+                    {!isBusy && !demoMode && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={openTranscriptionWorkflow}
+                        className="mt-4"
+                      >
+                        {t('meeting.btnTranscribe')}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'analysis' && (
+              <div className="surface-primary rounded-xl overflow-hidden border border-border-subtle shadow-premium">
+                <div className="px-4 py-3 border-b border-border-subtle bg-bg-elevated flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-accent animate-pulse" />
+                    <h3 className="text-sm font-semibold text-text-primary">{t('meeting.analysisTitle')}</h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {meeting.transcription && (
+                      <div className="relative">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setMoreOpen((open) => !open)}
+                          aria-expanded={moreOpen}
+                          className="h-7 text-xs text-text-muted hover:text-text-primary"
+                        >
+                          <Sparkles className="h-3.5 w-3.5 text-accent" />
+                          <span>{lang === 'it' ? 'Esegui Analisi' : 'Run Analysis'}</span>
+                          <ChevronDown className="h-3 w-3" />
+                        </Button>
+                        {moreOpen && (
+                          <div className="absolute right-0 top-8 z-40 w-48 rounded-lg border border-border-subtle bg-bg-surface p-1 shadow-premium">
+                            <button
+                              type="button"
+                              disabled={demoMode || isBusy}
+                              onClick={() => {
+                                setMoreOpen(false);
+                                openAnalysisSetup('meeting_default');
+                              }}
+                              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50"
+                            >
+                              <Sparkles className="h-3.5 w-3.5" />
+                              {t('meeting.analyzeDetail')}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={demoMode || isBusy}
+                              onClick={() => {
+                                setMoreOpen(false);
+                                openAnalysisSetup('meeting_deep');
+                              }}
+                              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50"
+                            >
+                              <ListChecks className="h-3.5 w-3.5" />
+                              {t('meeting.deepDetail')}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <span className="text-xs text-text-muted border-l border-border-subtle pl-2.5">
+                      {meeting.analysis_runs.length} run
+                    </span>
+                  </div>
+                </div>
+
+                {/* Smart Analysis Tabs (Show only generated or default brief if none exist) */}
+                <div className="flex flex-wrap gap-1 p-2 border-b border-border-subtle bg-bg-surface/50">
+                  {analysisTypes
+                    .filter((type) => meeting.latest_analysis?.[type] || (!Object.keys(meeting.latest_analysis || {}).length && type === 'meeting_brief'))
+                    .map((type) => {
+                      const run = meeting.latest_analysis?.[type];
+                      return (
+                        <button
+                          key={type}
+                          onClick={() => setSelectedAnalysisType(type)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200 cursor-pointer ${
+                            selectedAnalysisType === type
+                              ? 'bg-accent text-white border-accent shadow-sm'
+                              : 'bg-bg-elevated text-text-secondary border-border-subtle hover:bg-bg-hover hover:text-text-primary'
+                          }`}
+                        >
+                          {analysisLabel(type)}
+                          {run && <CheckCircle2 className="inline-block ml-1.5 w-3.5 h-3.5 text-white" />}
+                        </button>
+                      );
+                    })}
+                </div>
+
+                <div className="p-5 sm:p-6 bg-bg-elevated min-h-[220px]">
+                  {selectedRun ? (
+                    <div className="max-w-none prose prose-invert prose-sm animate-in fade-in duration-200">
+                      {renderMarkdown(runMarkdown(selectedRun))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12">
+                      <Sparkles className="w-8 h-8 mx-auto text-text-muted mb-3" />
+                      <p className="text-sm text-text-secondary">{t('meeting.noAnalysisAvailable', { type: analysisLabel(selectedAnalysisType) })}</p>
+                      {!isBusy && meeting.transcription && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => openAnalysisSetup('meeting_default')}
+                          className="mt-4"
+                        >
+                          {lang === 'it' ? 'Avvia analisi ora' : 'Start analysis now'}
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+
+            {activeTab === 'speakers' && (
+              <div className="animate-in fade-in duration-200">
+                {meeting.transcription ? (
+                  <SpeakerDiarizationEditor
+                    transcription={meeting.transcription}
+                    readOnly={demoMode}
+                    onUpdated={(transcription) => setMeeting((current) => (
+                      current ? { ...current, transcription } : current
+                    ))}
+                  />
+                ) : (
+                  <div className="text-center py-16 bg-bg-elevated rounded-xl border border-border-subtle">
+                    <Users className="w-8 h-8 mx-auto text-text-muted mb-3" />
+                    <p className="text-sm text-text-secondary">{t('meeting.noSpeakerClusters')}</p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {(visualData || visualLoading || visualError) && (
@@ -583,40 +747,6 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
           {recordingId && visualEnabled && (
             <VisualDebugPanel recordingId={recordingId} />
           )}
-
-          {/* Collapsible Transcript Panel */}
-          <div className="surface-supporting rounded-xl overflow-hidden border border-border-subtle transition-premium shadow-soft">
-            <button
-              onClick={() => setTranscriptExpanded((prev) => !prev)}
-              className="w-full px-4 py-3 flex items-center justify-between gap-3 bg-bg-surface/60 hover:bg-bg-hover/80 transition-colors text-left cursor-pointer"
-            >
-              <div className="flex items-center gap-2">
-                <FileText className="w-4 h-4 text-text-muted" />
-                <h3 className="text-sm font-semibold text-text-primary">{t('meeting.transcriptTitle')}</h3>
-                {meeting.transcription?.text && (
-                  <span className="text-[11px] text-text-muted">
-                    ({meeting.transcription.text.split(/\s+/).filter(Boolean).length} {lang === 'it' ? 'parole' : 'words'})
-                  </span>
-                )}
-              </div>
-              <span className="text-xs text-accent font-semibold flex items-center gap-1">
-                {transcriptExpanded ? (lang === 'it' ? 'Nascondi' : 'Hide') : (lang === 'it' ? 'Mostra' : 'Show')}
-                <ChevronDown className={cn("w-3.5 h-3.5 transition-transform duration-250", transcriptExpanded && "rotate-180")} />
-              </span>
-            </button>
-
-            {transcriptExpanded && (
-              <div className="border-t border-border-subtle p-5 bg-bg-elevated max-h-[520px] overflow-auto animate-in fade-in slide-in-from-top-2 duration-200">
-                {meeting.transcription?.text ? (
-                  <pre className="whitespace-pre-wrap text-sm leading-relaxed text-text-secondary font-sans">
-                    {meeting.transcription.text}
-                  </pre>
-                ) : (
-                  <p className="text-sm text-text-muted">{t('meeting.transcriptNotAvailable')}</p>
-                )}
-              </div>
-            )}
-          </div>
         </main>
       </div>
 

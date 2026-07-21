@@ -178,6 +178,7 @@ hidden_imports = [
     "local_asr_server.native_capture_helper",
     "local_asr_server.native_capture_helper.compile",
     "local_asr_server.speaker_diarization",
+    "local_asr_server.transcription_diarization",
     "local_asr_server.speaker_diarization_helper",
     "local_asr_server.speaker_diarization_helper.compile",
     "local_asr_server.audio_diagnostics",
@@ -199,6 +200,10 @@ hidden_imports = [
 
 for runtime_package in ("local_llm_server", "mlx_vlm"):
     hidden_imports.extend(collect_submodules(runtime_package))
+
+# Speechmatics is imported lazily so local-only startup remains lightweight.
+# Collect it explicitly when building the app bundle.
+hidden_imports.extend(collect_submodules("speechmatics"))
 
 # ── Exclude heavy dev/test packages ───────────────────────────────────────────
 

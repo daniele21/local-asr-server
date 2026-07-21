@@ -27,6 +27,7 @@ from local_asr_server.asr_provider import (
 
 
 DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
+DEFAULT_VISUAL_FRAME_SIMILARITY_THRESHOLD = 12
 
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
@@ -72,6 +73,7 @@ DEFAULT_SETTINGS: dict[str, any] = {
     "visual_intelligence_enabled": False,
     "visual_llm_model": "qwen3-vl-4b",
     "visual_routing_mode": "v1",
+    "visual_frame_similarity_threshold": DEFAULT_VISUAL_FRAME_SIMILARITY_THRESHOLD,
     "visual_minimum_observations": 3,
     "visual_minimum_margin": 0.2,
     "visual_minimum_distinct_turns": 2,

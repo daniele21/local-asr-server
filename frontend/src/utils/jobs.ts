@@ -16,14 +16,18 @@ const LOCALIZED_JOB_STEPS = new Set([
   'validating_audio',
   'transcribing_mic',
   'transcribing_system',
+  'preparing_diarization',
+  'diarizing_system',
   'diarizing',
   'merging',
   'visual_processing',
   'audio_intelligence',
   'saving',
+  'saving_diarization',
   'completed',
   'failed',
   'cancelled',
+  'interrupted',
 ]);
 
 export function localizeJobStep(step: string, translate: Translate): string {

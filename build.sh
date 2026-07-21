@@ -361,9 +361,10 @@ rm -rf build_venv
 uv venv build_venv --python "$BUILD_PYTHON_VERSION" --color always
 
 log "  Installing wheel and dependencies into build_venv..."
-# Installs local_asr_server wheel with [app] dependencies + pyinstaller
+# The packaged app exposes Speechmatics ASR and diarization from the UI, so the
+# cloud SDK must be bundled together with the native app dependencies.
 WHEEL_FILE=$(ls dist/wheels/local_asr_server-*.whl)
-uv pip install --python build_venv "${WHEEL_FILE}[app]" "pyinstaller>=6.0"
+uv pip install --python build_venv "${WHEEL_FILE}[app,speechmatics]" "pyinstaller>=6.0"
 
 log "  Running PyInstaller from build_venv..."
 CLOSEDROOM_APP_NAME="$APP_NAME" \

@@ -156,6 +156,7 @@ def create_app(
     )
     from local_asr_server.transcriptions import TranscriptionStore
     transcription_store = TranscriptionStore(catalog=catalog_store)
+    from local_asr_server.transcription_diarization import TranscriptionDiarizationService
     services = AppServices(
         capture=capture_manager,
         runtime=runtime_services,
@@ -163,6 +164,7 @@ def create_app(
         catalog=catalog_store,
         jobs=job_store,
         transcription_jobs=transcription_jobs,
+        diarization=TranscriptionDiarizationService(),
         analysis_jobs=cast(AnalysisJobManager, None),
         recordings=recording_store,
         transcriptions=transcription_store,

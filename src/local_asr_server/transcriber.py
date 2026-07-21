@@ -19,7 +19,7 @@ import asyncio
 import threading
 import contextlib
 from pathlib import Path
-from typing import Optional, Any, Dict, Generator
+from typing import Optional, Any, Callable, Dict, Generator
 
 from local_asr_server.paths import get_cache_dir
 from local_asr_server.transcription_quality import clean_segments, filter_segments_by_vad
@@ -29,12 +29,14 @@ from local_asr_server.asr_models import (
     is_nemotron_model,
     resolve_nemotron_language,
 )
-from local_asr_server.asr_provider import public_asr_metadata
+from local_asr_server.asr_provider import (
+    VAD_GUIDED_DEFAULT,
+    VAD_POST_FILTER_DEFAULT,
+    public_asr_metadata,
+)
 
 logger = logging.getLogger("uvicorn.error")
 CACHE_DIR = get_cache_dir()
-VAD_GUIDED_DEFAULT = False
-VAD_POST_FILTER_DEFAULT = True
 TRANSCRIPTION_CACHE_VERSION = "asr-v2"
 DEFAULT_TEMPERATURE = 0.0
 DEFAULT_COMPRESSION_RATIO_THRESHOLD = 2.2
@@ -593,6 +595,7 @@ async def transcribe_stream_generator(
     asr_provider: str = "local",
     backend: str | None = None,
     provider_options: Optional[Dict[str, Any]] = None,
+    payload_postprocessor: Callable[[Path, dict[str, Any]], dict[str, Any]] | None = None,
 ) -> Generator[str, None, None]:
     """
     Stream transcription updates using NDJSON. Starts a background worker thread
@@ -725,19 +728,16 @@ async def transcribe_stream_generator(
 
     t.join()
 
-    # Clean up file
-    try:
-        if os.path.exists(audio_path):
-            os.remove(audio_path)
-            logger.info(f"[Transcriber] Cleaned up temporary file: {audio_path}")
-    except OSError as e:
-        logger.warning(f"[Transcriber] Failed to remove temp file {audio_path}: {e}")
-
     if transcribe_error:
         yield json.dumps({
             "type": "error",
             "message": f"Transcription failed: {transcribe_error}"
         }) + "\n"
+        try:
+            if os.path.exists(audio_path):
+                os.remove(audio_path)
+        except OSError:
+            pass
         return
 
     # Success payload formulation
@@ -763,13 +763,34 @@ async def transcribe_stream_generator(
         },
     }
     payload = _clean_nan_values(payload)
-    save_cached_result(cache_key, payload)
-    
-    saved_meta = transcription_store.save(payload, audio_filename=audio_filename, recording_id=recording_id)
-    payload["saved_id"] = saved_meta["id"]
-    payload["saved_file_path"] = str(transcription_store.root)
-    
-    yield json.dumps({
-        "type": "completed",
-        "data": payload
-    }) + "\n"
+    try:
+        if payload_postprocessor is not None:
+            yield json.dumps({
+                "type": "progress",
+                "step": "diarizing",
+                "message": "Separazione degli speaker..."
+            }) + "\n"
+            payload = payload_postprocessor(Path(audio_path), payload)
+        save_cached_result(cache_key, payload)
+
+        saved_meta = transcription_store.save(payload, audio_filename=audio_filename, recording_id=recording_id)
+        payload["saved_id"] = saved_meta["id"]
+        payload["saved_file_path"] = str(transcription_store.root)
+
+        yield json.dumps({
+            "type": "completed",
+            "data": payload
+        }) + "\n"
+    except Exception as exc:
+        logger.error("[Transcriber] Post-processing failed: %s", exc, exc_info=True)
+        yield json.dumps({
+            "type": "error",
+            "message": f"Transcription post-processing failed: {exc}",
+        }) + "\n"
+    finally:
+        try:
+            if os.path.exists(audio_path):
+                os.remove(audio_path)
+                logger.info(f"[Transcriber] Cleaned up temporary file: {audio_path}")
+        except OSError as exc:
+            logger.warning(f"[Transcriber] Failed to remove temp file {audio_path}: {exc}")

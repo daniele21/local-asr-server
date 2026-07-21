@@ -9,7 +9,10 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Callable
 
-from local_asr_server.settings import load_settings
+from local_asr_server.settings import (
+    DEFAULT_VISUAL_FRAME_SIMILARITY_THRESHOLD,
+    load_settings,
+)
 from local_asr_server.visual_intelligence.contracts import (
     VisualProcessingProgress,
     VisualRoutingConfig,
@@ -71,8 +74,11 @@ class PostMeetingVisualService:
         recording_id: str,
         payload: dict[str, Any],
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        enabled: bool | None = None,
     ) -> dict[str, Any]:
         settings = load_settings()
+        if enabled is not None:
+            settings = {**settings, "visual_intelligence_enabled": enabled}
         requested_routing_mode = str(settings.get("visual_routing_mode") or "v1")
         frames = services.recordings.list_visual_frames(recording_id)
         if not frames:
@@ -111,12 +117,19 @@ class PostMeetingVisualService:
             return payload
         model = str(settings.get("visual_llm_model") or "qwen3-vl-4b")
         routing_mode = requested_routing_mode
+        configured_similarity_threshold = settings.get(
+            "visual_frame_similarity_threshold",
+            DEFAULT_VISUAL_FRAME_SIMILARITY_THRESHOLD,
+        )
+        routing_config = VisualRoutingConfig(
+            mode=routing_mode,
+            dhash_distance=int(configured_similarity_threshold),
+        )
         routing_summary = None
         routing_error = None
         routing_artifact = None
         if routing_mode in {"shadow", "v2"}:
             try:
-                routing_config = VisualRoutingConfig(mode=routing_mode)
                 router = TaskAwareFrameRouter(routing_config)
                 candidates, routing_summary = router.route(frames, payload.get("segments") or [])
                 routing_artifact = {
@@ -176,7 +189,7 @@ class PostMeetingVisualService:
                     frame_hash = calculate_dhash(Path(frame["path"]))
                     if last_hash is not None:
                         distance = bin(frame_hash ^ last_hash).count("1")
-                        if distance <= 2:
+                        if distance <= routing_config.dhash_distance:
                             is_duplicate = True
                 except Exception as hash_exc:
                     logger.warning("Failed to calculate dhash for frame %s: %s", frame.get("sequence"), hash_exc)
@@ -240,13 +253,14 @@ class PostMeetingVisualService:
                     raise VisualBackendUnavailable(backend_error_message)
             logger.info(
                 "[Visual Filter] recording=%s mode=%s captured=%d analyzed=%d "
-                "duplicates_reused=%d failed=%d",
+                "duplicates_reused=%d failed=%d similarity_threshold=%d",
                 recording_id,
                 routing_mode,
                 total_frames,
                 inferred,
                 reused,
                 failed,
+                routing_config.dhash_distance,
             )
             elapsed = time.perf_counter() - started
             status = "degraded" if routing_error else "completed"
@@ -263,6 +277,7 @@ class PostMeetingVisualService:
                 "elapsed_seconds": round(elapsed, 3),
                 "requested_routing_mode": requested_routing_mode,
                 "routing_mode": routing_mode,
+                "frame_similarity_threshold": routing_config.dhash_distance,
                 **({"routing_summary": self._compact_routing_summary(routing_summary)} if routing_summary else {}),
                 **diagnostic(
                     "visual_intelligence",

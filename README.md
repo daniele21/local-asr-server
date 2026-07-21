@@ -279,7 +279,7 @@ job events, artifact presence and redacted log lines correlated to the meeting.
   * Nemotron Nano 4B / `nemotron-nano-4b` or compatible local model.
 * Optional cloud providers:
 
-  * Speechmatics Batch ASR, installed with the `speechmatics` extra;
+  * Speechmatics Batch ASR and speaker diarization; the SDK is installed with the standard Python package, but cloud processing remains opt-in;
   * Gemini API key, only when cloud analysis is selected.
 
 ### Install with setup script
@@ -315,17 +315,14 @@ pip install -e ".[app]"
 pip install -e ".[build]"
 ```
 
-### Optional Speechmatics ASR dependency
+### Speechmatics configuration
 
-Speechmatics is opt-in. Install the optional extra only when you want cloud ASR:
-
-```bash
-pip install -e ".[speechmatics]"
-```
-
-Then open Settings, choose `Speechmatics Batch` as ASR provider, configure the
-API key, region, model and diarization mode. The default ASR provider remains
-local MLX.
+The Speechmatics SDK is installed by the normal `./setup.sh` or
+`pip install -e .` workflow, so the server cannot expose a provider that is
+missing at runtime. Cloud processing is still opt-in: configure the API key in
+Settings and explicitly select Speechmatics as ASR or diarization provider.
+After installing or updating dependencies, restart the running ClosedRoom
+server.
 
 In development, ClosedRoom also reads a local `.env` file from the project root.
 Use `SPEECHMATICS_API_KEY=...` or configure the same key from Settings.
@@ -438,13 +435,41 @@ returns timestamped clusters such as `system:0` and `system:1`; ASR segments are
 matched by temporal overlap. Provider-owned clusters, such as Speechmatics
 `S1`/`S2`, are preserved rather than overwritten.
 
-The feature is opt-in from the Recording page (and remains configurable in
-Settings) and requires macOS 14+. FluidAudio is
+The helper uses FluidAudio's accuracy-oriented offline profile: segmentation
+step ratio `0.1`, no minimum embedding segment duration, and zero-vote span
+re-embedding. This is slower than the Community-1 speed-oriented defaults but
+improves recall for short turns. The raw diarization timeline is authoritative
+for the detected speaker count. A cluster remains available for naming even
+when no preserved Whisper segment overlaps it; the result UI marks that cluster
+as detected in audio without associated transcript text.
+
+The transcription Configure step offers one independent diarization selector:
+`Disabled`, `Local FluidAudio`, or `Speechmatics cloud · diarization only`.
+It works for both ClosedRoom recordings and imported audio files and does not
+require a participant count. This choice is independent from the ASR provider,
+so MLX/Whisper can produce the text while Speechmatics is used only to produce
+the speaker timeline. The global Recording/Settings toggle remains the default
+for recording-linked transcriptions when no per-run choice is supplied.
+
+Local FluidAudio requires macOS 14+. FluidAudio is
 compiled into the app bundle, while its Core ML models are downloaded on first
 use under `~/Library/Application Support/ClosedRoom/models/fluidaudio-speaker-diarization/`.
 A failure is recorded in `speaker-diarization.json` but does not fail the
 transcription. When visual intelligence is also enabled, Qwen uses these local
 clusters as the stable diarization source for conservative name attribution.
+
+After a transcript has been saved, the result view can recalculate only speaker
+diarization without rerunning local ASR. The user can choose FluidAudio or
+Speechmatics Batch. This workflow keeps the existing segment text and
+timestamps, treats the separate microphone track as one known local speaker,
+and sends only the system track to the selected diarization backend.
+
+Speechmatics still performs its own cloud batch transcription internally to
+produce speaker labels; ClosedRoom discards that returned text and aligns only
+the Speechmatics speaker timeline to the existing transcript. The UI therefore
+requires an explicit cloud-processing confirmation and a configured
+Speechmatics API key. Re-diarization replaces previous automatic and manual
+speaker mappings because cluster identities are not stable across backends.
 
 ### Post-meeting visual intelligence foundation
 
@@ -455,6 +480,11 @@ diarization and does not use face recognition. Automatic names are applied only
 to existing provider speaker clusters when the configured support thresholds
 are met.
 
+When starting transcription for a saved recording, the configuration step
+offers a per-run Qwen toggle. It defaults to the global visual-intelligence
+setting, can be disabled without deleting the captured frames, and does not
+change the persisted setting.
+
 The feature is disabled by default. The Recording page exposes the toggle next
 to diarization and, when enabled, lists the
 shareable macOS windows and requires an explicit window selection; leaving the
@@ -463,6 +493,12 @@ only that window at low frequency without changing the audio capture stream.
 Captured frames are private recording artifacts stored in the recording
 directory. They remain available after processing, including failed or repeated
 Qwen runs, together with the structured observations and compact summary.
+
+The stable `v1` path filters perceptually similar frames before Qwen inference.
+`visual_frame_similarity_threshold` controls the 64-bit dHash Hamming distance:
+higher values filter more aggressively. The default is `12` (valid range
+`0..64`); filtered frames reuse the previous observation and therefore do not
+make another Qwen call.
 
 For controlled rollout, `visual_routing_mode=shadow` leaves the v1 Qwen calls
 and user-visible mapping unchanged while persisting explainable candidate and
@@ -623,6 +659,11 @@ when present, otherwise assigns stable `Speaker N` labels. The result view lets
 users rename every cluster later; saving a name updates both segments and the
 full-text export without rerunning ASR.
 
+The same result view also exposes **Recalculate speakers only**. It creates a
+persistent `diarization` job, preserves ASR text, and updates the existing
+transcription in place. The summary shows the detected cluster count and the
+backend actually used.
+
 The recordings directory shown in Settings is also the runtime storage source
 for CLI and menu-bar launches unless `--recordings-dir` is explicitly supplied.
 Older recordings under `~/Recordings/local-asr` remain readable. Captured
@@ -682,6 +723,12 @@ The cache includes:
 * audio hash.
 
 This avoids repeated local processing for identical inputs.
+
+For local ASR, VAD-guided transcription and the advisory VAD post-filter are
+enabled by default. VAD limits Whisper work to detected speech windows, while a
+missing/empty VAD result automatically falls back to full-track transcription.
+Both options remain part of the cache key and VAD-guided mode can be disabled
+from the transcription configuration screen.
 
 ---
 
@@ -775,6 +822,7 @@ ClosedRoom can be configured through:
 | `speechmatics_region`      | Speechmatics Batch region (`eu` or `us`)                    |
 | `speechmatics_model`       | Speechmatics model (`standard` or `enhanced`)               |
 | `speechmatics_diarization` | Speechmatics diarization mode (`none` or `speaker`)         |
+| `diarization_provider`     | Post-ASR speaker separation: `none`, `local` or `speechmatics` |
 | `llm_provider`             | Analysis provider                                           |
 | `gemini_model`             | Gemini model used when `llm_provider=gemini`                |
 | `local_llm_mode`           | `auto`, `external`, or `disabled`                           |
@@ -789,6 +837,7 @@ ClosedRoom can be configured through:
 | `visual_intelligence_enabled` | Enable post-meeting Qwen visual evidence processing; default `false` |
 | `visual_llm_model` | Vision model routed through `local-llm-server`; default `qwen3-vl-4b` |
 | `visual_routing_mode` | Frame routing policy: stable `v1`, diagnostic-only `shadow`, or task-aware `v2`; default `v1` |
+| `visual_frame_similarity_threshold` | Maximum 64-bit dHash distance treated as a reusable near-duplicate in `v1`; higher filters more, default `12`, range `0..64` |
 | `visual_minimum_observations` | Minimum matching observations before automatic attribution |
 | `visual_minimum_margin` | Minimum normalized lead over the second identity candidate |
 | `visual_minimum_distinct_turns` | Minimum distinct diarization turns required by task-aware speaker attribution; default `2` |
@@ -892,6 +941,24 @@ curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/jobs
 curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/jobs/<job-id>
 curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/jobs/<job-id>/events
 ```
+
+### Recalculate speaker diarization only
+
+```bash
+curl -b /tmp/closedroom.cookies \
+  -X POST http://127.0.0.1:1236/v1/transcriptions/<transcription-id>/diarization-jobs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider": "speechmatics",
+    "speechmatics_region": "eu",
+    "speechmatics_model": "standard"
+  }'
+```
+
+Use `"provider": "local"` to rerun FluidAudio. The endpoint requires a
+transcription linked to a recording, creates a persistent job with
+`type=diarization`, keeps the existing transcript text and processes the system
+track only. Speechmatics audio leaves the machine and may incur provider costs.
 
 ### Meeting Workspace
 
@@ -1041,7 +1108,9 @@ restored.
 ```
 
 The packaged app includes the native capture helper and the arm64 FluidAudio
-batch-diarization helper. Swift Package Manager resolves the pinned FluidAudio
+batch-diarization helper. It also collects the standard Speechmatics SDK so
+cloud ASR, initial speaker-only diarization and re-diarization work inside the
+bundle. Swift Package Manager resolves the pinned FluidAudio
 dependency during the first build. The final app bundle and visible bundle name
 are versioned from `pyproject.toml`, for example `dist/ClosedRoom-0.1.0.app`, so
 local builds can be installed side by side instead of overwriting or visually

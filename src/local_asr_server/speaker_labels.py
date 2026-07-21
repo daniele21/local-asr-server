@@ -14,6 +14,13 @@ def apply_speaker_labels(
 ) -> dict[str, Any]:
     """Resolve diarization clusters to names or stable Speaker N fallbacks."""
     segments = payload.get("segments", []) or []
+
+    # Ensure every segment has a stable provider_speaker cluster identifier
+    for segment in segments:
+        cluster = segment.get("provider_speaker") or segment.get("speaker_label")
+        if cluster and not segment.get("provider_speaker"):
+            segment["provider_speaker"] = cluster
+
     existing = (
         payload.get("speaker_attribution")
         or payload.get("stats", {}).get("speaker_attribution")
@@ -30,17 +37,35 @@ def apply_speaker_labels(
         if str(name).strip()
     }
     clusters: list[str] = []
+    diarization = (
+        payload.get("speaker_diarization")
+        or payload.get("stats", {}).get("speaker_diarization")
+        or {}
+    )
+    for track_clusters in (diarization.get("clusters_by_track") or {}).values():
+        for cluster in track_clusters or []:
+            value = str(cluster)
+            if value and value not in clusters:
+                clusters.append(value)
+    known_labels: dict[str, str] = {}
+    segment_counts: dict[str, int] = {}
     for segment in sorted(segments, key=lambda item: (float(item.get("start") or 0), int(item.get("id") or 0))):
-        cluster = segment.get("provider_speaker")
+        cluster = segment.get("provider_speaker") or segment.get("speaker_label")
         if cluster and str(cluster) not in clusters:
             clusters.append(str(cluster))
+        if cluster:
+            segment_counts[str(cluster)] = segment_counts.get(str(cluster), 0) + 1
+        if cluster and segment.get("speaker_label"):
+            label = str(segment["speaker_label"])
+            if not str(cluster).startswith("Speaker "):
+                known_labels[str(cluster)] = label
 
     mappings = []
     labels: dict[str, str] = {}
     for index, cluster in enumerate(clusters, start=1):
         previous = existing_mappings.get(cluster, {})
         accepted_name = previous.get("display_name") if previous.get("status") == "accepted" else None
-        display_name = manual.get(cluster) or accepted_name or f"Speaker {index}"
+        display_name = manual.get(cluster) or accepted_name or known_labels.get(cluster) or f"Speaker {index}"
         source = "manual" if cluster in manual else previous.get("source") or (
             "visual" if accepted_name else "diarization"
         )
@@ -52,11 +77,12 @@ def apply_speaker_labels(
             "display_name": display_name,
             "status": status,
             "source": source,
+            "transcript_segment_count": segment_counts.get(cluster, 0),
         })
 
     text_lines = []
     for segment in segments:
-        cluster = segment.get("provider_speaker")
+        cluster = segment.get("provider_speaker") or segment.get("speaker_label")
         if cluster and str(cluster) in labels:
             label = labels[str(cluster)]
             segment["speaker_name"] = label

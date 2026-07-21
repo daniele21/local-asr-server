@@ -1024,6 +1024,7 @@ dependencies = [
     { name = "onnxruntime" },
     { name = "python-multipart" },
     { name = "soundfile" },
+    { name = "speechmatics-batch" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1035,9 +1036,6 @@ app = [
 ]
 build = [
     { name = "pyinstaller" },
-]
-speechmatics = [
-    { name = "speechmatics-batch" },
 ]
 
 [package.metadata]
@@ -1055,7 +1053,7 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "rumps", marker = "extra == 'app'", specifier = ">=0.4.0" },
     { name = "soundfile", specifier = ">=0.12.0" },
-    { name = "speechmatics-batch", marker = "extra == 'speechmatics'", specifier = ">=0.5.0" },
+    { name = "speechmatics-batch", specifier = ">=0.5.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30.0" },
 ]
 provides-extras = ["app", "build", "speechmatics"]
@@ -1071,7 +1069,7 @@ dependencies = [
     { name = "uvicorn" },
 ]
 wheels = [
-    { filename = "local_llm_server-0.3.8-py3-none-any.whl", hash = "sha256:fccb7cc1858b2100703ace40448a294b533b88ff93cce958a68fa7c40a944de0" },
+    { filename = "local_llm_server-0.3.8-py3-none-any.whl", hash = "sha256:5af9468c8ef857deb3bbc6179f7aed9820ab7f5c100f85188d0b1ce8996e2e11" },
 ]
 
 [package.optional-dependencies]

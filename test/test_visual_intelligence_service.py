@@ -902,6 +902,35 @@ class VisualIntelligenceTests(unittest.TestCase):
             self.assertTrue(outcome["fallback_used"])
             self.assertEqual(outcome["fallback_reason"], "no_visual_frames_captured")
 
+    def test_per_run_visual_override_takes_precedence_over_global_setting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = RecordingStore(root, use_settings_dir=False, catalog=CatalogStore(root / "catalog.db"))
+            recording = store.create(
+                title="Call", mime_type="audio/wav", model="test", language="it",
+                capture_mode="pc_only", capture_backend="native",
+            )
+            service = PostMeetingVisualService()
+            with patch(
+                "local_asr_server.visual_intelligence.service.load_settings",
+                return_value={"visual_intelligence_enabled": False, "visual_llm_model": "qwen"},
+            ):
+                enabled = service.process(
+                    SimpleNamespace(recordings=store, runtime=_Runtime()),
+                    recording["id"],
+                    {"segments": [], "stats": {}},
+                    enabled=True,
+                )
+                disabled = service.process(
+                    SimpleNamespace(recordings=store, runtime=_Runtime()),
+                    recording["id"],
+                    {"segments": [], "stats": {}},
+                    enabled=False,
+                )
+
+            self.assertEqual(enabled["stats"]["visual_intelligence"]["status"], "degraded")
+            self.assertNotIn("visual_intelligence", disabled["stats"])
+
     def test_parser_accepts_fenced_json_and_safe_python_literal(self) -> None:
         service = PostMeetingVisualService()
         self.assertEqual(service._parse('```json\n{"active_speakers": ["Anna"]}\n```')["active_speakers"], ["Anna"])
@@ -1178,6 +1207,67 @@ class VisualIntelligenceTests(unittest.TestCase):
 
             persisted = store.get_visual_intelligence(recording["id"])
             self.assertEqual(len(persisted["observations"]), 3)
+
+    def test_frame_similarity_threshold_filters_near_duplicate_frames(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = RecordingStore(
+                root,
+                use_settings_dir=False,
+                catalog=CatalogStore(root / "catalog.db"),
+            )
+            recording = store.create(
+                title="Similarity Test",
+                mime_type="audio/wav",
+                model="test",
+                language="it",
+                capture_mode="pc_only",
+                capture_backend="native",
+            )
+            for sequence in range(2):
+                store.stage_visual_frame(
+                    recording["id"], sequence, float(sequence), b"\xff\xd8\xffjpeg",
+                )
+
+            settings = {
+                "visual_intelligence_enabled": True,
+                "visual_llm_model": "qwen3-vl-4b",
+                "visual_routing_mode": "v1",
+                "visual_frame_similarity_threshold": 12,
+                "visual_minimum_observations": 1,
+                "visual_minimum_margin": 0.0,
+            }
+            client = _Client()
+            service = PostMeetingVisualService(client_factory=lambda **_: client)
+            progress_calls = []
+
+            with (
+                patch(
+                    "local_asr_server.visual_intelligence.service.load_settings",
+                    return_value=settings,
+                ),
+                patch(
+                    "local_asr_server.visual_intelligence.service.calculate_dhash",
+                    side_effect=[0, 0b1111],
+                ),
+                patch.object(service, "_image_message", return_value=[]),
+            ):
+                result = service.process(
+                    SimpleNamespace(recordings=store, runtime=_Runtime()),
+                    recording["id"],
+                    {"segments": [], "stats": {}},
+                    progress_callback=progress_calls.append,
+                )
+
+            completed = [item for item in progress_calls if item["processed"] > 0]
+            self.assertEqual(len(client.calls), 1)
+            self.assertEqual(completed[-1]["inferred"], 1)
+            self.assertEqual(completed[-1]["reused"], 1)
+            self.assertEqual(completed[-1]["decision"], "duplicate_reused")
+            self.assertEqual(
+                result["stats"]["visual_intelligence"]["frame_similarity_threshold"],
+                12,
+            )
 
     def test_local_llm_params_config_file_loading_and_usage(self) -> None:
         from local_asr_server.local_llm_params import load_local_llm_params

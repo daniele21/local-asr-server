@@ -60,6 +60,54 @@ class SpeakerLabelsTests(unittest.TestCase):
         self.assertEqual(result["segments"][0]["speaker_label"], "Salvatore")
         self.assertEqual(result["speaker_attribution"]["mappings"][0]["source"], "visual")
 
+    def test_detected_cluster_without_transcript_overlap_remains_visible(self) -> None:
+        payload = {
+            "segments": [
+                {"id": 0, "start": 0, "end": 1, "text": "Ciao", "provider_speaker": "system:S1"},
+            ],
+            "stats": {
+                "speaker_diarization": {
+                    "clusters_by_track": {"system": ["system:S1", "system:S2"]},
+                },
+            },
+        }
+
+        result = apply_speaker_labels(payload)
+
+        mappings = result["speaker_attribution"]["mappings"]
+        self.assertEqual([item["speaker_cluster"] for item in mappings], ["system:S1", "system:S2"])
+        self.assertEqual(mappings[0]["transcript_segment_count"], 1)
+        self.assertEqual(mappings[1]["transcript_segment_count"], 0)
+
+    def test_no_provider_speaker_repeated_apply(self) -> None:
+        payload = {
+            "segments": [
+                {"id": 0, "start": 0, "end": 1, "text": "Uno", "speaker_label": "Computer"},
+                {"id": 1, "start": 1, "end": 2, "text": "Due", "speaker_label": "Tu"},
+            ],
+        }
+
+        # First run (no manual names yet)
+        result1 = apply_speaker_labels(payload)
+        
+        # Check that mappings were created and segments got stable display names
+        self.assertEqual(result1["segments"][0]["speaker_label"], "Computer")
+        self.assertEqual(result1["segments"][1]["speaker_label"], "Tu")
+
+        # Simulate user updating the name of Speaker 1 (original cluster was "Computer")
+        # The frontend sends the manual name mapped to the original cluster ID "Computer"
+        result2 = apply_speaker_labels(result1, {"Computer": "Walter"})
+        
+        # Segment speaker_label should update to "Walter"
+        self.assertEqual(result2["segments"][0]["speaker_label"], "Walter")
+
+        # Now, simulate a subsequent load/fetch of the transcription (manual_names=None)
+        result3 = apply_speaker_labels(result2)
+        
+        # It should preserve "Walter" (the display name), not revert it
+        self.assertEqual(result3["segments"][0]["speaker_label"], "Walter")
+
 
 if __name__ == "__main__":
     unittest.main()
+

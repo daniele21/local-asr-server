@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from local_asr_server.runtime.service_manager import RuntimeServiceManager
     from local_asr_server.services.transcription_service import TranscriptionService
     from local_asr_server.transcription_jobs import TranscriptionJobManager
+    from local_asr_server.transcription_diarization import TranscriptionDiarizationService
     from local_asr_server.transcriptions import TranscriptionStore
 
 
@@ -27,6 +28,7 @@ class AppServices:
     catalog: CatalogStore
     jobs: JobStore
     transcription_jobs: TranscriptionJobManager
+    diarization: TranscriptionDiarizationService
     analysis_jobs: AnalysisJobManager
     recordings: RecordingStore
     transcriptions: TranscriptionStore
@@ -39,6 +41,7 @@ _COMPATIBILITY_ALIASES = {
     "catalog": "catalog_store",
     "jobs": "job_store",
     "transcription_jobs": "transcription_jobs",
+    "diarization": "diarization_service",
     "analysis_jobs": "analysis_jobs",
     "recordings": "recording_store",
     "transcriptions": "transcription_store",

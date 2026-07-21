@@ -34,12 +34,16 @@ else
 fi
 
 # Install Python package and dependencies
+PACKAGE_SPEC="."
+if [ "$OS" = "Darwin" ]; then
+    PACKAGE_SPEC=".[app]"
+fi
 if command -v uv &> /dev/null; then
     echo "Using 'uv' to install package in editable mode..."
-    uv pip install -e .
+    uv pip install -e "$PACKAGE_SPEC"
 else
     echo "Using 'pip' to install package in editable mode..."
-    pip install -e .
+    pip install -e "$PACKAGE_SPEC"
 fi
 
 echo "============================================="

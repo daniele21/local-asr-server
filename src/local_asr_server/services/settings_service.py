@@ -139,6 +139,15 @@ class SettingsService:
         temporal_support = settings.get("visual_minimum_temporal_support_seconds")
         if not isinstance(temporal_support, (int, float)) or float(temporal_support) < 0:
             raise InvalidSettings("visual_minimum_temporal_support_seconds must be non-negative")
+        similarity_threshold = settings.get("visual_frame_similarity_threshold")
+        if (
+            not isinstance(similarity_threshold, int)
+            or isinstance(similarity_threshold, bool)
+            or not 0 <= similarity_threshold <= 64
+        ):
+            raise InvalidSettings(
+                "visual_frame_similarity_threshold must be an integer between zero and 64"
+            )
         diarization_overlap = settings.get("speaker_diarization_minimum_overlap")
         if not isinstance(diarization_overlap, (int, float)) or not 0 <= float(diarization_overlap) <= 1:
             raise InvalidSettings("speaker_diarization_minimum_overlap must be between zero and one")

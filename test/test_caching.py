@@ -73,9 +73,19 @@ class CachingTests(unittest.TestCase):
             settings={**settings, "speaker_diarization_enabled": True},
             visual_input_fingerprint=TranscriptionService.visual_input_fingerprint([]),
         )
+        speechmatics = TranscriptionService.recording_pipeline_cache_key(
+            recording_id="recording-1",
+            track_results=track_results,
+            settings=settings,
+            visual_input_fingerprint=TranscriptionService.visual_input_fingerprint([]),
+            diarization_provider="speechmatics",
+            diarization_region="eu",
+            diarization_model="standard",
+        )
 
         self.assertEqual(first, second)
         self.assertNotEqual(first, changed)
+        self.assertNotEqual(first, speechmatics)
 
     def test_transcription_cache_key_includes_initial_prompt(self) -> None:
         base = {

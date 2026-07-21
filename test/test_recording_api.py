@@ -40,6 +40,16 @@ class RecordingApiTests(unittest.TestCase):
             recordings_dir=self.temp_dir.name,
             default_condition_on_previous=True,
         )
+        self.diarization_settings_patcher = patch(
+            "local_asr_server.speaker_diarization.load_settings",
+            return_value=self.mock_load_settings.return_value,
+        )
+        self.diarization_settings_patcher.start()
+        self.transcription_service_settings_patcher = patch(
+            "local_asr_server.services.transcription_service.load_settings",
+            return_value=self.mock_load_settings.return_value,
+        )
+        self.transcription_service_settings_patcher.start()
         self.app = create_app(
             default_model="test-model",
             recordings_dir=Path(self.temp_dir.name),
@@ -49,6 +59,8 @@ class RecordingApiTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.cache_patcher.stop()
+        self.transcription_service_settings_patcher.stop()
+        self.diarization_settings_patcher.stop()
         self.settings_patcher.stop()
         self.client.close()
         self.temp_dir.cleanup()
@@ -526,6 +538,135 @@ class RecordingApiTests(unittest.TestCase):
         self.assertEqual(diagnostics.status_code, 200)
         self.assertEqual(diagnostics.json()["outcome_status"], status["result"]["outcome_status"])
         self.assertTrue(diagnostics.json()["diagnostics"])
+
+    @patch(
+        "local_asr_server.transcription_diarization.TranscriptionDiarizationService.process_audio_payload"
+    )
+    @patch("local_asr_server.server.transcribe_file_sync")
+    def test_initial_speechmatics_diarization_is_independent_from_local_asr(
+        self,
+        transcribe,
+        diarize,
+    ) -> None:
+        transcribe.return_value = {
+            "text": "Uno due",
+            "language": "it",
+            "segments": [
+                {"id": 0, "start": 0.0, "end": 0.5, "text": "Uno"},
+                {"id": 1, "start": 0.5, "end": 1.0, "text": "due"},
+            ],
+        }
+
+        def diarization_result(_path, payload, **_kwargs):
+            segments = [dict(item) for item in payload["segments"]]
+            segments[0]["provider_speaker"] = "system:S1"
+            segments[1]["provider_speaker"] = "system:S2"
+            return {
+                **payload,
+                "segments": segments,
+                "stats": {
+                    "speaker_diarization": {
+                        "status": "completed",
+                        "engine": "speechmatics-batch-diarization",
+                        "provider": "speechmatics",
+                        "assigned_segments": 2,
+                        "clusters_by_track": {"system": ["system:S1", "system:S2"]},
+                    }
+                },
+            }
+
+        diarize.side_effect = diarization_result
+        created = self.client.post(
+            "/v1/recordings",
+            json={
+                "title": "Cloud diarization",
+                "mime_type": "audio/wav",
+                "capture_mode": "pc_only",
+            },
+        )
+        recording_id = created.json()["id"]
+        self.client.post(
+            f"/v1/recordings/{recording_id}/tracks/system/chunks",
+            data={"sequence": "0"},
+            files={"file": ("system.wav", _wav_bytes(), "audio/wav")},
+        )
+        self.client.post(f"/v1/recordings/{recording_id}/stop")
+
+        response = self.client.post(
+            f"/v1/recordings/{recording_id}/transcriptions",
+            json={
+                "language": "it",
+                "asr_provider": "local",
+                "diarization_provider": "speechmatics",
+                "speechmatics_region": "eu",
+                "speechmatics_model": "standard",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(transcribe.call_count, 1)
+        self.assertEqual(diarize.call_count, 1)
+        self.assertEqual(diarize.call_args.kwargs["provider"], "speechmatics")
+        self.assertEqual(response.json()["stats"]["speaker_diarization"]["provider"], "speechmatics")
+
+    def test_diarization_job_updates_existing_transcription_without_transcribing(self) -> None:
+        created = self.client.post(
+            "/v1/recordings",
+            json={"title": "Call", "mime_type": "audio/wav", "capture_mode": "mic_only"},
+        )
+        recording_id = created.json()["id"]
+        saved = self.app.state.transcription_store.save(
+            {
+                "text": "[00:00] Tu: Ciao",
+                "language": "it",
+                "segments": [{
+                    "id": 0,
+                    "start": 0.0,
+                    "end": 1.0,
+                    "text": "Ciao",
+                    "track_id": "mic",
+                    "source": "mic",
+                    "speaker_label": "Tu",
+                }],
+            },
+            audio_filename="Call",
+            recording_id=recording_id,
+        )
+
+        class FakeDiarizationService:
+            def run(self, recording_store, transcription_store, transcription_id, **kwargs):
+                kwargs["progress_callback"]("diarizing_system", 60, {"provider": kwargs["provider"]})
+                result = transcription_store.get(transcription_id)
+                result["stats"]["speaker_diarization"] = {
+                    "status": "completed",
+                    "provider": kwargs["provider"],
+                    "cluster_count": 1,
+                }
+                return result
+
+        self.app.state.diarization_service = FakeDiarizationService()
+        response = self.client.post(
+            f"/v1/transcriptions/{saved['id']}/diarization-jobs",
+            json={"provider": "local"},
+        )
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.json()["type"], "diarization")
+        self.assertEqual(response.json()["scope_type"], "transcription")
+
+        job_id = response.json()["id"]
+        for _ in range(50):
+            status = self.client.get(f"/v1/jobs/{job_id}").json()
+            if status["status"] == "completed":
+                break
+            import time
+            time.sleep(0.02)
+
+        self.assertEqual(status["status"], "completed")
+        self.assertEqual(status["result"]["text"], "[00:00] Tu: Ciao")
+        self.assertEqual(status["result"]["stats"]["speaker_diarization"]["provider"], "local")
+        stored = self.app.state.job_store.get(job_id)
+        self.assertEqual(stored["type"], "diarization")
+        self.assertEqual(stored["payload"]["transcription_id"], saved["id"])
 
     def test_active_recording_and_overlay_flow(self) -> None:
         # 1. Initially active is False

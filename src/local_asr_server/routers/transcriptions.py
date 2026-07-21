@@ -16,8 +16,13 @@ from pydantic import BaseModel, Field
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
 from local_asr_server.recordings import RecordingConflict, RecordingNotFound
-from local_asr_server.transcription_jobs import TranscriptionJob
+from local_asr_server.transcription_jobs import (
+    DIARIZATION_JOB_TYPE,
+    TRANSCRIPTION_JOB_TYPE,
+    TranscriptionJob,
+)
 from local_asr_server.settings import load_settings
+from local_asr_server.env import get_env_var
 from local_asr_server.services.transcription_service import TranscriptionService
 from local_asr_server.transcriber import (
     str_to_bool,
@@ -35,11 +40,16 @@ from local_asr_server.schemas import (
     TranscribePathRequest,
     TranscribeRecordingRequest,
     TranscriptionJobRequest,
+    DiarizationJobRequest,
     MergeTranscriptionsRequest,
     AnalysisPipelineRequest,
 )
 from local_asr_server.routers.helpers import _build_projects
 from local_asr_server.asr_provider import ASR_PROVIDER_LOCAL
+from local_asr_server.transcription_diarization import (
+    DIARIZATION_PROVIDER_DISABLED,
+    DIARIZATION_PROVIDERS,
+)
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -109,6 +119,38 @@ def _asr_payload_metadata(provider: str, model: str, public_options: dict[str, A
     return TranscriptionService.payload_metadata(provider, model, public_options)
 
 
+def _normalize_diarization_provider(provider: str | None) -> str:
+    selected = str(provider or DIARIZATION_PROVIDER_DISABLED).strip().lower()
+    if selected == DIARIZATION_PROVIDER_DISABLED:
+        return selected
+    if selected not in DIARIZATION_PROVIDERS:
+        raise ValueError(f"Unsupported diarization provider: {provider}")
+    return selected
+
+
+def _apply_initial_diarization(
+    app: Any,
+    audio_path: Path,
+    payload: dict[str, Any],
+    *,
+    provider: str,
+    speechmatics_region: str | None,
+    speechmatics_model: str | None,
+) -> dict[str, Any]:
+    if provider == DIARIZATION_PROVIDER_DISABLED:
+        return payload
+    existing = payload.get("stats", {}).get("speaker_diarization") or {}
+    if existing.get("status") == "completed" and existing.get("provider") == provider:
+        return payload
+    return get_services(app).diarization.process_audio_payload(
+        audio_path,
+        payload,
+        provider=provider,
+        speechmatics_region=speechmatics_region,
+        speechmatics_model=speechmatics_model,
+    )
+
+
 def run_recording_transcription(
     app: Any,
     recording_id: str,
@@ -164,7 +206,11 @@ def transcription_source_data(request: Request, limit: int = 100):
             "speechmatics_region": settings.get("speechmatics_region", ""),
             "speechmatics_model": settings.get("speechmatics_model", ""),
             "speechmatics_diarization": settings.get("speechmatics_diarization", "none"),
-            "speechmatics_api_key_configured": bool(settings.get("speechmatics_api_key")),
+            "speechmatics_api_key_configured": bool(
+                settings.get("speechmatics_api_key") or get_env_var("SPEECHMATICS_API_KEY")
+            ),
+            "speaker_diarization_enabled": bool(settings.get("speaker_diarization_enabled")),
+            "visual_intelligence_enabled": bool(settings.get("visual_intelligence_enabled")),
         },
     }
 
@@ -190,6 +236,7 @@ async def transcribe_upload(
     speechmatics_region: Optional[str] = Form(None),
     speechmatics_model: Optional[str] = Form(None),
     speechmatics_diarization: Optional[str] = Form(None),
+    diarization_provider: Optional[str] = Form(None),
 ):
     started_at = time.perf_counter()
     is_streaming = str_to_bool(stream)
@@ -203,6 +250,7 @@ async def transcribe_upload(
         speechmatics_diarization=speechmatics_diarization,
     )
     target_model = provider_model or model or request.app.state.default_model
+    selected_diarization_provider = _normalize_diarization_provider(diarization_provider)
 
     logger.info(f"[/v1/audio/transcriptions] Received upload request. File: '{file.filename}', Size: {file.size if file.size else 'unknown'} bytes, Model: '{target_model}', Stream: {is_streaming}")
 
@@ -232,6 +280,9 @@ async def transcribe_upload(
                 asr_provider=provider,
                 backend=_effective_backend(provider, target_model),
                 provider_options=public_options,
+                diarization_provider=selected_diarization_provider,
+                diarization_region=speechmatics_region,
+                diarization_model=speechmatics_model,
             )
 
             cached_res = get_cached_result(cache_key)
@@ -249,6 +300,14 @@ async def transcribe_upload(
                     "provider_options": cached_res.get("provider_options", public_options),
                     "stats": cached_res.get("stats", {"time_total_seconds": 0.0}),
                 }
+                cached_res = _apply_initial_diarization(
+                    request.app,
+                    Path(tmp_path),
+                    cached_res,
+                    provider=selected_diarization_provider,
+                    speechmatics_region=speechmatics_region,
+                    speechmatics_model=speechmatics_model,
+                )
                 
                 # Cleanup temp file as it's not needed
                 try:
@@ -327,6 +386,14 @@ async def transcribe_upload(
                                     **_asr_payload_metadata(provider, target_model, public_options),
                                 },
                             })
+                            payload = _apply_initial_diarization(
+                                request.app,
+                                Path(tmp_path),
+                                payload,
+                                provider=selected_diarization_provider,
+                                speechmatics_region=speechmatics_region,
+                                speechmatics_model=speechmatics_model,
+                            )
                             save_cached_result(cache_key, payload)
                             saved_meta = get_services(request.app).transcriptions.save(payload, audio_filename=file.filename, recording_id=recording_id)
                             payload["saved_id"] = saved_meta["id"]
@@ -357,6 +424,16 @@ async def transcribe_upload(
                             asr_provider=provider,
                             backend=_effective_backend(provider, target_model),
                             provider_options=public_options,
+                            payload_postprocessor=(
+                                lambda audio_path, payload: _apply_initial_diarization(
+                                    request.app,
+                                    audio_path,
+                                    payload,
+                                    provider=selected_diarization_provider,
+                                    speechmatics_region=speechmatics_region,
+                                    speechmatics_model=speechmatics_model,
+                                )
+                            ) if selected_diarization_provider != DIARIZATION_PROVIDER_DISABLED else None,
                         ):
                             yield event
                     finally:
@@ -402,6 +479,14 @@ async def transcribe_upload(
                     },
                 }
                 payload = _clean_nan_values(payload)
+                payload = _apply_initial_diarization(
+                    request.app,
+                    Path(tmp_path),
+                    payload,
+                    provider=selected_diarization_provider,
+                    speechmatics_region=speechmatics_region,
+                    speechmatics_model=speechmatics_model,
+                )
                 save_cached_result(cache_key, payload)
 
                 saved_meta = get_services(request.app).transcriptions.save(payload, audio_filename=file.filename, recording_id=recording_id)
@@ -448,6 +533,7 @@ def transcribe_path(request: Request, body: TranscribePathRequest):
         speechmatics_diarization=body.speechmatics_diarization,
     )
     target_model = provider_model or body.model or request.app.state.default_model
+    selected_diarization_provider = _normalize_diarization_provider(body.diarization_provider)
 
     audio_path = Path(body.file).expanduser()
     logger.info(f"[/v1/audio/transcriptions/path] Received request for file: '{audio_path}', Model: '{target_model}'")
@@ -494,6 +580,14 @@ def transcribe_path(request: Request, body: TranscribePathRequest):
                 **_asr_payload_metadata(provider, target_model, public_options),
             },
         }
+        payload = _apply_initial_diarization(
+            request.app,
+            audio_path,
+            payload,
+            provider=selected_diarization_provider,
+            speechmatics_region=body.speechmatics_region,
+            speechmatics_model=body.speechmatics_model,
+        )
 
         saved_meta = get_services(request.app).transcriptions.save(payload, audio_filename=audio_path.name)
         payload["saved_id"] = saved_meta["id"]
@@ -576,6 +670,63 @@ def list_jobs(
     }
 
 
+@router.post("/v1/transcriptions/{transcription_id}/diarization-jobs", status_code=202)
+def create_diarization_job(
+    transcription_id: str,
+    request: Request,
+    body: DiarizationJobRequest,
+):
+    try:
+        transcription = get_services(request.app).transcriptions.get(transcription_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Transcription not found") from exc
+    recording_id = str(transcription.get("recording_id") or "")
+    if not recording_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Only transcriptions linked to a recording can be re-diarized",
+        )
+    try:
+        get_services(request.app).recordings.get(recording_id, include_result=False)
+    except RecordingNotFound as exc:
+        raise HTTPException(status_code=404, detail="Recording not found") from exc
+
+    def runner(job: TranscriptionJob) -> dict[str, Any]:
+        def progress(step: str, value: int, detail: dict[str, Any] | None = None) -> None:
+            get_services(request.app).transcription_jobs.update_progress(
+                job.id,
+                "running",
+                value,
+                step,
+                event_payload=detail,
+            )
+
+        return get_services(request.app).diarization.run(
+            get_services(request.app).recordings,
+            get_services(request.app).transcriptions,
+            transcription_id,
+            provider=body.provider,
+            speechmatics_region=body.speechmatics_region,
+            speechmatics_model=body.speechmatics_model,
+            progress_callback=progress,
+        )
+
+    return get_services(request.app).transcription_jobs.create(
+        recording_id,
+        runner,
+        job_type=DIARIZATION_JOB_TYPE,
+        scope_type="transcription",
+        scope_id=transcription_id,
+        payload={
+            "recording_id": recording_id,
+            "transcription_id": transcription_id,
+            "provider": body.provider,
+            "speechmatics_region": body.speechmatics_region,
+            "speechmatics_model": body.speechmatics_model,
+        },
+    )
+
+
 @router.get("/v1/jobs/{job_id}")
 def get_job(job_id: str, request: Request):
     job = get_services(request.app).transcription_jobs.get(job_id)
@@ -611,7 +762,11 @@ def cancel_job(job_id: str, request: Request):
     existing = get_services(request.app).jobs.get(job_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    job = get_services(request.app).transcription_jobs.cancel(job_id) if existing["type"] == "transcription" else get_services(request.app).jobs.request_cancel(job_id)
+    job = (
+        get_services(request.app).transcription_jobs.cancel(job_id)
+        if existing["type"] in {TRANSCRIPTION_JOB_TYPE, DIARIZATION_JOB_TYPE}
+        else get_services(request.app).jobs.request_cancel(job_id)
+    )
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return job

@@ -52,6 +52,9 @@ class SpeakerDiarizationTests(unittest.TestCase):
         self.assertEqual(result["segments"][0]["provider_speaker"], "system:0")
         self.assertEqual(result["segments"][1]["provider_speaker"], "cloud-S2")
         self.assertEqual(summary["assigned_segments"], 1)
+        self.assertEqual(summary["cluster_count"], 2)
+        self.assertEqual(summary["clusters_by_track"]["system"], ["system:0", "system:1"])
+        self.assertEqual(summary["unassigned_clusters_by_track"]["system"], ["system:1"])
         self.assertIn("fluidaudio-speaker-diarization", summary["model_path"])
         self.assertEqual(summary["details"]["model_path"], summary["model_path"])
         self.assertEqual(store.saved[0], "recording-id")
@@ -66,6 +69,25 @@ class SpeakerDiarizationTests(unittest.TestCase):
             summary = service.process(store, "recording-id", [({"id": "mic"}, Path("mic.wav"))], [])
         self.assertEqual(summary["status"], "failed")
         self.assertEqual(store.saved[1]["error"], "boom")
+
+    def test_force_runs_even_when_persisted_setting_is_disabled(self) -> None:
+        store = _Store()
+        service = LocalSpeakerDiarizationService(runner=lambda _inputs: {
+            "engine": "fluidaudio-community-1",
+            "tracks": {"system": {"segments": []}},
+        })
+        with patch(
+            "local_asr_server.speaker_diarization.load_settings",
+            return_value={"speaker_diarization_enabled": False},
+        ):
+            summary = service.process(
+                store,
+                "recording-id",
+                [({"id": "system"}, Path("system.wav"))],
+                [{"track": {"id": "system"}, "result": {"segments": []}}],
+                force=True,
+            )
+        self.assertEqual(summary["status"], "completed")
 
 
 if __name__ == "__main__":

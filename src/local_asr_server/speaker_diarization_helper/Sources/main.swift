@@ -21,6 +21,18 @@ struct HelperOutput: Codable {
     let tracks: [String: TrackOutput]
 }
 
+func makeAccurateOfflineConfig() -> OfflineDiarizerConfig {
+    var config = OfflineDiarizerConfig(
+        segmentationStepRatio: 0.1,
+        minSegmentDuration: 0.0
+    )
+    config.zeroVoteReembed = OfflineDiarizerConfig.ZeroVoteReembed(
+        enabled: true,
+        minDurationSeconds: 0.4
+    )
+    return config
+}
+
 enum ArgumentError: Error, CustomStringConvertible {
     case invalid(String)
 
@@ -73,7 +85,9 @@ struct ClosedRoomSpeakerDiarizer {
     static func main() async {
         do {
             let (inputs, modelsDirectory) = try parseArguments(Array(CommandLine.arguments.dropFirst()))
-            let manager = OfflineDiarizerManager(config: OfflineDiarizerConfig())
+            // Prefer recall and stable short turns over the faster Community-1 defaults.
+            // FluidAudio documents this 0.1/0.0 profile for accuracy-critical offline use.
+            let manager = OfflineDiarizerManager(config: makeAccurateOfflineConfig())
             try await manager.prepareModels(directory: modelsDirectory)
             var tracks: [String: TrackOutput] = [:]
             for input in inputs {

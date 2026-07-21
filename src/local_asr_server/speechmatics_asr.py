@@ -26,8 +26,8 @@ class SpeechmaticsBatchASRProvider:
             from speechmatics.batch import AsyncClient, JobConfig, JobType, Model, TranscriptionConfig
         except ModuleNotFoundError as exc:
             raise RuntimeError(
-                "Speechmatics SDK not installed. Install optional dependency with: "
-                "uv pip install -e '.[speechmatics]'"
+                "Speechmatics SDK is not available in the running server environment. "
+                "Run ./setup.sh (or uv pip install -e .) and restart ClosedRoom."
             ) from exc
 
         options = request.provider_options or {}
@@ -118,14 +118,27 @@ def _normalize_speechmatics_result(
     diarization: str,
 ) -> dict[str, Any]:
     raw = _to_plain_dict(result)
+    transcript_val = raw.get("transcript")
+    transcript_text = None
+    if isinstance(transcript_val, dict):
+        transcript_text = transcript_val.get("text")
+    elif transcript_val is not None:
+        transcript_text = getattr(transcript_val, "text", None)
+
     text = (
         raw.get("transcript_text")
         or raw.get("text")
-        or raw.get("transcript", {}).get("text")
+        or transcript_text
         or getattr(result, "transcript_text", "")
         or ""
     )
-    raw_results = raw.get("results") or raw.get("transcript", {}).get("results") or []
+    raw_results = raw.get("results")
+    if not raw_results:
+        if isinstance(transcript_val, dict):
+            raw_results = transcript_val.get("results")
+        elif transcript_val is not None:
+            raw_results = getattr(transcript_val, "results", None)
+    raw_results = raw_results or []
     segments = _segments_from_results(raw_results)
     if not text and segments:
         text = " ".join((segment.get("text") or "").strip() for segment in segments).strip()
@@ -148,7 +161,11 @@ def _normalize_speechmatics_result(
             "speechmatics_model": model,
             "speechmatics_region": region,
             "speechmatics_diarization": diarization,
-            "job_id": raw.get("job", {}).get("id") or raw.get("job_id") or raw.get("id"),
+            "job_id": (
+                raw.get("job", {}).get("id")
+                if isinstance(raw.get("job"), dict)
+                else getattr(raw.get("job"), "id", None)
+            ) or raw.get("job_id") or raw.get("id"),
         },
     }
 
@@ -202,6 +219,12 @@ def _segments_from_results(results: list[Any]) -> list[dict[str, Any]]:
 def _to_plain_dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
+    import dataclasses
+    if dataclasses.is_dataclass(value):
+        try:
+            return dataclasses.asdict(value)
+        except Exception:
+            pass
     for attr in ("to_dict", "model_dump", "dict"):
         method = getattr(value, attr, None)
         if callable(method):

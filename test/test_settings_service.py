@@ -20,6 +20,8 @@ class SettingsServiceTests(unittest.TestCase):
             SettingsRequest(default_task="summarize"),
             SettingsRequest(speechmatics_timeout_seconds=0),
             SettingsRequest(speaker_diarization_minimum_overlap=1.5),
+            SettingsRequest(visual_frame_similarity_threshold=-1),
+            SettingsRequest(visual_frame_similarity_threshold=65),
         )
         for body in invalid_requests:
             with self.subTest(body=body), patch(
