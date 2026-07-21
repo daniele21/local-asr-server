@@ -168,6 +168,10 @@ fixture condivise.
 | Trascrizione guidata da VAD e ri-trascrizione | Frammenta di default l'audio locale in finestre di parlato per evitare lavoro Whisper sul silenzio; mantiene inoltre Silero come post-filtro advisory dei segmenti full-track. VAD non è un gate: se non trova parlato, fallisce o produce un transcript vuoto, la trascrizione completa resta disponibile automaticamente. | `asr_provider.py` possiede i default `VAD_GUIDED_DEFAULT`/`VAD_POST_FILTER_DEFAULT`; `audio_intelligence/vad.py` implementa Silero ONNX; `transcriber.py` orchestra `_transcribe_vad_guided` e fallback; `transcription_quality.py`, `schemas.py`, `routers/transcriptions.py`, `frontend/src/api/config.ts` e `TranscriptionPage.tsx` mantengono coerenti contratto e toggle. | `vad_guided=true` e `vad_post_filter=true` per API e nuova UI. Finestre, scarti e cause di fallback sono registrati nei metadata; entrambe le opzioni partecipano alla cache ASR. L'utente può disattivare VAD-guided per singolo run. | `UV_CACHE_DIR=.cache/uv uv run python -m unittest discover -s test -p 'test_transcriber_vad.py' -v`; test unitari VAD/quality; `cd frontend && npm run build`. |
 
 
+Copy transcript: la schermata risultato espone un'azione esplicita `Copia tutta
+la trascrizione`, che copia sempre `transcription.text` completo
+indipendentemente dal tab attivo e conferma l'esito tramite toast localizzato.
+
 Nota F5: il percorso shared-content `v2` persiste fonte, confidence e fallback
 della ROI; normalizza slide, documenti, fogli, codice, browser, video e
 dashboard e usa la prima classificazione per limitare gli heartbeat successivi.

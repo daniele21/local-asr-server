@@ -548,6 +548,8 @@ const it = {
     historyTitle: 'Storico trascrizioni',
     resultTitle: 'Risultato Trascrizione',
     copy: 'Copia',
+    copyFullTranscription: 'Copia tutta la trascrizione',
+    fullTranscriptionCopied: 'Trascrizione completa copiata negli appunti',
     statTime: 'Tempo impiegato',
     statProvider: 'Provider ASR',
     statLanguage: 'Lingua',

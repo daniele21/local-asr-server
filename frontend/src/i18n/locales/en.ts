@@ -548,6 +548,8 @@ const en = {
     historyTitle: 'Transcription history',
     resultTitle: 'Transcription result',
     copy: 'Copy',
+    copyFullTranscription: 'Copy full transcript',
+    fullTranscriptionCopied: 'Full transcript copied to clipboard',
     statTime: 'Elapsed time',
     statProvider: 'ASR provider',
     statLanguage: 'Language',

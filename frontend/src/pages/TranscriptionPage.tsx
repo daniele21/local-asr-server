@@ -164,7 +164,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
   // Results State
   const [transcriptionResult, setTranscriptionResult] = useState<Transcription | null>(null);
   const [resultTab, setResultTab] = useState<'text' | 'segments' | 'raw' | 'analysis'>('text');
-  const [copiedText, setCopiedText] = useState(t('transcription.copy'));
+  const [copiedText, setCopiedText] = useState(t('transcription.copyFullTranscription'));
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -640,19 +640,12 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
 
   const copyToClipboard = () => {
     if (!transcriptionResult) return;
-    let text = '';
-    if (resultTab === 'text') {
-      text = transcriptionResult.text || '';
-    } else if (resultTab === 'raw') {
-      text = JSON.stringify(transcriptionResult, null, 2);
-    } else {
-      text = (transcriptionResult.segments || []).map((s) => s.text).join('\n');
-    }
+    const text = transcriptionResult.text || '';
 
     navigator.clipboard.writeText(text).then(() => {
-      showToast(t('transcription.toastFileCopied'), 'success');
+      showToast(t('transcription.fullTranscriptionCopied'), 'success');
       setCopiedText(t('transcription.copied') || 'Copiato!');
-      setTimeout(() => setCopiedText(t('transcription.copy')), 2000);
+      setTimeout(() => setCopiedText(t('transcription.copyFullTranscription')), 2000);
     }).catch(() => {
       showToast(t('transcription.copyFailed'), 'error');
     });
