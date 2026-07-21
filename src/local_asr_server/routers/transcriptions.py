@@ -649,7 +649,14 @@ def create_transcription_job(recording_id: str, request: Request, body: Transcri
         finally:
             pass
 
-    return get_services(request.app).transcription_jobs.create(recording_id, runner)
+    return get_services(request.app).transcription_jobs.create(
+        recording_id,
+        runner,
+        payload={
+            "recording_id": recording_id,
+            "visual_intelligence_enabled": body.visual_intelligence_enabled,
+        },
+    )
 
 
 @router.get("/v1/jobs")

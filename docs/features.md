@@ -53,6 +53,12 @@ Scelta Qwen per-run: prima di trascrivere una registrazione salvata, la UI
 permette di abilitare o disabilitare l'analisi immagini per quella singola
 esecuzione. Il valore iniziale deriva da `visual_intelligence_enabled`, non
 modifica le impostazioni persistenti e viene incluso nella cache della pipeline.
+Quando è disabilitato, il job non entra nello step `visual_processing`, non
+invia progress immagini e conserva i frame per un eventuale run futuro.
+Durante l'elaborazione la UI espone inoltre `Interrompi elaborazione`: per le
+registrazioni richiede il cancel del job persistente e la pipeline si arresta
+al successivo confine sicuro, inclusa la fine dell'inferenza visuale corrente;
+per gli upload interrompe direttamente lo stream HTTP.
 
 Nota qualità P2: in modalità v2 `visual_intelligence/adapter.py` confronta le
 firme dei bordi possedute da `signatures.py`; quando rileva un unico nuovo

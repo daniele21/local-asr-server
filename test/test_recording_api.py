@@ -482,6 +482,7 @@ class RecordingApiTests(unittest.TestCase):
 
     @patch("local_asr_server.server.transcribe_file_sync")
     def test_transcription_job_for_recording(self, transcribe) -> None:
+        self.mock_load_settings.return_value["visual_intelligence_enabled"] = True
         transcribe.return_value = {
             "text": "Ciao",
             "language": "it",
@@ -501,7 +502,11 @@ class RecordingApiTests(unittest.TestCase):
 
         job = self.client.post(
             f"/v1/recordings/{recording_id}/transcription-jobs",
-            json={"language": "it", "response_format": "verbose_json"},
+            json={
+                "language": "it",
+                "response_format": "verbose_json",
+                "visual_intelligence_enabled": False,
+            },
         )
         self.assertEqual(job.status_code, 202)
         job_id = job.json()["id"]
@@ -525,7 +530,9 @@ class RecordingApiTests(unittest.TestCase):
         events = self.app.state.job_store.events_after(job_id, 0)
         steps = [event["current_step"] for event in events]
         self.assertIn("diarizing", steps)
-        self.assertIn("visual_processing", steps)
+        self.assertNotIn("visual_processing", steps)
+        stored_job = self.app.state.job_store.get(job_id)
+        self.assertFalse(stored_job["payload"]["visual_intelligence_enabled"])
         self.assertIn("audio_intelligence", steps)
         self.assertIn("saving", steps)
         completed_event = next(event for event in reversed(events) if event["status"] == "completed")

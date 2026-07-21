@@ -378,6 +378,8 @@ class TranscriptionService:
         payload["stats"]["recording_pipeline_visual_input_fingerprint"] = visual_input_fingerprint
         payload["stats"]["recording_pipeline_cache_hit"] = False
         def visual_progress(detail: dict[str, Any]) -> None:
+            if job and job.cancel_requested:
+                raise RuntimeError("Transcription job cancelled")
             val = 88
             current = int(detail.get("processed") or 0)
             total = int(detail.get("total") or 0)
@@ -388,14 +390,19 @@ class TranscriptionService:
                 component_outcome=detail,
             )
 
-        job_event("visual_processing", "visual_processing", 88)
-        payload = self.visual.process(
-            get_services(app), recording_id, payload, progress_callback=visual_progress,
-            enabled=visual_intelligence_enabled,
-        )
-        visual_outcome = payload.get("stats", {}).get("visual_intelligence")
-        if visual_outcome:
-            job_event("visual_processing", "visual_processing", 90, component_outcome=visual_outcome)
+        if visual_intelligence_enabled:
+            job_event("visual_processing", "visual_processing", 88)
+            payload = self.visual.process(
+                get_services(app), recording_id, payload, progress_callback=visual_progress,
+                enabled=True,
+            )
+            visual_outcome = payload.get("stats", {}).get("visual_intelligence")
+            if visual_outcome:
+                job_event("visual_processing", "visual_processing", 90, component_outcome=visual_outcome)
+        else:
+            # A per-run opt-out must not enter the visual service or emit image
+            # progress. Captured frames remain staged for a future enabled run.
+            store.finish_visual_processing(recording_id)
         if payload.get("speaker_attribution"):
             payload.setdefault("stats", {})["speaker_attribution"] = payload["speaker_attribution"]
         payload = apply_speaker_labels(payload)

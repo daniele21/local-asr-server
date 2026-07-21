@@ -667,8 +667,8 @@ export const ApiClient = {
     return (await request('/v1/asr/providers')).json();
   },
 
-  transcribe(formData: FormData): Promise<Response> {
-    return request('/v1/audio/transcriptions', { method: 'POST', body: formData });
+  transcribe(formData: FormData, signal?: AbortSignal): Promise<Response> {
+    return request('/v1/audio/transcriptions', { method: 'POST', body: formData, signal });
   },
 
   async createRecording(payload: { title?: string; project_name?: string; mime_type?: string; model?: string; language?: string; capture_mode?: 'both' | 'mic_only' | 'pc_only' | 'legacy_mixed'; capture_backend?: 'browser' | 'native' }): Promise<Recording> {

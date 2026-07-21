@@ -1,4 +1,5 @@
 import { Card } from '../../../components/ui/Card';
+import { Button } from '../../../components/ui/Button';
 import { TaskProcessingLoader } from '../../../components/workspace/TaskProcessingLoader';
 import { useTranslation } from '../../../i18n/i18n';
 import type { ASRTrackProgress, VisualProcessingProgress } from '../../../api/apiClient';
@@ -15,6 +16,8 @@ interface ProcessingStepProps {
   elapsedTime: string;
   visualProgress: VisualProcessingProgress | null;
   asrProgress: ASRTrackProgress | null;
+  isCancelling: boolean;
+  onCancel: () => void;
 }
 
 export default function ProcessingStep({
@@ -27,6 +30,8 @@ export default function ProcessingStep({
   elapsedTime,
   visualProgress,
   asrProgress,
+  isCancelling,
+  onCancel,
 }: ProcessingStepProps) {
   const { t } = useTranslation();
   const boundaries = [[0, 20], [20, 45], [45, 82], [82, 95], [95, 100]];
@@ -161,8 +166,13 @@ export default function ProcessingStep({
           </div>
         </details>
 
-        <div className="text-[11px] text-text-muted font-medium">
-          {t('transcription.elapsedTime').replace('{time}s', elapsedTime)}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-[11px] text-text-muted font-medium">
+            {t('transcription.elapsedTime').replace('{time}s', elapsedTime)}
+          </div>
+          <Button variant="secondary" onClick={onCancel} disabled={isCancelling}>
+            {isCancelling ? t('transcription.cancellingProcess') : t('transcription.cancelProcess')}
+          </Button>
         </div>
       </Card>
     </div>

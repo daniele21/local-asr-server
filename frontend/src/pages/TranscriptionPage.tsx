@@ -159,6 +159,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
   const [elapsedTime, setElapsedTime] = useState('0.0s');
   const [visualProgress, setVisualProgress] = useState<VisualProcessingProgress | null>(null);
   const [asrProgress, setASRProgress] = useState<ASRTrackProgress | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // Results State
   const [transcriptionResult, setTranscriptionResult] = useState<Transcription | null>(null);
@@ -172,6 +173,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
   const lastVisualProgressRef = useRef('');
   const lastASRProgressRef = useRef('');
   const lastJobStepRef = useRef('');
+  const activeJobIdRef = useRef<string | null>(null);
 
   const loadRecordings = async () => {
     try {
@@ -398,6 +400,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
     }
     
     setIsProcessing(true);
+    setIsCancelling(false);
     setLiveConsoleLines([]);
     setLivePreviewText('');
     setVisualProgress(null);
@@ -442,6 +445,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
           diarization_provider: diarizationProvider,
           visual_intelligence_enabled: visualIntelligenceEnabled,
         });
+        activeJobIdRef.current = job.id;
         let currentJob = job;
         while (!['completed', 'failed', 'cancelled'].includes(currentJob.status)) {
           setProgressPercent(currentJob.progress || 10);
@@ -502,6 +506,10 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
           await new Promise((resolve) => setTimeout(resolve, 800));
           currentJob = await ApiClient.getJob(job.id);
         }
+        if (currentJob.status === 'cancelled') {
+          showToast(t('transcription.processCancelled'), 'success');
+          return;
+        }
         if (currentJob.status !== 'completed' || !currentJob.result) {
           throw new Error(currentJob.error || currentJob.status);
         }
@@ -540,7 +548,7 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
       if (temperature) formData.append('temperature', temperature);
 
       const duration = audioDuration || audioRef.current?.duration || 0;
-      const response = await ApiClient.transcribe(formData);
+      const response = await ApiClient.transcribe(formData, abortControllerRef.current.signal);
       const reader = response.body?.getReader();
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
@@ -606,8 +614,27 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
       }
     } finally {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      activeJobIdRef.current = null;
+      abortControllerRef.current = null;
+      setIsCancelling(false);
       setIsProcessing(false);
       loadRecordings();
+    }
+  };
+
+  const cancelTranscription = async () => {
+    if (isCancelling) return;
+    setIsCancelling(true);
+    setProgressStatus(t('transcription.cancellingProcess'));
+    try {
+      if (activeJobIdRef.current) {
+        await ApiClient.cancelJob(activeJobIdRef.current);
+      } else {
+        abortControllerRef.current?.abort();
+      }
+    } catch (err: any) {
+      setIsCancelling(false);
+      showToast(`${t('transcription.cancelProcessError')}: ${err.message}`, 'error');
     }
   };
 
@@ -742,6 +769,8 @@ export default function TranscriptionPage({ detailPath, navigateTo, demoMode = f
           elapsedTime={elapsedTime}
           visualProgress={visualProgress}
           asrProgress={asrProgress}
+          isCancelling={isCancelling}
+          onCancel={cancelTranscription}
         />
       )}
 
