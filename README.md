@@ -1,317 +1,224 @@
-# ClosedRoom / local-asr-server
-
-Local-first meeting intelligence workspace for recording, transcribing, analyzing, and remembering everything that happens in meetings.
-
-`local-asr-server` is the local backend behind **ClosedRoom**: a private meeting workspace designed to help you keep track of what was discussed, what was decided, what needs to be done, and how projects evolve over time.
-
-The goal of this project is simple:
-
-> Never lose important meeting context again.
-
-ClosedRoom lets you:
-
-* record meetings locally;
-* transcribe audio on-device;
-* extract summaries, decisions, action items, risks, and project updates;
-* browse meeting history by day, project, and individual meeting;
-* keep a local operational memory of your work without sending sensitive meeting data to cloud APIs.
-
-This project was built as an experiment in **fully local meeting intelligence**, using:
-
-* **Nemotron ASR** for local speech-to-text transcription;
-* **Nemotron Nano 4B** for local meeting analysis;
-* [`local-llm-server`](https://github.com/daniele21/local-llm-server) as the managed local LLM runtime used by ClosedRoom for analysis.
-
----
-
-## Interactive Demo & UI Gallery
-
-ClosedRoom includes a local web workspace for managing recordings, transcriptions, analyses, projects, and demo data.
-
-### Suggested UI Gallery
-
-Add screenshots or videos under `docs/assets/` and update the paths below.
-
-<table width="100%">
-  <tr>
-    <td width="50%" valign="top">
-      <h4>1. Today Workspace</h4>
-      <p>See what happened in the selected period: meetings, actions, decisions, risks, and digest.</p>
-      <img src="docs/assets/0.home.png" alt="Today Workspace" width="100%"/>
-    </td>
-    <td width="50%" valign="top">
-      <h4>2. Project Workspace</h4>
-      <p>Track the status of a project across multiple meetings without rereading raw transcripts.</p>
-      <img src="docs/assets/6.project-analysis.png" alt="Project Workspace" width="100%"/>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <h4>3. Meeting Detail</h4>
-      <p>Open a single meeting, listen to the audio, read the transcript, and run structured analysis pipelines.</p>
-      <img src="docs/assets/5.meeting-analysis.png" alt="Meeting Detail" width="100%"/>
-    </td>
-    <td width="50%" valign="top">
-      <h4>4. Demo Mode & Guided Tour</h4>
-      <p>Explore the value of the workspace using local synthetic data without recording a real meeting.</p>
-      <img src="docs/assets/3.daily-recap.png" alt="Demo Mode and Guided Tour" width="100%"/>
-    </td>
-  </tr>
-</table>
-
----
-
-## Table of Contents
-
-1. [Why This Project Exists](#1-why-this-project-exists)
-2. [Core Features](#2-core-features)
-3. [Architecture & Ecosystem Integration](#3-architecture--ecosystem-integration)
-4. [Requirements & Installation](#4-requirements--installation)
-5. [Quick Start](#5-quick-start)
-6. [Recording Meetings](#6-recording-meetings)
-7. [Transcription & Meeting Intelligence](#7-transcription--meeting-intelligence)
-8. [Local LLM Analysis](#8-local-llm-analysis)
-9. [Configuration](#9-configuration)
-10. [HTTP API Reference](#10-http-api-reference)
-11. [Security & Privacy](#11-security--privacy)
-12. [Development & Build](#12-development--build)
-13. [Project Status & Roadmap](#13-project-status--roadmap)
-14. [License](#14-license)
-
----
-
-## 1. Why This Project Exists
-
-Meetings contain a large amount of operational knowledge:
-
-* decisions;
-* tasks;
-* risks;
-* blockers;
-* open questions;
-* project updates;
-* commitments made by different people.
-
-The problem is that this knowledge often disappears inside raw transcripts, fragmented notes, chat messages, or memory.
-
-ClosedRoom is designed to turn meetings into a **local operational memory**.
-
-The project is driven by a few principles:
-
-* **Local-first by design**: meeting audio, transcripts, prompts, and analysis results stay on the user's machine.
-* **Meeting intelligence, not just transcription**: the goal is not only to produce text, but to extract what matters.
-* **Project memory over isolated meetings**: a single meeting is useful, but the real value comes from understanding what changes across multiple meetings.
-* **Small local models are enough for many workflows**: tasks such as summarization, action item extraction, decision logging, and risk detection can be handled by compact local models.
-* **No recurring API cost**: the default architecture is designed to avoid token-based cloud billing.
-* **Progressive disclosure**: the user should see the useful output first, while technical details remain available only when needed.
-
----
-
-## 2. Core Features
-
-### Local Recording
-
-* Record meetings directly from the local web UI.
-* Capture microphone audio and, when available, computer/system audio.
-* Save audio progressively to avoid losing the session if the tab or process is interrupted.
-* Support recoverable partial recordings.
-
-### Local Transcription
-
-* Transcribe uploaded files or locally recorded meetings.
-* Support MLX Whisper models.
-* Support Nemotron ASR through `mlx-audio`.
-* Store transcripts locally and reuse cached results when the same audio/options are used again.
-
-### Meeting Workspace
-
-* View each meeting as a workspace.
-* Listen to the original audio.
-* Read the transcript.
-* Run fast or deep analysis pipelines, choosing provider, model, and local LLM setup before each run.
-* Inspect analysis history and job status.
-
-### Today Workspace
-
-* See meetings for today, recent days, the current week, or a custom period.
-* Review open actions, recent decisions, risks, blockers, and period digest.
-* Avoid digging into every transcript manually.
-
-### Project Workspace
-
-* Group meetings by project.
-* Track project status across multiple meetings.
-* See project-level actions, decisions, risks, and updates.
-* Generate a project situation from already extracted insights.
-
-### Local LLM Analysis
-
-* Use `local-llm-server` as the local reasoning layer.
-* Run Nemotron Nano 4B locally for structured meeting analysis.
-* Extract:
-
-  * summaries;
-  * action items;
-  * decisions;
-  * risks and blockers;
-  * meeting minutes;
-  * open questions;
-  * project updates.
-
-### Demo Mode
-
-* Explore ClosedRoom using synthetic local data.
-* Run the guided tour without recording a real meeting.
-* Demo data is frontend-only and does not require real ASR or LLM jobs.
-
----
-
-## 3. Architecture & Ecosystem Integration
-
-ClosedRoom is designed as a **local-first meeting intelligence stack**: the product UI, recording and transcription pipeline, meeting catalog, local model runtimes, and operational memory all run on the user's Mac by default.
-
-For the complete system design, including module responsibilities, data model, runtime flows, failure handling, security, packaging, and extension rules, see [`docs/architecture.md`](docs/architecture.md). End-to-end readiness for the combined visual intelligence and speaker diarization workflow is tracked in [`docs/visual-diarization-e2e-readiness.md`](docs/visual-diarization-e2e-readiness.md).
-
-### High-level architecture
-
-At the highest level, the React workspace talks only to `local-asr-server`. The backend coordinates local recording artifacts, SQLite state, local ASR, native macOS helpers, and `local-llm-server`. Optional cloud providers remain outside the default local trust boundary and are used only when explicitly selected.
+<h1 align="center">ClosedRoom</h1>
 
 <p align="center">
-  <img src="docs/assets/closedroom-high-level-architecture.png" alt="ClosedRoom high-level local-first architecture" width="100%"/>
+  <strong>Local-first Meeting Intelligence for macOS</strong><br>
+  Record, transcribe, identify speakers, analyze, and remember meetings without making cloud APIs the default home for sensitive meeting data.<br>
+  <code>local-asr-server</code> is the local backend and runtime behind the ClosedRoom workspace.
 </p>
 
-The default path keeps **audio, transcripts, prompts, diarization artifacts, visual observations, and analysis results on the Mac**. Speechmatics and Gemini are explicit opt-in alternatives rather than hidden dependencies.
+<p align="center">
+  <a href="https://daniele21.github.io/">Mission</a> ·
+  <a href="#local-meeting-intelligence-vision">Vision</a> ·
+  <a href="#values-and-opportunities">Opportunities</a> ·
+  <a href="#where-we-are-today">Today</a> ·
+  <a href="#how-it-works">Architecture</a> ·
+  <a href="#run-it">Run it</a> ·
+  <a href="docs/features.md">Features</a>
+</p>
 
-### End-to-end meeting flow
+<p align="center">
+  <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white">
+  <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white">
+  <img alt="Local first" src="https://img.shields.io/badge/Local--first-default-0F766E">
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+</p>
 
-The product flow is intentionally simple from the user's perspective:
+## Why this exists
+
+My mission is to [scale AI, GenAI, and Data Science with impact](https://daniele21.github.io/): move beyond isolated demos and turn AI into understandable, measurable, reusable products.
+
+Meetings are a good example of where that gap still exists. They contain decisions, commitments, risks, blockers, project changes, and context that often disappears into raw transcripts, fragmented notes, chat messages, or memory.
+
+ClosedRoom is designed to turn that information into a **local operational memory**.
+
+The goal is intentionally bigger than speech-to-text:
+
+- capture meetings locally and preserve recoverable audio artifacts;
+- transcribe speech on-device with MLX/Nemotron ASR;
+- separate speakers and, when evidence is strong enough, attach human-readable names conservatively;
+- transform transcripts into summaries, actions, decisions, risks, open questions, minutes, and project updates;
+- reuse extracted knowledge across meetings instead of treating every transcript as an isolated document;
+- keep the default workflow local, while making any cloud processing explicit and optional.
+
+ClosedRoom is therefore not just an ASR server. It is an experiment in making **meeting intelligence a private, local-first product capability**.
+
+## Values and opportunities
+
+ClosedRoom is designed around values that make meeting intelligence useful beyond a transcription demo.
+
+| Value | What it means | Opportunity it creates |
+| --- | --- | --- |
+| **Local-first control** | Audio, transcripts, prompts, analysis results, diarization artifacts, and visual observations stay on the Mac by default | Sensitive meetings can be processed without making a remote AI API the default data boundary |
+| **Intelligence over transcription** | The product extracts actions, decisions, risks, minutes, open questions, and project updates | Users can act on meetings without rereading raw transcripts |
+| **Project memory over isolated meetings** | Meeting outputs can be reused across a project workspace | ClosedRoom can show what changed across multiple conversations instead of only what happened once |
+| **Human-reviewable speaker attribution** | Diarization clusters remain the stable identity; visual evidence may name them only when support is strong enough | More useful transcripts without pretending uncertain identity inference is fact |
+| **Fail-soft enrichment** | Diarization, visual intelligence, and audio intelligence may degrade without invalidating a usable transcript | Optional intelligence can improve the experience without making the core recording/transcription path brittle |
+| **Replaceable provider boundaries** | Local and cloud ASR/LLM choices sit behind explicit configuration and runtime boundaries | Models and providers can evolve without rewriting the product workflow |
+
+This creates several useful product directions:
+
+- **For individual knowledge workers:** preserve decisions, actions, and context without manually maintaining meeting notes.
+- **For project work:** connect multiple meetings into a living view of status, commitments, risks, and changes.
+- **For sensitive contexts:** keep the default recording, transcription, diarization, and analysis path on the local machine.
+- **For local-model experimentation:** compare ASR, diarization, visual, and LLM workflows inside a real product rather than a benchmark-only harness.
+- **For hybrid deployments:** opt into Speechmatics or Gemini only when the user explicitly chooses a cloud capability.
+
+## Local meeting intelligence vision
+
+The product vision is a **private meeting workspace that remembers work, not just words**.
+
+ClosedRoom should let a user move from a live meeting to an operationally useful memory without assembling separate recording, ASR, diarization, note-taking, LLM, and project-tracking tools.
+
+In the default architecture:
+
+- the React workspace talks to one local `local-asr-server` boundary;
+- recording artifacts, transcript state, jobs, analysis runs, and project memory are persisted locally;
+- MLX/Nemotron handles local ASR;
+- FluidAudio can provide local post-meeting speaker diarization on supported Macs;
+- `local-llm-server` provides the local reasoning and visual-model boundary;
+- Qwen3-VL contributes conservative visual evidence for naming existing speaker clusters;
+- Speechmatics and Gemini remain explicit opt-in cloud alternatives.
+
+![ClosedRoom high-level local-first architecture](docs/assets/closedroom-high-level-architecture.png)
+
+_The default trust boundary stays on the user's Mac; cloud providers sit outside it and are used only when explicitly selected._
+
+## Strategy: from transcript to operational memory
+
+The product sequence is deliberately simple from the user's point of view:
+
+![ClosedRoom end-to-end meeting intelligence flow](docs/assets/closedroom-end-to-end-meeting-flow.png)
 
 **Configure → Record → Transcribe → Enrich → Analyze → Remember**
 
-Recording produces recoverable local artifacts first. Transcription then creates timestamped text; optional speaker diarization, visual intelligence, and audio intelligence enrich that transcript; local LLM analysis converts the meeting into operational outputs that can be reused across meeting and project workspaces.
+Each step has a distinct responsibility:
 
-<p align="center">
-  <img src="docs/assets/closedroom-end-to-end-meeting-flow.png" alt="ClosedRoom end-to-end meeting intelligence flow" width="100%"/>
-</p>
+1. **Configure the evidence path:** choose diarization, visual intelligence, provider options, and—when visual capture is enabled—the exact macOS window to observe.
+2. **Preserve the meeting first:** record microphone/system audio progressively and finalize recoverable local artifacts before expensive inference begins.
+3. **Create the transcript:** run local ASR or an explicitly selected provider and persist timestamped transcript output.
+4. **Enrich without breaking the core:** add speaker diarization, visual evidence, and audio intelligence as fail-soft stages.
+5. **Convert text into work:** run structured analysis for summaries, actions, decisions, risks, minutes, questions, and project updates.
+6. **Reuse the result:** surface knowledge in Today, Meeting, and Project workspaces so context survives beyond one call.
 
-The enrichment stages are **fail-soft**. Diarization, visual intelligence, or audio intelligence can degrade or fail without invalidating an otherwise usable transcript. Provider/backend outcomes and warnings remain visible in persistent job history and diagnostics.
+## Where we are today
 
-### Detailed technical architecture
+**ClosedRoom is already a working local-first macOS meeting intelligence application and local server.** The current `speaker_detection` branch extends the product with post-meeting speaker diarization, conservative visual speaker attribution, richer diagnostics, and a more explicit enrichment pipeline.
 
-The implementation separates four concerns:
+The current product can:
 
-1. **Product surface** — React, TypeScript, WKWebView/browser UI, recording workflow, and job-driven progress views.
-2. **Local API and composition root** — FastAPI routers plus `AppServices`, which owns the long-lived process services.
-3. **Application services and stores** — capture, transcription, analysis, runtime supervision, recording/transcription/catalog/job stores.
-4. **Persistence and execution backends** — filesystem, SQLite WAL, MLX/Nemotron ASR, native Swift helpers, FluidAudio, and `local-llm-server`.
+- record microphone and system audio, with native macOS capture where supported and a browser/BlackHole fallback;
+- save meetings first and run transcription asynchronously afterward;
+- transcribe locally with MLX Whisper or Nemotron ASR, with result caching for identical audio/options;
+- diarize speakers locally with FluidAudio or opt into Speechmatics diarization;
+- stage timestamped frames from an explicitly selected macOS window and analyze them with Qwen3-VL when visual intelligence is enabled;
+- keep diarization clusters stable and use visual evidence only for conservative name attribution;
+- run structured local meeting analysis through `local-llm-server` and Nemotron Nano 4B;
+- browse Today, Meeting, and Project workspaces with persistent jobs, diagnostics, and analysis history;
+- recalculate speakers without rerunning ASR;
+- package the backend and product surface into a native macOS application.
 
-<p align="center">
-  <img src="docs/assets/closedroom-detailed-technical-architecture.png" alt="ClosedRoom detailed technical architecture" width="100%"/>
-</p>
+> **Current boundary:** ClosedRoom is local-first by default, not local-only. Speechmatics and Gemini are available as explicit opt-in providers. Visual intelligence is disabled by default, and automatic speaker naming is intentionally conservative rather than guaranteed.
 
-Speaker identification remains deliberately conservative: diarization clusters are the stable speaker identity, while Qwen visual intelligence contributes evidence for naming existing clusters rather than replacing diarization or performing face recognition.
+The current product surfaces make that milestone visible:
 
-### Why `local-llm-server` is used
+<table>
+  <tr>
+    <th>Today</th>
+    <th>Recording</th>
+    <th>Meeting</th>
+  </tr>
+  <tr>
+    <td align="center"><a href="docs/assets/0.home.png"><img src="docs/assets/0.home.png" width="220" alt="ClosedRoom Today workspace"></a></td>
+    <td align="center"><a href="docs/assets/1.recording.png"><img src="docs/assets/1.recording.png" width="220" alt="ClosedRoom recording configuration"></a></td>
+    <td align="center"><a href="docs/assets/5.meeting-analysis.png"><img src="docs/assets/5.meeting-analysis.png" width="220" alt="ClosedRoom meeting analysis workspace"></a></td>
+  </tr>
+  <tr>
+    <td align="center">Meetings, actions, decisions, risks, and period context</td>
+    <td align="center">Capture setup, diarization, and visual-intelligence controls</td>
+    <td align="center">Transcript, audio, speaker context, and structured analysis</td>
+  </tr>
+</table>
 
-ClosedRoom delegates local LLM serving to [`local-llm-server`](https://github.com/daniele21/local-llm-server).
+<table>
+  <tr>
+    <th>Project memory</th>
+    <th>Deep-dive actions</th>
+  </tr>
+  <tr>
+    <td align="center"><a href="docs/assets/6.project-analysis.png"><img src="docs/assets/6.project-analysis.png" width="260" alt="ClosedRoom project analysis workspace"></a></td>
+    <td align="center"><a href="docs/assets/4.deep-dive-actions.png"><img src="docs/assets/4.deep-dive-actions.png" width="260" alt="ClosedRoom deep-dive action items"></a></td>
+  </tr>
+  <tr>
+    <td align="center">Cross-meeting status, decisions, risks, and updates</td>
+    <td align="center">Operational detail extracted from meeting intelligence</td>
+  </tr>
+</table>
 
-This keeps the meeting application focused on product experience, while `local-llm-server` handles:
+## How it works
 
-* model loading;
-* backend selection;
-* OpenAI-compatible inference;
-* runtime lifecycle;
-* local model configuration;
-* reasoning/JSON mode;
-* logs and diagnostics.
+![ClosedRoom detailed technical architecture](docs/assets/closedroom-detailed-technical-architecture.png)
 
-ClosedRoom persists its main rotating application log in
-`~/Library/Logs/ClosedRoom/closedroom.log`. To inspect effective backends,
-fallbacks and errors for a meeting from a terminal:
+The current implementation separates product experience, orchestration, persistence, and execution backends:
+
+- **Product surface:** React/TypeScript is served locally and runs either in a browser or the native WKWebView shell.
+- **Local API boundary:** FastAPI binds to loopback by default, bootstraps a local authenticated session, and exposes recording, transcription, analysis, workspace, settings, runtime, and diagnostic APIs.
+- **Composition root:** `create_app()` assembles long-lived services through `AppServices` rather than scattering process-global ownership across routes.
+- **Recording:** ClosedRoom persists microphone, system, and mixed tracks plus metadata and optional visual frames; recordings are finalized before transcription begins.
+- **Transcription:** MLX Whisper and Nemotron ASR provide the local path; transcription jobs persist progress, events, outputs, and cache identity.
+- **Speaker diarization:** FluidAudio Community-1 can create local timestamped speaker clusters after a meeting. Speechmatics can be selected independently as a cloud diarization provider.
+- **Visual intelligence:** Qwen3-VL consumes selected meeting-window frames after the meeting and contributes evidence for existing diarization clusters. It does not replace diarization and is not used as face recognition.
+- **Meeting analysis:** `local-llm-server` isolates local model lifecycle and inference; Nemotron Nano 4B is used for structured meeting intelligence. Gemini remains an optional cloud analysis provider.
+- **Persistence:** filesystem artifacts and the SQLite catalog store recordings, transcripts, jobs, events, analysis runs, diagnostics, and project-level state locally.
+- **Failure handling:** enrichment stages record effective backend, warnings, and failure causes instead of turning every partial degradation into a failed transcript.
+
+Speaker identity stays explicit end to end: **audio diarization determines who spoke when; visual intelligence may add a name only when the evidence satisfies the configured support and margin rules.** Users can rename clusters later without rerunning ASR.
+
+For the durable system design and extension rules, read [`docs/architecture.md`](docs/architecture.md). The combined visual-intelligence and diarization path is tracked in [`docs/visual-diarization-e2e-readiness.md`](docs/visual-diarization-e2e-readiness.md).
+
+### Why `local-llm-server` is a separate boundary
+
+ClosedRoom delegates local LLM serving to [`local-llm-server`](https://github.com/daniele21/local-llm-server) instead of owning model-runtime details inside the meeting product.
+
+That boundary handles model loading, backend selection, OpenAI-compatible inference, runtime lifecycle, model configuration, reasoning/JSON modes, vision inference, logs, and diagnostics. ClosedRoom stays focused on meeting workflows, evidence, persistence, and product state.
+
+## Repository map
+
+| Area | Main paths | Responsibility |
+| --- | --- | --- |
+| Product UI | `frontend/src/`, generated `src/local_asr_server/static/` | Today, recording, meeting, project, settings, guided workflows, and API client |
+| API and composition | `src/local_asr_server/server.py`, `app_services.py` | FastAPI composition root, route wiring, local session boundary, long-lived services |
+| Recording and macOS capture | `recordings.py`, `native_capture_helper/`, `macos_audio_helper/`, `audio_router.py` | Progressive recording, native microphone/system capture, fallback audio routing, recovery |
+| Transcription and diarization | `transcriptions.py`, `asr_provider.py`, `speaker_diarization_helper/` | ASR provider boundary, transcript persistence, local FluidAudio speaker clustering |
+| Meeting intelligence | `analysis_jobs.py`, `analysis_templates.py`, `audio_intelligence/` | Persistent analysis jobs, structured pipelines, optional enrichment |
+| Local model runtime | `local-llm-server` dependency + runtime service manager | Local text/vision inference, model lifecycle, diagnostics |
+| Persistence and configuration | `catalog.py`, `settings.py`, `paths.py` | SQLite catalog, settings, runtime paths, cross-feature metadata |
+| macOS application | `menubar.py`, `window.py`, `ClosedRoom.spec`, `build.sh`, `build_assets/` | Native menu bar/WKWebView shell, PyInstaller bundle, signing and packaging |
+| Validation and documentation | `test/`, `scripts/`, `docs/`, `AGENTS.md` | Unit/API tests, smoke harnesses, architecture, feature registry, engineering guidance |
+
+[`AGENTS.md`](AGENTS.md) is the repository navigation and change guide; [`docs/features.md`](docs/features.md) is the business/technical feature registry.
+
+## Run it
+
+### Prerequisites
+
+- macOS; Apple Silicon is recommended and required for some MLX/FluidAudio paths
+- Python `>= 3.10`
+- `ffmpeg`
+- a local ASR model such as `mlx-community/whisper-large-v3-turbo` or `mlx-community/nemotron-3.5-asr-streaming-0.6b`
+- [`local-llm-server`](https://github.com/daniele21/local-llm-server) and a compatible local analysis model for local meeting intelligence
+- optional `blackhole-2ch` for the browser/system-audio fallback
+- optional Speechmatics or Gemini credentials only when those cloud providers are explicitly selected
+
+### Install and launch
 
 ```bash
-local-asr inspect-meeting <recording-id>
-local-asr inspect-meeting <recording-id> --json
-```
-
-The same canonical report is available to the authenticated UI at
-`GET /v1/meetings/<recording-id>/diagnostics`; it includes component outcomes,
-job events, artifact presence and redacted log lines correlated to the meeting.
-
----
-
-## 4. Requirements & Installation
-
-### Requirements
-
-* macOS recommended.
-* Apple Silicon recommended for MLX-based models.
-* Python `>= 3.10`.
-* `ffmpeg`.
-* Optional: `blackhole-2ch` for browser/system-audio fallback.
-* ASR model, for example:
-
-  * `mlx-community/whisper-large-v3-turbo`;
-  * `mlx-community/nemotron-3.5-asr-streaming-0.6b`.
-* Local LLM runtime:
-
-  * [`local-llm-server`](https://github.com/daniele21/local-llm-server);
-  * Nemotron Nano 4B / `nemotron-nano-4b` or compatible local model.
-* Optional cloud providers:
-
-  * Speechmatics Batch ASR and speaker diarization; the SDK is installed with the standard Python package, but cloud processing remains opt-in;
-  * Gemini API key, only when cloud analysis is selected.
-
-### Install with setup script
-
-```bash
+git clone -b speaker_detection https://github.com/daniele21/local-asr-server.git
+cd local-asr-server
 ./setup.sh
+./run.sh
 ```
 
-The setup script installs required local dependencies and prepares the application for local recording and transcription.
-
-### Manual installation
-
-```bash
-# macOS system dependencies
-brew install ffmpeg blackhole-2ch switchaudio-osx
-
-# Python package
-pip install -e .
-
-# Check local setup
-local-asr doctor
-```
-
-### Optional app dependencies
-
-```bash
-pip install -e ".[app]"
-```
-
-### Optional build dependencies
-
-```bash
-pip install -e ".[build]"
-```
-
-### Speechmatics configuration
-
-The Speechmatics SDK is installed by the normal `./setup.sh` or
-`pip install -e .` workflow, so the server cannot expose a provider that is
-missing at runtime. Cloud processing is still opt-in: configure the API key in
-Settings and explicitly select Speechmatics as ASR or diarization provider.
-After installing or updating dependencies, restart the running ClosedRoom
-server.
-
-In development, ClosedRoom also reads a local `.env` file from the project root.
-Use `SPEECHMATICS_API_KEY=...` or configure the same key from Settings.
-
----
-
-## 5. Quick Start
-
-### 1. Start ClosedRoom
+Or start the local API directly:
 
 ```bash
 local-asr serve \
@@ -326,233 +233,98 @@ Open:
 http://127.0.0.1:1236
 ```
 
-### 2. Start in development mode
+Development mode:
 
 ```bash
-local-asr serve --reload
+UV_CACHE_DIR=.cache/uv uv run local-asr serve --reload
 ```
 
-In development with reload, ClosedRoom uses a separate default port:
-
-```text
-http://127.0.0.1:1237
-```
-
-Before binding its API port, ClosedRoom performs a singleton ownership check.
-Every previous verified ClosedRoom API process is terminated gracefully (and
-force-stopped only after a timeout), including orphan processes missing from
-the runtime state or using another development port. The requested port is then
-awaited until free, and the new process records its PID and port atomically in:
-
-```text
-~/Library/Application Support/ClosedRoom/runtime-state.json
-```
-
-Ports owned by unrelated applications are never terminated: startup fails
-explicitly or, in menu bar mode, tries another reserved ClosedRoom port.
-Normal, reload and menu bar modes are mutually exclusive API instances.
-
-### 3. Start with a local downloaded model
+### Build the macOS application
 
 ```bash
-local-asr serve \
-  --model /Users/daniele/models/nemotron-asr \
-  --recordings-dir ~/Recordings/local-asr \
-  --port 1236
+./build.sh --no-dmg
 ```
 
-### 4. Use the Web UI
+The packaged application includes the native capture helper and FluidAudio diarization helper. Build/package changes require macOS Apple Silicon and the relevant native toolchain.
 
-From the local web app you can:
+## Use the local API
 
-1. choose speaker diarization, visual intelligence and the exact meeting window
-   to observe from the Recording page;
-2. record a meeting;
-3. save the audio locally;
-4. transcribe it;
-5. open the meeting workspace;
-6. run analysis;
-7. review actions, decisions, risks, and project updates.
+ClosedRoom exposes a local HTTP API because the browser UI, WKWebView shell, CLI workflows, and diagnostics all use the same product boundary.
 
----
-
-## 6. Recording Meetings
-
-ClosedRoom records audio in chunks while the meeting is in progress.
-
-When the user stops the recording, the application finalizes the audio and creates a meeting item in the local workspace.
-
-A recording session is stored under:
-
-```text
-<recordings-dir>/<date>/<session-id>/
-├── recording.webm      # mixed playback track
-├── mic.webm            # local microphone track, when captured
-├── system.webm         # computer audio track, when captured
-├── metadata.json
-├── speaker-diarization.json # optional FluidAudio speaker timeline
-├── transcript.json
-└── transcript.txt
-```
-
-### Native macOS Capture
-
-On supported macOS versions, ClosedRoom can use a native helper for microphone and computer audio capture.
-
-The native helper records:
-
-* microphone audio through AVFoundation;
-* computer/system audio through ScreenCaptureKit;
-* separate source tracks;
-* a mixed playback track.
-
-### Local post-meeting speaker diarization
-
-ClosedRoom can identify distinct speakers locally after a recording using
-FluidAudio's offline Community-1 pipeline (Core ML segmentation, WeSpeaker
-embeddings and VBx clustering). The Swift helper runs on Apple Silicon and
-returns timestamped clusters such as `system:0` and `system:1`; ASR segments are
-matched by temporal overlap. Provider-owned clusters, such as Speechmatics
-`S1`/`S2`, are preserved rather than overwritten.
-
-The helper uses FluidAudio's accuracy-oriented offline profile: segmentation
-step ratio `0.1`, no minimum embedding segment duration, and zero-vote span
-re-embedding. This is slower than the Community-1 speed-oriented defaults but
-improves recall for short turns. The raw diarization timeline is authoritative
-for the detected speaker count. A cluster remains available for naming even
-when no preserved Whisper segment overlaps it; the result UI marks that cluster
-as detected in audio without associated transcript text.
-
-The transcription Configure step offers one independent diarization selector:
-`Disabled`, `Local FluidAudio`, or `Speechmatics cloud · diarization only`.
-It works for both ClosedRoom recordings and imported audio files and does not
-require a participant count. This choice is independent from the ASR provider,
-so MLX/Whisper can produce the text while Speechmatics is used only to produce
-the speaker timeline. The global Recording/Settings toggle remains the default
-for recording-linked transcriptions when no per-run choice is supplied.
-
-Local FluidAudio requires macOS 14+. FluidAudio is
-compiled into the app bundle, while its Core ML models are downloaded on first
-use under `~/Library/Application Support/ClosedRoom/models/fluidaudio-speaker-diarization/`.
-A failure is recorded in `speaker-diarization.json` but does not fail the
-transcription. When visual intelligence is also enabled, Qwen uses these local
-clusters as the stable diarization source for conservative name attribution.
-
-After a transcript has been saved, the result view can recalculate only speaker
-diarization without rerunning local ASR. The user can choose FluidAudio or
-Speechmatics Batch. This workflow keeps the existing segment text and
-timestamps, treats the separate microphone track as one known local speaker,
-and sends only the system track to the selected diarization backend.
-
-Speechmatics still performs its own cloud batch transcription internally to
-produce speaker labels; ClosedRoom discards that returned text and aligns only
-the Speechmatics speaker timeline to the existing transcript. The UI therefore
-requires an explicit cloud-processing confirmation and a configured
-Speechmatics API key. Re-diarization replaces previous automatic and manual
-speaker mappings because cluster identities are not stable across backends.
-
-### Post-meeting visual intelligence foundation
-
-ClosedRoom can stage timestamped JPEG frames while a recording is active and
-analyze them with `qwen3-vl-4b` when the transcription job runs after the
-meeting. Qwen produces visual identity evidence; it does not replace
-diarization and does not use face recognition. Automatic names are applied only
-to existing provider speaker clusters when the configured support thresholds
-are met.
-
-When starting transcription for a saved recording, the configuration step
-offers a per-run Qwen toggle. It defaults to the global visual-intelligence
-setting, can be disabled without deleting the captured frames, and does not
-change the persisted setting.
-
-The feature is disabled by default. The Recording page exposes the toggle next
-to diarization and, when enabled, lists the
-shareable macOS windows and requires an explicit window selection; leaving the
-selector disabled records no images. A separate ScreenCaptureKit stream samples
-only that window at low frequency without changing the audio capture stream.
-Captured frames are private recording artifacts stored in the recording
-directory. They remain available after processing, including failed or repeated
-Qwen runs, together with the structured observations and compact summary.
-
-The stable `v1` path filters perceptually similar frames before Qwen inference.
-`visual_frame_similarity_threshold` controls the 64-bit dHash Hamming distance:
-higher values filter more aggressively. The default is `12` (valid range
-`0..64`); filtered frames reuse the previous observation and therefore do not
-make another Qwen call.
-
-For controlled rollout, `visual_routing_mode=shadow` leaves the v1 Qwen calls
-and user-visible mapping unchanged while persisting explainable candidate and
-trigger decisions in `visual_routing.json`. The authenticated visual
-intelligence endpoint returns this diagnostic artifact when present. A later
-v1 run removes stale routing diagnostics before processing.
-
-In experimental `v2` mode, meeting-state observations are restricted to
-visible layout, participant count, screen sharing and explicit UI activity.
-Short A-B-A oscillations are debounced before persistence; the resulting
-timeline uses typed layout, share start/stop, participant join/leave and
-visible-activity events rather than unrestricted meeting interpretations.
-Shared-content candidates record the ROI source, confidence and explicit
-full-frame fallback. Qwen's first stable observation classifies slides,
-documents, spreadsheets, code, browsers, videos or dashboards; subsequent
-heartbeat inference follows the category cadence, while informative ROI
-changes are never suppressed by that cadence.
-Task-specific validators reject partial or wrongly typed Qwen payloads before
-they reach temporal aggregation or speaker fusion, and persist the candidate
-validation cause for diagnostics. Observable share start/stop cycles create
-separate stable sessions; keyframes outside known share windows remain explicit
-as unassigned instead of being silently merged.
-
-For speaker candidates, v2 first compares participant-tile border signatures.
-When a single newly highlighted tile is found and macOS Vision OCR matches its
-visible label to a known participant, ClosedRoom persists a local observation
-and skips that Qwen call. Ambiguous highlights, missing labels, unavailable
-Vision support, and OCR errors abstain locally and fall back to Qwen. The
-deterministic quality fixture can be replayed without ASR or Qwen:
+Bootstrap a local session and check health:
 
 ```bash
-python scripts/replay_visual_intelligence.py
+curl -c /tmp/closedroom.cookies http://127.0.0.1:1236/v1/session
+curl http://127.0.0.1:1236/health
 ```
 
-The report includes speaker precision/recall, false attribution and correct
-abstention, meeting-state transitions, shared-content keyframes, OCR bypasses,
-estimated Qwen call ratio, peak RSS and execution time.
+Transcribe a file:
 
-The canonical task-aware document is available from
-`GET /v2/recordings/<recording-id>/visual-intelligence`; the existing `/v1`
-response remains compatible. Version 2 also stores derived timestamp-overlap
-links between meeting events or share keyframes and transcript segments. These
-links cite their source observation and transcript evidence without rewriting
-either source.
-A terminal visual run replaces its complete artifact set, so a later v1 run
-removes stale v2 documents and routing. Disabling the feature preserves the
-last completed generation; an enabled run with no frames records a coherent
-degraded result.
-Task-aware recovery retains a validated checkpoint for up to 24 hours, while
-captured frames remain part of the recording without a processing TTL.
-Terminal artifacts are staged under one generation ID and metadata/catalog
-updates happen last; incomplete mixed generations are not served by the API.
-The Meeting detail page loads this versioned document progressively and shows
-an observed timeline, expandable shared-content moments, and speaker mappings
-as accepted, needing review, or explicitly abstained. Raw tuning thresholds
-remain outside the primary workflow.
-The visual request is independent from the main meeting request and is aborted
-when navigating to another meeting or unmounting the page, preventing stale
-results from replacing the current workspace.
+```bash
+curl -b /tmp/closedroom.cookies \
+  http://127.0.0.1:1236/v1/audio/transcriptions \
+  -F "file=@/Users/daniele/Desktop/audio.mp3" \
+  -F "language=it" \
+  -F "response_format=verbose_json"
+```
 
-The transcription result always shows the effective outcome of FluidAudio,
-Qwen and speaker attribution. Missing frames, partial frame failures, runtime
-errors and ASR/VAD fallbacks produce a persistent “completed with warnings”
-panel with the requested backend, effective backend and reason; they are never
-reported only as a green success toast.
+Inspect one meeting's effective backends, fallbacks, artifacts, and redacted diagnostics:
 
-Global shortcuts additionally require macOS Accessibility permission. If it is
-missing, Settings shows an actionable warning and the app does not start the
-keyboard listener; recording, transcription and visual intelligence are not
-disabled by this permission.
+```bash
+local-asr inspect-meeting <recording-id>
+local-asr inspect-meeting <recording-id> --json
+```
 
-For a repeatable development smoke test, start `local-llm-server` with the
-existing LM Studio MLX model and then run the combined harness with a
-two-speaker WAV and a JPEG containing one visible active-speaker label:
+Useful authenticated endpoints include:
+
+- `GET /v1/jobs` and `/v1/jobs/<job-id>/events` for persistent background-job state;
+- `GET /v1/meetings/<recording-id>` for the meeting workspace;
+- `GET /v1/meetings/<recording-id>/diagnostics` for the canonical diagnostic report;
+- `GET /v1/recordings/<recording-id>/visual-intelligence` and the versioned `/v2/...` document for visual evidence;
+- `POST /v1/transcriptions/<transcription-id>/diarization-jobs` to recalculate speakers without rerunning ASR;
+- `POST /v1/analysis-pipelines` to run structured meeting analysis.
+
+Provider, model, diarization, visual-intelligence, and local-runtime settings are validated before persistence. The detailed feature behavior and configuration surface are documented in [`docs/features.md`](docs/features.md).
+
+## Evidence and maturity
+
+ClosedRoom is an active engineering product, not a claim of perfect transcription, speaker identification, or meeting understanding.
+
+The current branch has working local recording, transcription, meeting/project workspaces, local LLM analysis, local FluidAudio diarization, visual-evidence processing, persistent jobs, diagnostics, and macOS packaging. Important boundaries remain explicit:
+
+- FluidAudio local diarization requires macOS 14+ and Apple Silicon;
+- visual intelligence is disabled by default and requires explicit window selection when recording;
+- automatic speaker names are applied only when configured evidence thresholds are met; otherwise ClosedRoom abstains or leaves a stable `Speaker N` identity;
+- Speechmatics and Gemini send selected content outside the machine and may incur provider cost;
+- enrichment failures are surfaced as warnings instead of being hidden behind a generic success state;
+- physical-device/model quality still depends on the exact hardware, audio conditions, model, language, and meeting layout.
+
+Use these documents for the current engineering truth:
+
+- [Architecture](docs/architecture.md)
+- [Feature registry](docs/features.md)
+- [Visual + diarization E2E readiness](docs/visual-diarization-e2e-readiness.md)
+- [Task-aware visual intelligence plan](docs/task-aware-visual-intelligence-plan.md)
+- [Audio intelligence / VAD plan](docs/audio-intelligence-vad-plan.md)
+- [Agent and validation guide](AGENTS.md)
+
+## Build and validate
+
+Run the narrowest checks for the area you change. The repository's complete Python test suite is:
+
+```bash
+UV_CACHE_DIR=.cache/uv uv run python -m unittest discover -s test -v
+```
+
+For frontend changes:
+
+```bash
+cd frontend
+npm install
+npm run build
+```
+
+For the combined real FluidAudio + Qwen development smoke path, start the local vision model and run:
 
 ```bash
 .venv/bin/local-llm serve \
@@ -567,579 +339,12 @@ two-speaker WAV and a JPEG containing one visible active-speaker label:
   --output-dir /private/tmp/closedroom-combo-e2e
 ```
 
-The harness uses real FluidAudio and Qwen inference but deterministic timed ASR
-segments, so it does not download or execute Whisper. It fails unless the
-speaker mapping, persisted artifacts, catalog rows and visual staging cleanup
-for the selected policy. Pass `--routing-mode v2` to require the canonical
-document and routing artifact as part of the smoke.
-all pass.
+Use `./build.sh --no-dmg` when a change touches the app bundle, native helpers, bundled resources, or PyInstaller configuration.
 
-The macOS bundle is built with Python 3.10 by default, matching the supported
-MLX runtime used in development. Override it only for an explicit compatibility
-test with `CLOSEDROOM_BUILD_PYTHON_VERSION`; selecting the newest interpreter
-implicitly can produce a bundle that passes health checks but fails inside the
-MLX-VLM generation thread.
-The macOS dependency graph also pins `mlx 0.31.2`: a clean resolution to
-`mlx 0.32.0` currently breaks GPU stream ownership in the frozen MLX-VLM worker.
+[`AGENTS.md`](AGENTS.md) documents the known test baseline and repository-specific validation rules, including cases where existing failures must be compared with the documented baseline rather than automatically treated as regressions.
 
-### Browser + BlackHole Fallback
+## License and author
 
-If native capture is unavailable, ClosedRoom can use browser recording with BlackHole compatibility.
+ClosedRoom / `local-asr-server` is available under the [MIT License](LICENSE).
 
-One-time setup:
-
-1. Install dependencies:
-
-```bash
-./setup.sh
-```
-
-or:
-
-```bash
-local-asr setup-audio
-```
-
-2. Create a Multi-Output Device in macOS Audio MIDI Setup.
-3. Include both your output device and `BlackHole 2ch`.
-4. Enable Drift Correction for BlackHole.
-5. Run:
-
-```bash
-local-asr doctor
-```
-
----
-
-## 7. Transcription & Meeting Intelligence
-
-ClosedRoom separates recording from transcription.
-
-Stopping a recording does not block on ASR inference. Instead, the meeting is saved first, and transcription can be started from:
-
-* Today workspace;
-* meeting detail;
-* import/transcription page;
-* API endpoints.
-
-The Today, meeting, recording, and project entry points all open the same guided
-transcription workflow. The recording is preselected, then the user reviews the
-provider and ASR options, follows the shared progress view, and reaches the same
-result and recovery states.
-
-During local-track analysis, recording jobs report the active microphone or
-system track, processed audio versus total duration, elapsed time and
-percentage. Nemotron and verbose Whisper timestamps drive a measured ETA;
-before the first timestamp the UI marks the estimate as calculating and keeps
-publishing heartbeat entries instead of appearing stuck.
-
-FluidAudio speaker clusters are rendered in the transcript even when visual
-speaker attribution is unavailable. ClosedRoom uses an accepted Qwen VL name
-when present, otherwise assigns stable `Speaker N` labels. The result view lets
-users rename every cluster later; saving a name updates both segments and the
-full-text export without rerunning ASR.
-
-The same result view also exposes **Recalculate speakers only**. It creates a
-persistent `diarization` job, preserves ASR text, and updates the existing
-transcription in place. The summary shows the detected cluster count and the
-backend actually used.
-
-The recordings directory shown in Settings is also the runtime storage source
-for CLI and menu-bar launches unless `--recordings-dir` is explicitly supplied.
-Older recordings under `~/Recordings/local-asr` remain readable. Captured
-meeting frames are available from the transcription result even after a visual
-backend failure, while Qwen VL's internal server receives a free dynamic port
-to prevent stale-process collisions.
-
-### Transcribe uploaded audio
-
-```bash
-curl -c /tmp/closedroom.cookies http://127.0.0.1:1236/v1/session
-
-curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/audio/transcriptions \
-  -F "file=@/Users/daniele/Desktop/audio.mp3" \
-  -F "language=it" \
-  -F "response_format=verbose_json"
-```
-
-### Transcribe a local path
-
-```bash
-curl -c /tmp/closedroom.cookies http://127.0.0.1:1236/v1/session
-
-curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/audio/transcriptions/path \
-  -H "Content-Type: application/json" \
-  -d '{
-    "file": "/Users/daniele/Desktop/audio.mp3",
-    "language": "it",
-    "response_format": "verbose_json",
-    "word_timestamps": false
-  }'
-```
-
-### Text-only response
-
-```bash
-curl -c /tmp/closedroom.cookies http://127.0.0.1:1236/v1/session
-
-curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/audio/transcriptions \
-  -F "file=@/Users/daniele/Desktop/audio.mp3" \
-  -F "language=it" \
-  -F "response_format=text"
-```
-
-### Result Caching
-
-ClosedRoom reuses completed transcription results when audio bytes and ASR options match.
-
-The cache includes:
-
-* model;
-* language;
-* task;
-* prompt;
-* temperature;
-* VAD options;
-* audio hash.
-
-This avoids repeated local processing for identical inputs.
-
-For local ASR, VAD-guided transcription and the advisory VAD post-filter are
-enabled by default. VAD limits Whisper work to detected speech windows, while a
-missing/empty VAD result automatically falls back to full-track transcription.
-Both options remain part of the cache key and VAD-guided mode can be disabled
-from the transcription configuration screen.
-
----
-
-## 8. Local LLM Analysis
-
-ClosedRoom uses local LLM analysis to transform raw transcripts into operational knowledge.
-
-The local analysis layer can extract:
-
-* meeting brief;
-* action items;
-* decisions;
-* risks and blockers;
-* minutes;
-* open questions;
-* project updates.
-
-### Fast Analysis
-
-The fast analysis pipeline focuses on the core operational output:
-
-```text
-Transcript
-   │
-   ▼
-Brief + Actions + Decisions + Risks
-```
-
-### Deep Analysis
-
-The deep analysis pipeline adds richer meeting intelligence:
-
-```text
-Transcript
-   │
-   ▼
-Brief
-Actions
-Decisions
-Risks
-Minutes
-Open Questions
-Project Update
-```
-
-When launching analysis from a meeting, ClosedRoom opens a setup dialog for the run. The saved settings remain defaults, but the request can override provider, Gemini model, local model, model path, quality preset, temperature, reasoning mode, max output tokens, and JSON mode.
-
-### Integration with `local-llm-server`
-
-ClosedRoom can run `local-llm-server` as a managed local sidecar.
-
-Default local LLM endpoint:
-
-```text
-http://127.0.0.1:1235
-```
-
-In managed mode, ClosedRoom starts and supervises the local LLM runtime and stores logs under:
-
-```text
-~/Library/Logs/ClosedRoom/llm-server.log
-```
-
-For direct local LLM experimentation, you can start the server manually:
-
-```bash
-local-llm serve --model nemotron-nano-4b
-```
-
-Then configure ClosedRoom to use the external local endpoint from settings.
-
----
-
-## 9. Configuration
-
-ClosedRoom can be configured through:
-
-* CLI flags;
-* environment variables;
-* local settings in the web UI.
-
-### Important Runtime Settings
-
-| Setting                    | Description                                                 |
-| -------------------------- | ----------------------------------------------------------- |
-| `recordings_dir`           | Directory where local meeting recordings are stored         |
-| `asr_provider`             | `local` or `speechmatics`; defaults to local                |
-| `default_model`            | Default ASR model                                           |
-| `default_language`         | Default transcription language                              |
-| `default_temperature`      | Non-negative numeric ASR temperature                        |
-| `speechmatics_region`      | Speechmatics Batch region (`eu` or `us`)                    |
-| `speechmatics_model`       | Speechmatics model (`standard` or `enhanced`)               |
-| `speechmatics_diarization` | Speechmatics diarization mode (`none` or `speaker`)         |
-| `diarization_provider`     | Post-ASR speaker separation: `none`, `local` or `speechmatics` |
-| `llm_provider`             | Analysis provider                                           |
-| `gemini_model`             | Gemini model used when `llm_provider=gemini`                |
-| `local_llm_mode`           | `auto`, `external`, or `disabled`                           |
-| `local_llm_url`            | External local LLM server URL                               |
-| `local_llm_model`          | Model used for local analysis                               |
-| `local_llm_quality_preset` | Default quality preset for local analysis                   |
-| `local_llm_reasoning`      | Default local reasoning mode (`auto`, `on`, or `off`)       |
-| `meeting_auto_analysis`    | Whether to start analysis automatically after transcription |
-| `meeting_default_pipeline` | Default meeting analysis pipeline                           |
-| `speaker_diarization_enabled` | Enable local FluidAudio diarization after transcription; default `false` |
-| `speaker_diarization_minimum_overlap` | Minimum ASR-segment overlap required to assign a local cluster; default `0.25` |
-| `visual_intelligence_enabled` | Enable post-meeting Qwen visual evidence processing; default `false` |
-| `visual_llm_model` | Vision model routed through `local-llm-server`; default `qwen3-vl-4b` |
-| `visual_routing_mode` | Frame routing policy: stable `v1`, diagnostic-only `shadow`, or task-aware `v2`; default `v1` |
-| `visual_frame_similarity_threshold` | Maximum 64-bit dHash distance treated as a reusable near-duplicate in `v1`; higher filters more, default `12`, range `0..64` |
-| `visual_minimum_observations` | Minimum matching observations before automatic attribution |
-| `visual_minimum_margin` | Minimum normalized lead over the second identity candidate |
-| `visual_minimum_distinct_turns` | Minimum distinct diarization turns required by task-aware speaker attribution; default `2` |
-| `visual_minimum_temporal_support_seconds` | Minimum temporal span required by task-aware speaker attribution; default `2.0` |
-
-Settings updates are validated before the atomic write. Unknown providers,
-runtime modes, analysis pipelines and transcription tasks, as well as invalid
-timeouts or temperatures, are rejected without changing `settings.json`. When
-`local_llm_model_paths` contains the selected model, that model-specific path
-takes precedence over the legacy `local_llm_model_path` value.
-
-### Local LLM Modes
-
-| Mode       | Description                                                |
-| ---------- | ---------------------------------------------------------- |
-| `auto`     | ClosedRoom manages the local LLM sidecar                   |
-| `external` | ClosedRoom connects to a manually started local LLM server |
-| `disabled` | Local LLM analysis is disabled                             |
-
-### Example environment variables
-
-```bash
-export LOCAL_ASR_RECORDINGS_DIR="$HOME/Recordings/local-asr"
-export LOCAL_ASR_REQUIRE_AUTH=1
-export LOCAL_LLM_URL="http://127.0.0.1:1235"
-export SPEECHMATICS_API_KEY="..."
-export GEMINI_API_KEY="..."
-```
-
----
-
-## 10. HTTP API Reference
-
-### Session
-
-ClosedRoom uses a local same-origin session for the web app.
-
-```bash
-curl -c /tmp/closedroom.cookies http://127.0.0.1:1236/v1/session
-```
-
-### Health Check
-
-```bash
-curl http://127.0.0.1:1236/health
-```
-
-### Capture Capabilities
-
-```bash
-curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/capture/capabilities
-```
-
-### Visual frame staging and observations
-
-```bash
-curl -b /tmp/closedroom.cookies \
-  -F 'file=@frame.jpg;type=image/jpeg' \
-  -F 'sequence=0' \
-  -F 'timestamp=1.25' \
-  http://127.0.0.1:1236/v1/recordings/<recording-id>/visual-frames
-
-curl -b /tmp/closedroom.cookies \
-  http://127.0.0.1:1236/v1/recordings/<recording-id>/visual-intelligence
-
-curl -b /tmp/closedroom.cookies \
-  http://127.0.0.1:1236/v1/capture/windows
-```
-
-Frame sequence and meeting-relative timestamp must be monotonic. Each frame
-must be a JPEG no larger than 5 MB and can only be staged while the recording
-is active. Captured JPEGs remain available with the recording until the
-recording itself is explicitly deleted.
-
-### Runtime Service Status
-
-```bash
-curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/runtime/status
-curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/runtime/services
-curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/runtime/services/llm
-```
-
-### Start Local LLM Service
-
-```bash
-curl -b /tmp/closedroom.cookies \
-  -X POST http://127.0.0.1:1236/v1/runtime/services/llm/start
-```
-
-### LLM Service Logs
-
-```bash
-curl -b /tmp/closedroom.cookies \
-  http://127.0.0.1:1236/v1/runtime/services/llm/logs?tail=100
-```
-
-### Job Status
-
-```bash
-curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/jobs
-curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/jobs/<job-id>
-curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/jobs/<job-id>/events
-```
-
-### Recalculate speaker diarization only
-
-```bash
-curl -b /tmp/closedroom.cookies \
-  -X POST http://127.0.0.1:1236/v1/transcriptions/<transcription-id>/diarization-jobs \
-  -H "Content-Type: application/json" \
-  -d '{
-    "provider": "speechmatics",
-    "speechmatics_region": "eu",
-    "speechmatics_model": "standard"
-  }'
-```
-
-Use `"provider": "local"` to rerun FluidAudio. The endpoint requires a
-transcription linked to a recording, creates a persistent job with
-`type=diarization`, keeps the existing transcript text and processes the system
-track only. Speechmatics audio leaves the machine and may incur provider costs.
-
-### Meeting Workspace
-
-```bash
-curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/meetings
-curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/meetings/<recording-id>
-```
-
-### Analysis Templates & Pipelines
-
-```bash
-curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/analysis/templates
-curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/analysis/pipelines
-```
-
-### ASR Providers
-
-```bash
-curl -b /tmp/closedroom.cookies http://127.0.0.1:1236/v1/asr/providers
-```
-
-### Run Meeting Analysis Pipeline
-
-```bash
-curl -b /tmp/closedroom.cookies \
-  -X POST http://127.0.0.1:1236/v1/analysis-pipelines \
-  -H "Content-Type: application/json" \
-  -d '{
-    "recording_id": "<recording-id>",
-    "pipeline_id": "meeting_default",
-    "llm_provider": "nemotron_local",
-    "local_llm_model": "nemotron-nano-4b-q8",
-    "local_llm_quality_preset": "balanced",
-    "local_llm_reasoning": "auto"
-  }'
-```
-
----
-
-## 11. Security & Privacy
-
-ClosedRoom is designed around local-first privacy.
-
-### Local Processing
-
-By default:
-
-* audio recordings stay on the local machine;
-* transcripts are stored locally;
-* analysis runs locally through `local-llm-server`;
-* prompts and results are stored in the local catalog;
-* no cloud LLM API is required for the default local workflow.
-
-### Optional Cloud Providers
-
-Speechmatics and Gemini are explicit opt-in providers:
-
-* selecting Speechmatics sends the selected audio track to Speechmatics Batch
-  ASR for transcription;
-* selecting Gemini sends transcript text and prompt content to Gemini for
-  analysis;
-* `GET /v1/settings` never returns saved cloud API keys, only configured-state
-  booleans;
-* transcript metadata stores provider/backend/model options but not API keys,
-  raw request headers or authorization values;
-* Speechmatics transcripts report the effective Speechmatics model from
-  provider settings/options, never the local Whisper default model.
-
-### Local Authentication
-
-The web app bootstraps a same-origin local session automatically.
-
-For direct API calls:
-
-1. fetch `/v1/session`;
-2. reuse the returned cookie or bearer token.
-
-Only disable authentication for trusted local development:
-
-```bash
-export LOCAL_ASR_REQUIRE_AUTH=0
-```
-
-### Network Exposure
-
-The intended default binding is local:
-
-```text
-127.0.0.1
-```
-
-Avoid exposing ClosedRoom or the local LLM server to an untrusted network unless you understand the security implications.
-
-### Sensitive Meeting Data
-
-Meeting data can contain confidential information. Treat the recordings directory, transcripts, logs, and local SQLite catalog as sensitive data.
-
----
-
-## 12. Development & Build
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run build
-```
-
-### Backend
-
-```bash
-pip install -e .
-local-asr serve --reload
-```
-
-### Full local development run
-
-```bash
-./run.sh
-```
-
-During development, `./run.sh` starts ClosedRoom and follows the managed LLM sidecar log in the same terminal.
-
-### Update the local LLM runtime
-
-ClosedRoom pins `local-llm-server` to a local wheel. The updater discovers the
-latest stable semantic-version tag on GitHub, downloads the matching wheel from
-that GitHub Release, and updates both `pyproject.toml` and `uv.lock`:
-
-```bash
-python3 scripts/update_local_llm_server.py --check
-python3 scripts/update_local_llm_server.py
-```
-
-The script never builds `local-llm-server` from source. It reuses an exact
-version wheel already present in the sibling `local-llm-server/dist/` directory,
-or downloads `local_llm_server-<version>-py3-none-any.whl` through GitHub CLI.
-The dependency enables the wheel's `vision` extra so the Qwen MLX backend is
-installed reproducibly. If lock generation fails, the dependency files are
-restored.
-
-### Build macOS App
-
-```bash
-./build.sh
-```
-
-The packaged app includes the native capture helper and the arm64 FluidAudio
-batch-diarization helper. It also collects the standard Speechmatics SDK so
-cloud ASR, initial speaker-only diarization and re-diarization work inside the
-bundle. Swift Package Manager resolves the pinned FluidAudio
-dependency during the first build. The final app bundle and visible bundle name
-are versioned from `pyproject.toml`, for example `dist/ClosedRoom-0.1.0.app`, so
-local builds can be installed side by side instead of overwriting or visually
-colliding with `ClosedRoom.app`. The build also removes stale unversioned app
-bundles from `dist/`.
-
-If an older `ClosedRoom.app` is still running on the standard app port, the versioned bundle starts its own local server on the next available app port instead of silently reusing the old server. Quit the old menu bar app if you want the versioned build to use the default port.
-
-To install the signed build into `/Applications` with the same versioned name:
-
-```bash
-./build.sh --no-dmg --install
-```
-
-When using `--no-dmg`, open the generated `.app` directly. The script removes any stale same-version DMG so an old disk image is not mistaken for the current build output.
-
----
-
-## 13. Project Status & Roadmap
-
-### Current Status
-
-`v0.1.0` is the first local meeting intelligence release.
-
-It includes:
-
-* local recording;
-* local transcription;
-* meeting workspace;
-* local analysis pipelines;
-* project-oriented meeting intelligence;
-* managed local LLM integration;
-* demo mode and guided tour;
-* native macOS capture support;
-* local runtime service management.
-
-### Roadmap
-
-* Persistent editable action items.
-* Better diarization and speaker attribution.
-* More robust project-level memory.
-* Advanced search across meetings and projects.
-* Export to Markdown, JSON, PDF, or Notion-like formats.
-* Better offline packaging for non-technical users.
-* Improved local model presets for different hardware profiles.
-* Stronger evaluation of local ASR and LLM analysis quality.
-
----
-
-## 14. License
-
-This project is licensed under the [MIT License](LICENSE).
+Built by [Daniele Moltisanti](https://daniele21.github.io/) as part of a broader mission to make AI strategy practical: keep sensitive workloads local when it creates real value, evaluate before scaling, and turn model capabilities into usable product workflows.
