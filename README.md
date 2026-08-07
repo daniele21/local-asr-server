@@ -168,68 +168,48 @@ The project is driven by a few principles:
 
 ## 3. Architecture & Ecosystem Integration
 
-For the complete system design, including high-level context, low-level module
-responsibilities, data model, runtime flows, failure handling, security,
-packaging, and extension rules, see
-[`docs/architecture.md`](docs/architecture.md).
+ClosedRoom is designed as a **local-first meeting intelligence stack**: the product UI, recording and transcription pipeline, meeting catalog, local model runtimes, and operational memory all run on the user's Mac by default.
 
-End-to-end readiness for the combined visual intelligence and speaker
-diarization workflow is tracked in
-[`docs/visual-diarization-e2e-readiness.md`](docs/visual-diarization-e2e-readiness.md).
+For the complete system design, including module responsibilities, data model, runtime flows, failure handling, security, packaging, and extension rules, see [`docs/architecture.md`](docs/architecture.md). End-to-end readiness for the combined visual intelligence and speaker diarization workflow is tracked in [`docs/visual-diarization-e2e-readiness.md`](docs/visual-diarization-e2e-readiness.md).
 
-ClosedRoom is composed of three main layers:
+### High-level architecture
 
-```text
-[ ClosedRoom React UI ]
-          │
-          ▼
-[ local-asr-server ]
-          │
-          ├── Recording / Audio Capture
-          ├── Transcription Jobs
-          ├── Meeting Catalog
-          ├── Analysis Pipelines
-          └── Local Runtime Service Management
-          │
-          ▼
-[ local-llm-server ]
-          │
-          ▼
-[ Local LLM Backends / Nemotron Nano 4B ]
-```
+At the highest level, the React workspace talks only to `local-asr-server`. The backend coordinates local recording artifacts, SQLite state, local ASR, native macOS helpers, and `local-llm-server`. Optional cloud providers remain outside the default local trust boundary and are used only when explicitly selected.
 
-### Transcription Layer
+<p align="center">
+  <img src="docs/assets/closedroom-high-level-architecture.png" alt="ClosedRoom high-level local-first architecture" width="100%"/>
+</p>
 
-```text
-[ Audio File / Meeting Recording ]
-              │
-              ▼
-      [ local-asr-server ]
-              │
-              ▼
-[ MLX Whisper / Nemotron ASR ]
-              │
-              ▼
-        [ Local Transcript ]
-```
+The default path keeps **audio, transcripts, prompts, diarization artifacts, visual observations, and analysis results on the Mac**. Speechmatics and Gemini are explicit opt-in alternatives rather than hidden dependencies.
 
-### Analysis Layer
+### End-to-end meeting flow
 
-```text
-[ Transcript / Meeting Context ]
-              │
-              ▼
-      [ ClosedRoom Analysis Pipeline ]
-              │
-              ▼
-        [ local-llm-server ]
-              │
-              ▼
-       [ Nemotron Nano 4B ]
-              │
-              ▼
-[ Summary / Actions / Decisions / Risks ]
-```
+The product flow is intentionally simple from the user's perspective:
+
+**Configure → Record → Transcribe → Enrich → Analyze → Remember**
+
+Recording produces recoverable local artifacts first. Transcription then creates timestamped text; optional speaker diarization, visual intelligence, and audio intelligence enrich that transcript; local LLM analysis converts the meeting into operational outputs that can be reused across meeting and project workspaces.
+
+<p align="center">
+  <img src="docs/assets/closedroom-end-to-end-meeting-flow.png" alt="ClosedRoom end-to-end meeting intelligence flow" width="100%"/>
+</p>
+
+The enrichment stages are **fail-soft**. Diarization, visual intelligence, or audio intelligence can degrade or fail without invalidating an otherwise usable transcript. Provider/backend outcomes and warnings remain visible in persistent job history and diagnostics.
+
+### Detailed technical architecture
+
+The implementation separates four concerns:
+
+1. **Product surface** — React, TypeScript, WKWebView/browser UI, recording workflow, and job-driven progress views.
+2. **Local API and composition root** — FastAPI routers plus `AppServices`, which owns the long-lived process services.
+3. **Application services and stores** — capture, transcription, analysis, runtime supervision, recording/transcription/catalog/job stores.
+4. **Persistence and execution backends** — filesystem, SQLite WAL, MLX/Nemotron ASR, native Swift helpers, FluidAudio, and `local-llm-server`.
+
+<p align="center">
+  <img src="docs/assets/closedroom-detailed-technical-architecture.png" alt="ClosedRoom detailed technical architecture" width="100%"/>
+</p>
+
+Speaker identification remains deliberately conservative: diarization clusters are the stable speaker identity, while Qwen visual intelligence contributes evidence for naming existing clusters rather than replacing diarization or performing face recognition.
 
 ### Why `local-llm-server` is used
 
