@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="public/logo-light.svg" width="128" alt="ClosedRoom logo">
+</p>
+
 <h1 align="center">ClosedRoom</h1>
 
 <p align="center">
@@ -258,80 +262,50 @@ curl -c /tmp/closedroom.cookies http://127.0.0.1:1236/v1/session
 curl http://127.0.0.1:1236/health
 ```
 
-Transcribe a file:
-
-```bash
-curl -b /tmp/closedroom.cookies \
-  http://127.0.0.1:1236/v1/audio/transcriptions \
-  -F "file=@/Users/daniele/Desktop/audio.mp3" \
-  -F "language=it" \
-  -F "response_format=verbose_json"
-```
-
-Inspect one meeting's effective backends, fallbacks, artifacts, and redacted diagnostics:
-
-```bash
-local-asr inspect-meeting <recording-id>
-local-asr inspect-meeting <recording-id> --json
-```
-
-Useful authenticated endpoints include:
-
-- `GET /v1/jobs` and `/v1/jobs/<job-id>/events` for persistent background-job state;
-- `GET /v1/meetings/<recording-id>` for the meeting workspace;
-- `GET /v1/meetings/<recording-id>/diagnostics` for the canonical diagnostic report;
-- `GET /v1/recordings/<recording-id>/visual-intelligence` and the versioned `/v2/...` document for visual evidence;
-- `POST /v1/transcriptions/<transcription-id>/diarization-jobs` to recalculate speakers without rerunning ASR;
-- `POST /v1/analysis-pipelines` to run structured meeting analysis.
-
-Provider, model, diarization, visual-intelligence, and local-runtime settings are validated before persistence. The detailed feature behavior and configuration surface are documented in [`docs/features.md`](docs/features.md).
+For direct endpoint coverage, runtime status, transcription jobs, speaker re-diarization, visual intelligence, analysis pipelines, and diagnostics, use the API examples in [`docs/features.md`](docs/features.md) and the architecture references in [`docs/architecture.md`](docs/architecture.md).
 
 ## Evidence and maturity
 
-ClosedRoom is an active engineering product, not a claim of perfect transcription, speaker identification, or meeting understanding.
+ClosedRoom is an active local-first product and engineering project, not a guarantee of perfect transcription, speaker identity, or meeting understanding.
 
-The current branch has working local recording, transcription, meeting/project workspaces, local LLM analysis, local FluidAudio diarization, visual-evidence processing, persistent jobs, diagnostics, and macOS packaging. Important boundaries remain explicit:
+Current maturity boundaries include:
 
-- FluidAudio local diarization requires macOS 14+ and Apple Silicon;
-- visual intelligence is disabled by default and requires explicit window selection when recording;
-- automatic speaker names are applied only when configured evidence thresholds are met; otherwise ClosedRoom abstains or leaves a stable `Speaker N` identity;
-- Speechmatics and Gemini send selected content outside the machine and may incur provider cost;
-- enrichment failures are surfaced as warnings instead of being hidden behind a generic success state;
-- physical-device/model quality still depends on the exact hardware, audio conditions, model, language, and meeting layout.
+- MLX-based local inference is primarily designed for Apple Silicon;
+- local FluidAudio diarization requires macOS 14+ and may be slower than speed-oriented defaults because the current profile favors short-turn recall;
+- visual intelligence is disabled by default and requires an explicitly selected macOS window;
+- speaker naming is evidence-based and conservative: uncertain mappings abstain rather than being promoted as known identities;
+- Qwen visual processing can degrade independently while leaving the transcript usable;
+- Speechmatics and Gemini move selected meeting data outside the machine and may incur provider cost;
+- the macOS bundle pins runtime versions that have been verified together rather than always choosing the newest MLX stack automatically.
 
-Use these documents for the current engineering truth:
+Use these sources for the current technical truth:
 
 - [Architecture](docs/architecture.md)
 - [Feature registry](docs/features.md)
 - [Visual + diarization E2E readiness](docs/visual-diarization-e2e-readiness.md)
 - [Task-aware visual intelligence plan](docs/task-aware-visual-intelligence-plan.md)
 - [Audio intelligence / VAD plan](docs/audio-intelligence-vad-plan.md)
-- [Agent and validation guide](AGENTS.md)
+- [Repository engineering guide](AGENTS.md)
 
 ## Build and validate
 
-Run the narrowest checks for the area you change. The repository's complete Python test suite is:
+Run the narrowest tests for the area you change. The repository uses Python `unittest`, focused API tests, frontend builds, and dedicated E2E/smoke harnesses for native and multimodal paths.
 
 ```bash
 UV_CACHE_DIR=.cache/uv uv run python -m unittest discover -s test -v
 ```
 
-For frontend changes:
+Useful focused checks include:
 
 ```bash
-cd frontend
-npm install
-npm run build
+UV_CACHE_DIR=.cache/uv uv run python -m unittest discover -s test -p 'test_recordings.py' -v
+UV_CACHE_DIR=.cache/uv uv run python -m unittest discover -s test -p 'test_recording_api.py' -v
+UV_CACHE_DIR=.cache/uv uv run python -m unittest discover -s test -p 'test_audio_router.py' -v
 ```
 
-For the combined real FluidAudio + Qwen development smoke path, start the local vision model and run:
+For the combined local visual + diarization path:
 
 ```bash
-.venv/bin/local-llm serve \
-  --model qwen3-vl-4b \
-  --model-path ~/.lmstudio/models/lmstudio-community/Qwen3-VL-4B-Instruct-MLX-4bit \
-  --host 127.0.0.1 --port 1245
-
 .venv/bin/python scripts/smoke_visual_diarization_e2e.py \
   --audio /path/to/two-speakers.wav \
   --frame /path/to/active-speaker.jpg \
@@ -339,12 +313,10 @@ For the combined real FluidAudio + Qwen development smoke path, start the local 
   --output-dir /private/tmp/closedroom-combo-e2e
 ```
 
-Use `./build.sh --no-dmg` when a change touches the app bundle, native helpers, bundled resources, or PyInstaller configuration.
-
-[`AGENTS.md`](AGENTS.md) documents the known test baseline and repository-specific validation rules, including cases where existing failures must be compared with the documented baseline rather than automatically treated as regressions.
+Coding agents should start from [`AGENTS.md`](AGENTS.md), which maps changes to the owning layer and documents repository-specific validation rules.
 
 ## License and author
 
-ClosedRoom / `local-asr-server` is available under the [MIT License](LICENSE).
+ClosedRoom is available under the [MIT License](LICENSE).
 
-Built by [Daniele Moltisanti](https://daniele21.github.io/) as part of a broader mission to make AI strategy practical: keep sensitive workloads local when it creates real value, evaluate before scaling, and turn model capabilities into usable product workflows.
+Built by [Daniele Moltisanti](https://daniele21.github.io/) as part of a broader mission to make AI products useful, understandable, and deliberate about their technical and privacy trade-offs.
