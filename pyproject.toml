@@ -7,7 +7,10 @@ name = "local-asr-server"
 version = "0.1.0"
 description = "Local ASR server with OpenAI-compatible transcription endpoint, powered by MLX Whisper."
 readme = "README.md"
-requires-python = ">=3.10"
+# onnxruntime 1.23.x currently publishes macOS wheels through CPython 3.13,
+# not 3.14. Keep package metadata truthful until the runtime dependency supports
+# cp314 and ClosedRoom verifies that combination.
+requires-python = ">=3.10,<3.14"
 license = { text = "MIT" }
 
 dependencies = [
