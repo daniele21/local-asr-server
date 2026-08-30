@@ -22,6 +22,11 @@ from local_asr_server.services.analysis_service import AnalysisService
 from local_asr_server.settings import load_settings
 from local_asr_server.llm import DEFAULT_GEMINI_MODEL
 from local_asr_server.runtime.models import resolve_local_llm_model_path
+from local_asr_server.runtime.workload_arbiter import (
+    HeavyWorkloadArbiter,
+    WorkloadArbiterClosed,
+    WorkloadQueueFull,
+)
 
 ANALYSIS_JOB_TYPE = "analysis"
 
@@ -29,9 +34,16 @@ ANALYSIS_JOB_TYPE = "analysis"
 class AnalysisJobManager:
     """Runs analysis workflows as persistent jobs backed by JobStore."""
 
-    def __init__(self, services: AppServices, store: JobStore) -> None:
+    def __init__(
+        self,
+        services: AppServices,
+        store: JobStore,
+        *,
+        arbiter: HeavyWorkloadArbiter | None = None,
+    ) -> None:
         self._services = services
         self._store = store
+        self._arbiter = arbiter
 
     def create(self, body: AnalysisRequest) -> dict[str, Any]:
         body = self._with_recording_transcription(body)
@@ -89,11 +101,29 @@ class AnalysisJobManager:
             }
         )
 
-        threading.Thread(target=self._run, args=(job_id, run_id, body), daemon=True).start()
+        if self._arbiter is None:
+            threading.Thread(target=self._run, args=(job_id, run_id, body), daemon=True).start()
+            return {
+                "job_id": job_id,
+                "analysis_run_id": run_id,
+                "status": "queued",
+            }
+
+        try:
+            self._arbiter.submit(
+                task_id=job_id,
+                workload_type=ANALYSIS_JOB_TYPE,
+                run=lambda: self._run(job_id, run_id, body),
+                on_cancel=lambda _reason: self._mark_cancelled(job_id, run_id),
+            )
+            status = "queued"
+        except (WorkloadQueueFull, WorkloadArbiterClosed) as exc:
+            self._mark_failed(job_id, run_id, str(exc))
+            status = "failed"
         return {
             "job_id": job_id,
             "analysis_run_id": run_id,
-            "status": "queued",
+            "status": status,
         }
 
     def create_pipeline(self, body: AnalysisPipelineRequest) -> dict[str, Any]:
