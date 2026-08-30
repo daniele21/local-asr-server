@@ -4,53 +4,56 @@
 
 ClosedRoom follows `daniele21/repo-template-sw` **0.8.0** with target maturity **L2** and profiles `python`, `typescript`, `macos`, `local-ai`, `product-ui`.
 
-The 0.8 baseline is integrated on `speaker_detection`, the advanced product branch that was verified ahead of `main`, `pipeline`, `tech-improvements` and `ux-refactoring` at adoption time.
+The canonical branch model is now `feature/fix/... -> dev -> main`. `dev` is the integration target for ordinary changes; `main` is stable-only.
+
+## Current validated baseline
+
+`dev` and `main` currently carry the same product/config/test tree after the validated `dev -> main` promotion on 30 August 2026. The promoted stable state has successful repository-health and FULL remote-preflight evidence, including deterministic frontend/Python checks, macOS arm64 packaging and finalized `.app` lifecycle smoke.
+
+This automated evidence does **not** upgrade the residual real-environment claims listed below.
 
 ## Active workstream
 
-- [`docs/workstreams/resource-efficient-runtime.md`](workstreams/resource-efficient-runtime.md) coordinates the current resource-efficiency hardening: latest-source `local-llm-server` integration, bounded heavy-workload orchestration, capture backpressure, process/memory telemetry and soak evidence.
+- [`docs/workstreams/resource-efficient-runtime.md`](workstreams/resource-efficient-runtime.md) coordinates resource-efficiency hardening: latest-source `local-llm-server` integration, bounded heavy-workload orchestration, capture backpressure, process/memory telemetry and soak evidence.
 
 ## Strong existing evidence to preserve
 
 - Detailed current architecture and a broad Python unit/integration suite.
 - Explicit runtime/service/job/port ownership.
-- Native macOS capture, diarization and visual-intelligence boundaries with focused tests.
-- Existing visual + diarization smoke tooling and representative datasets.
+- Progressive recording persistence with native macOS capture and browser fallback.
+- Native capture, diarization and visual-intelligence boundaries with focused tests.
+- Existing visual + diarization smoke tooling and representative fixtures.
 - Version-aware macOS app packaging and native-helper validation.
-- Code-first semantic UI tokens/components in the React frontend.
+- Exact-head remote preflight with blast-radius profile selection.
+- Canonical builds through `scripts/build_artifact.sh`, immutable finalized artifacts, manifest/SHA-256 evidence and packaged-app smoke.
+- Local-first trust boundary with explicit remote-provider selection and privacy-safe diagnostics contracts.
 
-## Baseline gaps now implemented
+## Known resource/runtime gaps
 
-- Blast radius is machine-selected by `scripts/select_validation_profile.py` into LEAN / SCOPED / STRONG / FULL; unknown paths fail safe to FULL.
-- `.github/workflows/preflight.yml` provides exact-head, read-only remote preflight and routes source/package validation by selected profile.
-- Canonical builds use `scripts/build_artifact.sh`; successful artifacts receive unique identity and immutable lineage directories under `dist/artifacts/`.
-- `scripts/finalize_build_artifact.py` creates `build-manifest.json`, aggregate SHA-256 evidence, `SHA256SUMS`, `BUILD_CHANGELOG.md` against the previous successful comparable build and bounded local retention.
-- `scripts/clean_build_state.py` removes transient build state without deleting finalized successful artifacts by default.
-- `scripts/smoke_packaged_app.py` exercises the finalized `.app` frozen executable, bundled FastAPI/static frontend, readiness, graceful stop, listener cleanup and observed child cleanup.
-- Packaging no longer requires a developer-machine absolute `local-llm-server` wheel path; the current 0.3.8 integration points to its published release artifact and digest.
-- Packaging precompiles the Core Audio helper without invoking user-facing `setup-audio`, so CI build does not install BlackHole or mutate audio routing merely to produce an artifact.
+- ClosedRoom still pins `local-llm-server` 0.3.8 even though the dependency repository has materially newer resource-aware runtime behavior.
+- Heavy transcription/diarization/analysis jobs can still be launched from independent daemon threads; the existing model lease records intent but is not a global bounded scheduler.
+- Native high-frequency capture telemetry retains unbounded event history for a long meeting.
+- Browser chunk uploads are serialized but do not have an explicit pending-byte/chunk budget.
+- Process/RSS/unified-memory/model-residency metrics are not yet a first-class ClosedRoom resource contract.
+- Long-context analysis and canonical transcript+visual evidence fusion remain follow-up product/runtime work.
 
 ## Residual target-environment evidence
 
-Automated packaged-app smoke is deliberately classified as `representative_virtual`, not complete target evidence. These remain separate when a change makes them material:
+Automated packaged-app smoke is deliberately representative rather than complete target evidence. These remain separate when a change makes them material:
 
 - interactive WKWebView/window/focus behavior;
 - real TCC prompts and permission identity;
 - physical microphone and system-audio device behavior;
 - production signing/notarization identity;
-- production MLX/Metal model compatibility, memory, latency, throughput and quality.
+- production MLX/Metal model compatibility, memory, latency, throughput and quality;
+- representative long-running thermal/memory-pressure behavior.
 
-Source-contract tests likewise do not upgrade these claims.
-
-## Current evidence status
-
-The gap-closing implementation is on `close-baseline-gaps`. Its deterministic unit checks and exact-head GitHub Actions preflight must pass on the resulting PR before these mechanisms are considered proven on `speaker_detection`. Until that run exists, implementation is present but remote execution evidence is pending.
-
-Historical planning documents still need a separate lifecycle cleanup; they are not treated as current operational truth.
+Source-contract tests and virtual macOS runners do not upgrade these claims.
 
 ## Next highest-value work
 
-1. Obtain green exact-head remote preflight for the gap-closing PR, including finalized `.app` package smoke on macOS arm64.
-2. Fix any failing gate at its owning invariant rather than weakening the profile or check.
-3. Merge the gap closure into `speaker_detection` only after deterministic evidence is green.
-4. Continue moving reproducible failures found only during final macOS testing into the cheapest sufficient automated environment while preserving genuinely physical/TCC/model evidence separately.
+1. Execute the parallel `resource-efficient-runtime` slices that have non-conflicting ownership boundaries.
+2. Integrate the latest validated `local-llm-server` source reproducibly instead of duplicating its internal resource manager in ClosedRoom.
+3. Establish one bounded ClosedRoom owner for cross-workload heavy-AI scheduling with capture-first priority.
+4. Bound capture/browser producer-consumer paths and add process/resource observability.
+5. Run STRONG/FULL exact-head automated preflight according to the selector, then close only the residual representative macOS/MLX evidence in the real environment.
