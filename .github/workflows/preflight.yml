@@ -76,7 +76,9 @@ jobs:
           python3 scripts/verify_docs.py
           python3 scripts/verify_agent_context.py
       - name: Validation infrastructure unit tests
-        run: python3 -m unittest test.test_validation_profile_selector test.test_build_artifact_metadata -v
+        run: |
+          python3 -m unittest discover -s test -p 'test_validation_profile_selector.py' -v
+          python3 -m unittest discover -s test -p 'test_build_artifact_metadata.py' -v
 
   tests:
     name: Source tests / ${{ needs.select.outputs.profile }}
