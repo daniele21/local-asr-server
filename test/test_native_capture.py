@@ -47,8 +47,14 @@ else:
 
         self.assertTrue(manager.capabilities()["available"])
         started = manager.start("rec-1", self.root, "both")
-        time.sleep(0.2)
-        events = manager.drain_events("rec-1")
+
+        events = []
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            events.extend(manager.drain_events("rec-1"))
+            if any(event.get("type") in {"stopped", "error"} for event in events):
+                break
+            time.sleep(0.01)
 
         self.assertEqual(started["backend"], "native")
         self.assertEqual([event["type"] for event in events], ["ready", "stopped"])

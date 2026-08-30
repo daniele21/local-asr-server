@@ -2,8 +2,9 @@ name: Repository health
 
 on:
   pull_request:
+    branches: [dev, main]
   push:
-    branches: [speaker_detection, engineering-baseline-0.8]
+    branches: [dev, main]
 
 permissions:
   contents: read
