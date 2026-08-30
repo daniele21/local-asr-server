@@ -1,0 +1,30 @@
+name: Repository health
+
+on:
+  pull_request:
+  push:
+    branches: [speaker_detection, engineering-baseline-0.8]
+
+permissions:
+  contents: read
+
+jobs:
+  engineering-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify repository structure
+        run: python3 scripts/verify_repository.py
+      - name: Verify project operating contract
+        run: python3 scripts/verify_operations.py
+      - name: Verify E2E environment contract
+        run: python3 scripts/verify_e2e.py
+      - name: Verify product experience contract
+        run: python3 scripts/verify_product_experience.py
+      - name: Verify documentation lifecycle and budgets
+        run: python3 scripts/verify_docs.py
+      - name: Verify agent context budget
+        run: python3 scripts/verify_agent_context.py
