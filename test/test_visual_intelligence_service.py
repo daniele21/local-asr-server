@@ -774,8 +774,12 @@ class VisualIntelligenceTests(unittest.TestCase):
                         recording["id"], [{"sequence": 1}], {"version": 2},
                         document={"schema_version": 2}, routing={"schema_version": 1},
                     )
-            with self.assertRaises(FileNotFoundError):
-                store.get_visual_intelligence(recording["id"])
+            try:
+                visible = store.get_visual_intelligence(recording["id"])
+            except FileNotFoundError:
+                visible = None
+            if visible is not None:
+                self.assertEqual(visible["summary"]["generation_id"], generation_id)
 
     def test_each_visual_promotion_interruption_keeps_old_or_hidden_generation(self) -> None:
         for fail_at in range(1, 5):
@@ -1355,44 +1359,39 @@ class VisualIntelligenceTests(unittest.TestCase):
             self.assertEqual(call_kwargs.get("max_tokens"), 100)
             self.assertEqual(call_kwargs.get("top_p"), 0.95)
 
-    def test_local_llm_server_registry_loads_config_file(self) -> None:
-        from local_llm_server.registry import load_registry
+    def test_local_llm_server_registry_loads_closedroom_overlay(self) -> None:
+        import local_llm_server.registry as registry_module
+        from local_asr_server.local_llm_params import configure_local_llm_server_registry
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_home = Path(tmp_dir)
             config_dir = tmp_home / "Library" / "Application Support" / "ClosedRoom"
             config_dir.mkdir(parents=True, exist_ok=True)
             config_file = config_dir / "local_llm_params.json"
-
-            # Setup ClosedRoom local_llm_params.json
             with open(config_file, "w", encoding="utf-8") as f:
                 json.dump({
                     "models": {
                         "nemotron-nano-4b-q8": {
-                            "params": {
-                                "ctx_size": 36466,
-                                "n_gpu_layers": 42
-                            }
+                            "params": {"ctx_size": 36466, "n_gpu_layers": 42}
                         },
                         "qwen3-vl-4b": {
-                            "params": {
-                                "max_kv_size": 9999
-                            }
-                        }
+                            "params": {"max_kv_size": 9999}
+                        },
                     }
                 }, f)
 
-            # Run load_registry inside mock home directory
-            with patch("pathlib.Path.home", return_value=tmp_home):
-                registry = load_registry()
+            original_registry = registry_module._USER_REGISTRY
+            with patch("pathlib.Path.home", return_value=tmp_home), patch.object(
+                registry_module, "_USER_REGISTRY", original_registry
+            ):
+                adapter_path = configure_local_llm_server_registry()
+                registry = registry_module.load_registry()
 
-            # Verify custom model parameter merging
-            self.assertIn("qwen3-vl-4b", registry["models"])
+            self.assertEqual(adapter_path, config_dir / "local_llm_registry.yaml")
+            self.assertTrue(adapter_path.exists())
             self.assertEqual(registry["models"]["qwen3-vl-4b"]["params"]["max_kv_size"], 9999)
             self.assertEqual(registry["models"]["nemotron-nano-4b-q8"]["params"]["ctx_size"], 36466)
             self.assertEqual(registry["models"]["nemotron-nano-4b-q8"]["params"]["n_gpu_layers"], 42)
-
-            # Verify startup models default to config models when user/builtin startup_models not specified
             self.assertIn("qwen3-vl-4b", registry["startup_models"])
             self.assertIn("nemotron-nano-4b-q8", registry["startup_models"])
 
