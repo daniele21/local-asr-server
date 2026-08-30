@@ -1,355 +1,118 @@
-# AGENTS.md
+# ClosedRoom — Coding Agent Guide
 
-Guida operativa per agenti che devono comprendere, interrogare e modificare
-questo repository.
+This file is the repository-wide routing layer. It owns durable ClosedRoom invariants, ownership and validation routing; detailed architecture belongs in `docs/architecture.md`, current feature behavior in `docs/features.md`, and operational commands in `.engineering/commands.json`.
 
-## Obiettivo del progetto
+## Read only what the task requires
 
-ClosedRoom e un'app macOS per registrare audio locale, trascriverlo con
-MLX Whisper e analizzare il testo. Lo stesso backend puo essere avviato come:
+Always read this guide. Then read only the relevant sources:
 
-- server FastAPI da CLI;
-- app menu bar con finestra nativa WKWebView;
-- bundle macOS costruito con PyInstaller.
+1. the closest scoped `AGENTS.md`, if one exists;
+2. `docs/architecture.md` and the owning code for architecture/lifecycle work;
+3. `docs/features.md` for current feature contracts;
+4. `.engineering/commands.json` for setup/dev/check/test/E2E/build/package/cleanup;
+5. `.engineering/e2e.json` when a complete workflow, macOS/audio/model or package-fidelity claim is affected;
+6. `design/ux-contract.json`, `design/brand-kit.json` and `skills/design-product-experience/SKILL.md` for meaningful UI/UX work;
+7. the owning implementation, direct consumers/fakes and nearby tests.
 
-Il progetto e pensato principalmente per macOS Apple Silicon. Le funzioni di
-routing audio e la build `.app` dipendono da API e strumenti macOS.
+Do not ingest generated assets, model caches, dependencies or all historical plans for a local change.
 
-## Prima di iniziare
+## Repository purpose
 
-1. Leggi `README.md` e `pyproject.toml`.
-2. Controlla `git status --short`; non sovrascrivere modifiche non correlate.
-3. Cerca simboli e chiamanti con `rg` prima di leggere file interi.
-4. Distingui sempre modalita sviluppo e bundle PyInstaller.
-5. Se la richiesta comporta modifiche funzionali o tecniche, applica le skill
-   repo-locali `skills/maintain-feature-docs` e
-   `skills/structured-change-guard` prima di concludere.
-6. Non usare una trascrizione Whisper reale come test rapido: puo scaricare un
-   modello grande e richiedere molto tempo.
+ClosedRoom is a privacy-first macOS meeting workspace. It records microphone/system audio locally, transcribes through local ASR, persists meeting/transcription/job state, and can enrich or analyze meetings through explicitly selected local or remote providers. The primary runtime is a macOS Apple Silicon desktop app built around a loopback FastAPI service, native helpers and a React UI hosted in WKWebView.
 
-Directory generate o locali da non trattare come sorgente:
+## Non-negotiable invariants
 
-- `.cache/`
-- `.venv/`
-- `build/`
-- `build_venv/`
-- `dist/`
-- `frontend/node_modules/`
-- `app_output.log`
+- Local-first is the default trust boundary. Never add an implicit cloud fallback; remote ASR/LLM providers must be explicit user/configuration choices.
+- Sensitive audio, transcripts, prompts and generated meeting content must not enter ordinary telemetry/logs by default.
+- The application service binds to loopback by default; preserve session/auth/origin restrictions and do not broaden network exposure casually.
+- `server.py` is a composition root. Reusable policy belongs in domain/service/runtime owners rather than new global state.
+- `CatalogStore` owns cross-feature queryable metadata; do not create parallel unsynchronized indexes.
+- User-data and bundle/dev paths are resolved through `paths.py`/settings owners; do not hardcode user paths.
+- Recording/job/model work must have explicit lifecycle, bounded concurrency/backpressure where applicable, cancellation and deterministic cleanup.
+- Native capture/audio routing must restore temporary system/device state after stop, error, cancellation, crash recovery and shutdown where ownership permits.
+- Cocoa/WebKit UI mutations stay on the macOS main thread.
+- A model/backend identity must be validated before expensive local-AI load; absence of resource telemetry is unknown, not zero.
+- Do not use a production Whisper/MLX model download as a cheap regression check when deterministic fixtures or mocks prove the same invariant.
+- Generated frontend assets under `src/local_asr_server/static/assets/` are build output; edit `frontend/src/` and regenerate instead of hand-editing hashes/minified files.
 
-## Skill repo-locali obbligatorie
+## Ownership and routing
 
-- `skills/maintain-feature-docs`: da usare per ogni feature, fix
-  comportamentale, cambio API, workflow frontend, persistenza, impostazione,
-  build o routing audio. La modifica non e completa finche la documentazione
-  business e tecnica e aggiornata oppure il riepilogo finale spiega perche non
-  servono update.
-- `skills/structured-change-guard`: da usare per ogni modifica al codice. Prima
-  di editare individua la fonte di verita esistente; evita valori hardcoded,
-  duplicazioni di endpoint, chiavi settings, path, opzioni UI, stati e regole di
-  business.
+| Change | Start here | Inspect next |
+| --- | --- | --- |
+| FastAPI composition/public API | `src/local_asr_server/server.py`, `routers/`, `schemas.py` | services, frontend API client, tests |
+| Recording/persistence/catalog | `recordings.py`, `catalog.py`, `transcriptions.py`, `jobs/` | routers/services/tests |
+| ASR/model runtime | `runtime/asr_worker.py`, `asr_provider.py`, `transcriber.py` | transcription service/jobs/settings/tests |
+| Local LLM sidecar/runtime | `runtime/llm_sidecar.py`, `runtime/service_manager.py`, `llm.py` | settings/services/diagnostics/tests |
+| Native audio/capture/permissions | `native_capture.py`, native helpers, `audio_router.py`, `macos_permissions.py` | recordings/window/build/tests |
+| Speaker/visual intelligence | `speaker_diarization.py`, `speaker_labels.py`, `visual_intelligence/` | transcription/meeting UI/benchmarks/tests |
+| Runtime ports/process leases | `runtime/port_manager.py`, `runtime/leases.py`, service manager | CLI/menubar/tests |
+| Frontend/product experience | `frontend/src/` | `design/*`, API contract, i18n, E2E journeys |
+| macOS packaging | `ClosedRoom.spec`, `build.sh`, `build_assets/`, `create_dmg.sh` | paths/native helpers/smoke evidence |
 
-Fonte di tracciamento feature:
+A public API change requires coordinated inspection of the owning router/schema/service, `frontend/src/api/`, direct callers and tests. A persisted-data change requires migration/recovery compatibility review before implementation.
 
-- `docs/features.md`: registro business/tecnico delle feature. Aggiornalo
-  quando cambia cosa lo strumento permette di fare, come lo fa, dove persiste i
-  dati o come si verifica.
+## Core engineering workflow
 
-## Mappa del repository
+Use the repo-template-sw 0.8 core skills now vendored in `skills/`:
 
-### Entry point e backend
+- `structured-change` before and after meaningful code/product changes;
+- `design-product-experience` for meaningful UX/UI semantics;
+- `validate-change` for the narrowest sufficient iteration evidence;
+- `preflight-change` before publishing a change;
+- `remote-preflight` when deterministic required gates are automatable but unavailable agent-local;
+- `plan-workstream` only when dependency/state coordination is useful;
+- `finalize-workstream` when an active plan is done;
+- `review-reference-quality` for maturity/reference-grade audits.
 
-- `src/local_asr_server/cli.py`: comando `local-asr`; sottocomandi `serve`,
-  `doctor`, `setup-audio`, `app`.
-- `src/local_asr_server/server.py`: composition root FastAPI, modelli request,
-  route HTTP, trascrizione MLX, cache e serving degli asset statici.
-- `src/local_asr_server/recordings.py`: stato e persistenza delle registrazioni
-  a chunk.
-- `src/local_asr_server/transcriptions.py`: archivio JSON/TXT delle
-  trascrizioni.
-- `src/local_asr_server/settings.py`: impostazioni utente persistenti.
-- `src/local_asr_server/catalog.py`: catalogo SQLite centrale per metadati
-  interrogabili di registrazioni, trascrizioni, progetti e analisi.
-- `src/local_asr_server/llm.py`: provider di analisi `mock` e Gemini.
+Existing ClosedRoom-specific skills (`build-guided-product-tours`, `maintain-feature-docs`, `structured-change-guard`) are retained as local specializations. Do not let them create a second source of truth: the 0.8 operating/E2E/product contracts and the project-specific invariants in this file govern conflicts.
 
-### Audio e app macOS
+## Project operating commands
 
-- `src/local_asr_server/audio_router.py`: lifecycle del dispositivo audio
-  temporaneo, sincronizzazione e recovery dopo crash.
-- `src/local_asr_server/macos_audio_helper/`: bridge Swift/Core Audio.
-- `src/local_asr_server/menubar.py`: entry point del bundle, server Uvicorn in
-  thread e menu `rumps`.
-- `src/local_asr_server/window.py`: finestra Cocoa con WKWebView; operazioni UI
-  sul main thread.
-- `src/local_asr_server/launchd.py`: installazione/rimozione del LaunchAgent.
-- `src/local_asr_server/paths.py`: risoluzione centralizzata dei path in dev e
-  nel bundle.
+`.engineering/commands.json` is canonical. Use intent rather than inventing another run path:
 
-### Frontend
+`setup -> doctor -> dev -> check -> test -> e2e -> build -> smoke -> package -> stop -> clean`
 
-La UI runtime servita da FastAPI vive in `src/local_asr_server/static/`. I file
-statici legacy sono HTML/CSS/JavaScript senza moduli ES; se lavori su questa
-superficie non introdurre bundler, moduli ES o import dinamici.
+`smoke` and `stop` are currently declared unavailable as canonical automation rather than faked. `docs/current-state.md` records the gap. Do not promote source tests into packaged-app evidence.
 
-- `src/local_asr_server/static/index.html`: markup e ordine di caricamento.
-- `src/local_asr_server/static/config.js`: costanti, default ed endpoint.
-- `src/local_asr_server/static/api.js`: client HTTP.
-- `src/local_asr_server/static/components.js`: componenti UI condivisi.
-- `src/local_asr_server/static/workflow.js`: stato minimo del workflow.
-- `src/local_asr_server/static/recorder.js`: MediaRecorder, mix audio, upload
-  chunk e routing.
-- `src/local_asr_server/static/recordings-view.js`: lista registrazioni.
-- `src/local_asr_server/static/dashboard.js`: dashboard iniziale e stato vuoto.
-- `src/local_asr_server/static/settings-page.js`: pagina impostazioni.
-- `src/local_asr_server/static/analysis-page.js`: pagina analisi, import file,
-  selezione trascrizioni e rendering risultati LLM.
-- `src/local_asr_server/static/tour.js`: tour e showcase.
-- `src/local_asr_server/static/app.js`: orchestratore, navigazione,
-  trascrizione, storico e wiring tra controller.
-- `src/local_asr_server/static/styles.css`: stili completi dell'app.
+Validation depth follows blast radius: LEAN for governance/docs, SCOPED for contained owners, STRONG for shared/native/persistence/security/package boundaries, FULL for promotion or changes to validation/global build/dependency machinery. Unknown executable paths fail safe to FULL until selector automation exists.
 
-`public/` e `website/` non sono la UI servita normalmente da FastAPI.
+Execution capability (`AGENT_LOCAL`, `REMOTE_AUTOMATED`, `REAL_ENVIRONMENT`) is separate from E2E environment fidelity. Read `.engineering/e2e.json` before making claims about real macOS permissions/audio, Apple hardware, packaged-app behavior or production model performance.
 
-Nel worktree esiste anche il frontend React/Vite in `frontend/`. Quando una
-modifica riguarda quella superficie, lavora sui sorgenti `frontend/src/`, usa
-`frontend/src/api/config.ts` per cataloghi e costanti,
-`frontend/src/api/apiClient.ts` per il contratto HTTP e
-`frontend/src/i18n/i18n.tsx` per testi UI. La build Vite scrive in
-`src/local_asr_server/static/`: non modificare a mano asset minificati o hashed
-in `src/local_asr_server/static/assets/` se possono essere rigenerati dai
-sorgenti.
+## Product experience routing
 
-Hotspot frontend da non far crescere senza motivo:
+For structural UX, use this order at proportional depth:
 
-- `app.js` deve restare un orchestratore. Nuove pagine o workflow importanti
-  vanno in controller dedicati caricati prima di `app.js` ed esposti su
-  `window`, seguendo lo stile dei file statici esistenti.
-- `styles.css` e ancora monolitico. Se aggiungi molte regole per una pagina,
-  raggruppale chiaramente nella sezione della pagina; un futuro split CSS deve
-  preservare l'ordine di cascade.
-- `index.html` e il contratto dei globali frontend: ogni nuovo controller
-  statico deve essere incluso nello stack script prima di `app.js`.
+`user outcome -> task model -> IA/journey -> hierarchy -> disclosure/defaults -> states/feedback/recovery -> platform/adaptive -> accessibility -> components -> motion -> polish -> evidence`
 
-### Build e test
+Reuse semantic components/tokens from `frontend/src/components/ui` and `frontend/src/index.css`. Advanced diagnostics/configuration should remain progressively disclosed. Motion must serve feedback, continuity, state, progress or orientation and respect reduced-motion behavior.
 
-- `test/`: suite `unittest`; usa `TestClient` per le API.
-- `build.sh`: pipeline completa `.app` e DMG.
-- `ClosedRoom.spec`: inclusioni PyInstaller e entry point `menubar.py`.
-- `build_assets/`: entitlements, hook e binari preparati dalla build.
-- `setup.sh`: installazione locale delle dipendenze.
+## Documentation lifecycle
 
-## Flussi da seguire
+- `docs/architecture.md` is the detailed current architecture/ownership source and is intentionally allowed a larger local budget than the generic template.
+- `docs/features.md` remains the existing aggregate feature registry; `docs/features/` is available for future bounded feature docs when splitting reduces duplication/context.
+- `docs/current-state.md` is the short operational ledger.
+- `docs/adr/` stores accepted durable decisions only.
+- `docs/workstreams/` stores active bounded plans only; completed plans are deleted by default after durable truth is transferred.
+- Existing historical planning documents are not automatically current truth; confirm against code/current architecture before relying on them.
 
-### Registrazione
+## Validation and evidence
 
-`RecordingController.start()` in `recorder.js`
--> attivazione routing `/v1/system/audio/activate`
--> `getUserMedia` per microfono e BlackHole
--> mix con Web Audio API
--> `POST /v1/recordings`
--> upload sequenziale a `/chunks`
--> `POST /stop`
--> `RecordingStore.finalize()`
--> ripristino `/v1/system/audio/restore`.
-
-La registrazione e la trascrizione sono intenzionalmente separate.
-
-### Trascrizione
-
-`app.js`
--> `ApiClient.transcribe()`
--> `POST /v1/audio/transcriptions`
--> file temporaneo e chiave cache SHA-256
--> `_transcribe()` con `mlx_whisper`
--> risposta JSON, testo o stream NDJSON
--> cache locale
--> `TranscriptionStore.save()`.
-
-Esiste anche `/v1/audio/transcriptions/path` per file gia presenti sul disco.
-
-### Analisi
-
-`AnalysisController` in `app.js`
--> `POST /v1/analysis`
--> recupero testo da `TranscriptionStore` oppure request inline
--> `LLMService.get_provider()`
--> provider mock o Gemini.
-
-### App nativa
-
-`local-asr app` o bundle
--> `menubar.main()`
--> `_ServerThread`
--> `create_app()`
--> `ClosedRoomWindowManager`
--> WKWebView su `http://127.0.0.1:1236`.
-
-## Query rapide
-
-Usa queste query come punto di partenza:
-
-```bash
-# Tutti gli endpoint FastAPI
-rg -n '@app\.(get|post|put|patch|delete)' src/local_asr_server/server.py
-
-# Definizione e usi di un simbolo Python
-rg -n 'AudioRouter|RecordingStore|TranscriptionStore' src test
-
-# Chiamate frontend verso il backend
-rg -n 'fetch\(|ApiClient\.|/v1/' src/local_asr_server/static
-rg -n 'fetch\(|ApiClient\.|/v1/' frontend/src
-
-# ID HTML e relativi accessi JavaScript
-rg -n 'id="NOME"|getElementById\(.NOME.|querySelector.*NOME' \
-  src/local_asr_server/static
-
-# Documentazione e skill operative
-rg -n 'Feature|feature|settings|endpoint|hardcod|centralizz' \
-  docs AGENTS.md skills
-
-# Configurazione, path e differenze bundle/dev
-rg -n 'load_settings|get_.*_dir|is_bundled|sys\._MEIPASS' \
-  src/local_asr_server
-
-# Routing audio e bridge nativo
-rg -n 'AudioRouter|AudioHelper|create_aggregate|restore_original_output' \
-  src test
-
-# File coinvolti nella build macOS
-rg -n 'hidden_imports|extra_datas|extra_binaries|entitlements|codesign' \
-  ClosedRoom.spec build.sh build_assets
-
-# Test collegati a una route o comportamento
-rg -n 'recordings|transcriptions|audio|settings' test
-```
-
-Per capire una modifica, ricostruisci in ordine:
-
-1. evento UI o comando CLI;
-2. client/API route;
-3. servizio o store chiamato;
-4. file e stato persistiti;
-5. test esistenti e comportamento bundle.
-
-## Regole di modifica
-
-- Ogni feature o fix comportamentale deve aggiornare `docs/features.md` e, se
-  cambia setup/uso pubblico, anche `README.md`. Se non aggiorni docs, indica il
-  motivo nel riepilogo finale.
-- Prima di introdurre un valore o una regola, cerca il relativo owner. Endpoint,
-  stati, chiavi settings, path, opzioni modello/lingua, limiti file, timer,
-  copy UI e mapping dati devono stare in una fonte centralizzata.
-- Non hardcodare path utente, directory macOS, URL API, nomi modello, chiavi
-  JSON, estensioni supportate o messaggi UI se esiste gia un helper, costante,
-  catalogo, settings, i18n o client API.
-- Mantieni `server.py` come composition root. Sposta logica riusabile nei
-  moduli di dominio invece di aggiungere altro stato globale.
-- Per le registrazioni conserva sequenze chunk monotone, lock per sessione,
-  scritture atomiche e transizioni in `VALID_STATUSES`.
-- Non costruire path di dati utente direttamente se esiste un helper in
-  `paths.py` o un valore in `settings.py`.
-- Per metadati interrogabili o cross-feature usa `CatalogStore` invece di
-  scansioni duplicate o stati paralleli non sincronizzati.
-- Una modifica al contratto API richiede controllo coordinato di
-  `server.py`, `static/config.js`, `static/api.js`,
-  `frontend/src/api/apiClient.ts`, chiamanti frontend e test.
-- Nel frontend l'ordine degli `<script>` in `index.html` e un contratto:
-  i file espongono globali come `ApiClient`, `Workflow` e
-  `RecordingController`.
-- Quando estrai logica nel frontend statico legacy, non introdurre bundler,
-  moduli ES o import dinamici: quella UI deve restare servibile come asset
-  statico semplice sia in dev sia nel bundle PyInstaller.
-- Per una nuova pagina usa un file `*-page.js` o `*-view.js`, inizializzato da
-  `app.js`, e lascia in `app.js` solo navigazione, routing e coordinamento.
-- Quando aggiungi un asset runtime, aggiorna package data e, se necessario,
-  `ClosedRoom.spec`.
-- Mantieni lazy gli import macOS opzionali quando il modulo deve restare
-  importabile nei test o su sistemi non macOS.
-- Le chiamate Cocoa/WebKit che modificano UI devono restare sul main thread.
-- Il routing audio deve sempre avere rollback e cleanup dopo errori, stop,
-  unload del browser e riavvio del server.
-- Non modificare `public/` o `website/` pensando di cambiare automaticamente
-  la UI dell'app.
-
-## Persistenza e punti critici
-
-- Impostazioni:
-  `~/Library/Application Support/ClosedRoom/settings.json`.
-- Registrazioni:
-  `<recordings_dir>/<data>/<uuid>/metadata.json` e `recording.<ext>`.
-- Trascrizioni:
-  file `transcript_<timestamp>_<id>.json/.txt` in `transcriptions_dir`.
-- Cache trascrizioni:
-  `.cache/` in dev, `~/Library/Caches/ClosedRoom/` nel bundle.
-- Stato routing audio:
-  `.cache/audio-routing-state.json`.
-
-Attenzione: `RecordingStore.root` consulta `settings.json` a ogni accesso. Un
-`recordings_dir` globale configurato puo quindi prevalere sul `default_root`
-passato al costruttore, inclusi i test con directory temporanee.
-
-## Verifica
-
-Suite completa:
+Run focused tests while iterating, then the profile-selected canonical gates. The full Python suite is:
 
 ```bash
 UV_CACHE_DIR=.cache/uv uv run python -m unittest discover -s test -v
 ```
 
-Test mirati:
+Frontend deterministic checks are:
 
 ```bash
-UV_CACHE_DIR=.cache/uv uv run python -m unittest discover -s test -p 'test_recordings.py' -v
-UV_CACHE_DIR=.cache/uv uv run python -m unittest discover -s test -p 'test_recording_api.py' -v
-UV_CACHE_DIR=.cache/uv uv run python -m unittest discover -s test -p 'test_audio_router.py' -v
+cd frontend
+pnpm run lint
+pnpm exec tsc --noEmit
 ```
 
-Verifica tour/showcase dopo modifiche a `index.html` o `tour.js`:
+Use `./build.sh --no-dmg` when package/native/runtime resources are affected. Real macOS audio/TCC/MLX evidence remains separate from source-contract tests. Never claim a gate passed unless it ran on the relevant head/environment.
 
-```bash
-python3 skills/build-guided-product-tours/scripts/check_tour_targets.py \
-  src/local_asr_server/static/tour.js \
-  src/local_asr_server/static/index.html
-```
+## Stop conditions
 
-Avvio sviluppo:
-
-```bash
-UV_CACHE_DIR=.cache/uv uv run local-asr serve --reload
-curl http://127.0.0.1:1236/health
-```
-
-Usa `./build.sh --no-dmg` solo per modifiche che toccano bundle, risorse,
-helper nativo o configurazione PyInstaller. Richiede macOS Apple Silicon,
-Swift, ffmpeg e altri strumenti di sistema.
-
-## Baseline nota dei test
-
-Al 12 giugno 2026 la suite contiene test non allineati al codice corrente:
-
-- i test di `AudioRouter` chiamano metodi della precedente implementazione
-  basata su `SwitchAudioSource`;
-- i test di registrazione possono usare la directory globale da
-  `settings.json` invece della directory temporanea;
-- il test sull'arresto di una registrazione vuota contrasta con il commento e
-  l'implementazione corrente, che consentono di finalizzarla.
-
-Quando verifichi una modifica, confronta gli errori con questa baseline. Non
-considerare automaticamente ogni failure una regressione, ma non nasconderla:
-indica quali test passano, quali falliscono e perche.
-
-## Checklist finale
-
-- Il comportamento richiesto e coperto nel livello corretto?
-- `skills/maintain-feature-docs` e `skills/structured-change-guard` sono state
-  applicate quando la modifica lo richiedeva?
-- `docs/features.md` e gli altri documenti rilevanti sono aggiornati, oppure il
-  no-op documentale e motivato?
-- Dati, path, endpoint, stati, opzioni e testi sono centralizzati invece che
-  hardcodati?
-- Contratti backend e frontend sono ancora coerenti?
-- I path funzionano sia in dev sia nel bundle?
-- Stato e file sono lasciati consistenti in caso di errore?
-- Il routing audio viene sempre ripristinato?
-- Sono stati eseguiti i test mirati, con risultati riportati chiaramente?
-- Per cambi UI e stato verificati anche ID HTML, ordine script e chiamate API?
+Surface a conflict instead of improvising when a request would create a second owner, silently move data to cloud, weaken auth/privacy, bypass persisted-data migration review, leave unbounded runtime resources, bypass macOS cleanup/permission invariants, bypass canonical commands/E2E fidelity/design contracts, weaken legitimate tests to obtain green CI, or claim physical/package/model evidence that was not executed.

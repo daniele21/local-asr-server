@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "contract_version": "0.1.0",
+  "applicability": {
+    "status": "recommended",
+    "reason": "ClosedRoom crosses FastAPI, persisted meeting state, a React/WKWebView UI, macOS native capture helpers and local AI runtimes; lower-level tests alone cannot prove every critical assembled workflow."
+  },
+  "principles": {
+    "final_environment_should_confirm_not_discover": true,
+    "execution_capability_separate_from_environment_fidelity": true,
+    "lowest_sufficient_test_level": true,
+    "critical_journeys_only": true,
+    "built_artifact_when_material": true,
+    "residual_fidelity_gaps_explicit": true
+  },
+  "fidelity_order": [
+    "host_or_fake",
+    "simulated_or_emulated",
+    "representative_virtual",
+    "representative_physical",
+    "target_environment"
+  ],
+  "target_environments": [
+    {
+      "id": "closedroom-macos-apple-silicon",
+      "platform": "macOS Apple Silicon",
+      "description": "Supported ClosedRoom desktop target using the packaged app, loopback FastAPI runtime, WKWebView, native audio capture helpers and local MLX/FluidAudio runtimes.",
+      "material_dimensions": [
+        "macOS version and TCC permissions",
+        "arm64 Apple Silicon architecture",
+        "packaged .app and native helper layout",
+        "microphone and system-audio capture",
+        "MLX/Metal and local model compatibility",
+        "loopback server lifecycle and persistence"
+      ]
+    }
+  ],
+  "execution_environments": [
+    {
+      "id": "source-contract-suite",
+      "fidelity_class": "host_or_fake",
+      "automation": "automated",
+      "platform": "Python test host",
+      "artifact_surface": "source checkout with FastAPI/TestClient, persisted test stores, deterministic fixtures and mocked native/model boundaries",
+      "target_environment_refs": ["closedroom-macos-apple-silicon"],
+      "known_gaps": [
+        "does not exercise the packaged .app or WKWebView process boundary",
+        "does not prove real macOS TCC permissions or physical audio-device behavior",
+        "does not prove production MLX/Metal model memory, latency or throughput"
+      ]
+    },
+    {
+      "id": "target-macos-manual",
+      "fidelity_class": "target_environment",
+      "automation": "real_environment",
+      "platform": "macOS Apple Silicon",
+      "artifact_surface": "built ClosedRoom .app with native helpers, real permissions/audio devices and representative local models",
+      "target_environment_refs": ["closedroom-macos-apple-silicon"],
+      "known_gaps": []
+    }
+  ],
+  "critical_journeys": [
+    {
+      "id": "recording-persistence",
+      "claim": "A recording can be created, receive ordered chunks, finalize, update catalog state and remain discoverable after the owning store is reopened.",
+      "target_environment_refs": ["closedroom-macos-apple-silicon"],
+      "automated_environment_refs": ["source-contract-suite"],
+      "minimum_automated_fidelity": "host_or_fake",
+      "real_environment_confirmation": "conditional",
+      "residual_gaps": ["real native capture and permission behavior are outside this source-level claim"],
+      "automation_gap_reason": ""
+    },
+    {
+      "id": "transcription-workflow",
+      "claim": "The public transcription workflow coordinates request/job state, transcription service behavior and persistence without losing or falsely completing work.",
+      "target_environment_refs": ["closedroom-macos-apple-silicon"],
+      "automated_environment_refs": ["source-contract-suite"],
+      "minimum_automated_fidelity": "host_or_fake",
+      "real_environment_confirmation": "conditional",
+      "residual_gaps": ["production MLX model quality, memory and Metal performance require representative Apple hardware"],
+      "automation_gap_reason": ""
+    },
+    {
+      "id": "native-capture-recovery",
+      "claim": "Native capture capability, permission and lifecycle contracts fail safely and restore run-owned state across stop and error paths.",
+      "target_environment_refs": ["closedroom-macos-apple-silicon"],
+      "automated_environment_refs": ["source-contract-suite"],
+      "minimum_automated_fidelity": "host_or_fake",
+      "real_environment_confirmation": "required",
+      "residual_gaps": ["TCC prompts, ScreenCaptureKit/AVFoundation behavior and actual microphone/system-audio devices"],
+      "automation_gap_reason": ""
+    },
+    {
+      "id": "packaged-app-lifecycle",
+      "claim": "The built ClosedRoom .app launches its own loopback runtime and UI, reaches readiness, then shuts down without leaving project-owned listeners or helper processes.",
+      "target_environment_refs": ["closedroom-macos-apple-silicon"],
+      "automated_environment_refs": [],
+      "minimum_automated_fidelity": "representative_physical",
+      "real_environment_confirmation": "required",
+      "residual_gaps": ["packaged launch, WKWebView readiness, TCC identity and post-stop listener/helper cleanup"],
+      "automation_gap_reason": "The repository does not yet own a deterministic packaged-.app smoke/E2E harness suitable for CI; adding that harness is an explicit follow-up gap rather than treating a source test as package evidence."
+    }
+  ]
+}

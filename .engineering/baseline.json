@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "standard": {
+    "source": "daniele21/repo-template-sw",
+    "version": "0.8.0"
+  },
+  "target_level": "L2",
+  "profiles": [
+    "python",
+    "typescript",
+    "macos",
+    "local-ai",
+    "product-ui"
+  ],
+  "skills": {
+    "plan-workstream": {"source_version": "0.1.0", "customized": false},
+    "structured-change": {"source_version": "0.6.0", "customized": false},
+    "design-product-experience": {"source_version": "0.5.0", "customized": false},
+    "validate-change": {"source_version": "0.8.0", "customized": false},
+    "preflight-change": {"source_version": "0.8.0", "customized": false},
+    "remote-preflight": {"source_version": "0.2.0", "customized": false},
+    "finalize-workstream": {"source_version": "0.1.0", "customized": false},
+    "review-reference-quality": {"source_version": "0.4.0", "customized": false}
+  },
+  "documentation": {
+    "completed_workstreams": "delete-by-default",
+    "historical_archive": "exception-only"
+  }
+}

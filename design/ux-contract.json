@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "contract_version": "0.5.0",
+  "applicable": true,
+  "design_source_of_truth": {
+    "type": "code-first",
+    "location": "frontend/src, frontend/src/index.css and frontend/public logo assets"
+  },
+  "experience_context": {
+    "primary_users": [
+      "professionals who need a private local meeting record",
+      "users reviewing and analyzing their own recorded meetings"
+    ],
+    "primary_jobs": [
+      "start and understand a reliable meeting recording",
+      "transcribe a recording and understand processing state",
+      "review speaker-attributed meeting content",
+      "extract useful meeting/project insights",
+      "recover from permission, audio, model or processing failures without losing work"
+    ],
+    "primary_surfaces": [
+      "dashboard and meeting/project workspace",
+      "recording and compact recording overlay",
+      "transcription and meeting detail",
+      "analysis workflows",
+      "settings and diagnostics"
+    ]
+  },
+  "decision_model": {
+    "user_outcome_first": true,
+    "task_model_before_layout": true,
+    "hierarchy_before_visual_polish": true,
+    "states_before_motion": true,
+    "motion_requires_purpose": true,
+    "evidence_before_completion": true
+  },
+  "principles": {
+    "user_task_model_over_internal_architecture": true,
+    "progressive_disclosure": true,
+    "sensible_defaults": true,
+    "clear_primary_action_hierarchy": true,
+    "platform_appropriate": true,
+    "bounded_information_density": true,
+    "actionable_error_recovery": true
+  },
+  "critical_states": [
+    "loading",
+    "empty",
+    "error",
+    "disabled",
+    "permission-denied",
+    "processing",
+    "partial",
+    "interrupted"
+  ],
+  "accessibility": {
+    "target": "macOS accessibility conventions plus WCAG 2.2 AA semantics for web-rendered content where applicable",
+    "keyboard_when_applicable": true,
+    "focus_visibility_order": true,
+    "assistive_semantics": true,
+    "text_scaling_when_applicable": true,
+    "no_color_only_critical_meaning": true,
+    "reduced_motion_when_applicable": true
+  },
+  "adaptive_layout": {
+    "applicable": true,
+    "supported_contexts": [
+      "primary resizable macOS WKWebView window",
+      "compact floating recording overlay",
+      "browser development viewport"
+    ]
+  },
+  "design_system": {
+    "component_source": "frontend/src/components/ui plus semantic page/workspace components",
+    "brand_tokens": "design/brand-kit.json",
+    "reuse_existing_semantic_component_first": true
+  },
+  "motion": {
+    "purpose_required": true,
+    "supported_purposes": [
+      "feedback",
+      "continuity",
+      "spatial_relationship",
+      "state_transition",
+      "progress",
+      "attention",
+      "hierarchy",
+      "meaningful_completion"
+    ],
+    "frequent_interactions_are_restrained": true,
+    "gesture_motion_tracks_input": true,
+    "performance_over_decorative_complexity": true,
+    "reduced_motion": true
+  },
+  "graphics": {
+    "functional_before_decorative": true,
+    "ui_understandable_without_decorative_imagery": true,
+    "supported_roles": [
+      "explanation",
+      "orientation",
+      "onboarding",
+      "empty_state",
+      "status",
+      "meaningful_completion",
+      "data_visualization",
+      "brand"
+    ]
+  },
+  "critical_journeys": [
+    {"id": "record-meeting", "name": "Start, monitor and safely stop a local meeting recording", "e2e": "required"},
+    {"id": "transcribe-meeting", "name": "Transcribe a recording and recover from processing failure", "e2e": "required"},
+    {"id": "review-meeting", "name": "Review transcript, speakers and derived meeting evidence", "e2e": "recommended"},
+    {"id": "analyze-meeting", "name": "Run meeting analysis with an explicit provider/runtime choice", "e2e": "recommended"}
+  ],
+  "reference_views": [
+    "docs/assets/0.home.png",
+    "docs/assets/1.recording.png",
+    "docs/assets/2.recording-active.png",
+    "docs/assets/5.meeting-analysis.png",
+    "frontend/src as canonical state/error implementation"
+  ],
+  "validation": {
+    "accessibility_automation": "frontend lint/typecheck plus component semantic review; dedicated accessibility runner not yet adopted",
+    "visual_regression": "N/A as an automated suite; bounded docs/assets views are references rather than pass/fail baselines",
+    "manual_accessibility": "REAL_ENVIRONMENT keyboard, focus, VoiceOver and reduced-motion checks for release-sensitive UI changes",
+    "usability_evidence": "targeted product review for high-risk workflow changes; no continuous usability study is currently declared"
+  },
+  "evidence": {
+    "bounded_ci_retention": true,
+    "identity_with_source_build_environment": true,
+    "zero_residue_after_ui_e2e": true
+  }
+}

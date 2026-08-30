@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "contract_version": "0.5.0",
+  "product_name": "ClosedRoom",
+  "assets": {
+    "logo_primary": "frontend/public/logo-light.svg and frontend/public/logo-dark.svg",
+    "logo_compact": "public/logo-light.svg",
+    "logo_monochrome": "use the canonical SVG logo with semantic foreground treatment; do not create a parallel logo source",
+    "app_icon": "canonical ClosedRoom logo source packaged by the macOS build when an app-icon artifact is generated",
+    "favicon": "frontend/public/logo-light.svg"
+  },
+  "tokens": {
+    "colors": {
+      "surface": "frontend/src/index.css --bg-surface",
+      "surface_elevated": "frontend/src/index.css --bg-elevated",
+      "text_primary": "frontend/src/index.css --text-primary",
+      "text_secondary": "frontend/src/index.css --text-secondary",
+      "primary": "frontend/src/index.css --accent",
+      "success": "frontend/src/index.css --success",
+      "warning": "frontend/src/index.css --warning",
+      "error": "frontend/src/index.css --danger",
+      "border": "frontend/src/index.css --border-subtle",
+      "focus": "frontend/src/index.css --border-focus"
+    },
+    "typography": "frontend/src/index.css --font-sans (Outfit/platform sans) and --font-mono (JetBrains Mono/platform mono)",
+    "spacing": "Tailwind spacing scale plus existing semantic component spacing in frontend/src; raw one-off spacing should not become a second token system"
+  },
+  "style": {
+    "iconography": "Lucide React icons with semantic labels; preserve platform-appropriate clarity over decorative icon density",
+    "motion": "restrained operational motion for feedback, recording state, continuity and progress; existing spring timing in frontend/src/index.css is a reference",
+    "imagery": "functional-first product/architecture/reference imagery; decorative graphics must not carry required meaning",
+    "voice_microcopy": "concise, calm and operational; expose user outcome and recovery rather than internal service jargon"
+  },
+  "motion_tokens": {
+    "durations": {
+      "instant": "0ms for state changes that should not animate",
+      "fast": "120ms target for small feedback/hover transitions",
+      "standard": "200ms target for ordinary component/state transitions",
+      "large": "320ms target maximum for larger spatial transitions unless an existing interaction requires a measured exception"
+    },
+    "easing": {
+      "enter": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "exit": "cubic-bezier(0.4, 0, 1, 1)",
+      "move": "frontend/src/index.css --transition-timing-function-spring when spatial continuity benefits from spring motion"
+    },
+    "spring": {
+      "default": "frontend/src/index.css --transition-timing-function-spring",
+      "bounce": "use only for meaningful completion/attention and never for frequent operational actions"
+    },
+    "reduced_motion_strategy": "honor prefers-reduced-motion and replace nonessential spatial/pulsing animation with immediate or minimal-opacity state changes while preserving feedback"
+  }
+}
