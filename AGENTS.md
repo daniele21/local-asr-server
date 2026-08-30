@@ -1,113 +1,102 @@
 # ClosedRoom — Coding Agent Guide
 
-This file is the repository-wide routing layer. It owns durable ClosedRoom invariants, ownership and validation routing; detailed architecture belongs in `docs/architecture.md`, current feature behavior in `docs/features.md`, and operational commands in `.engineering/commands.json`.
+Repository-wide routing layer. Detailed architecture belongs in `docs/architecture.md`, feature behavior in `docs/features.md`, and operational commands in `.engineering/commands.json`.
 
 ## Read only what the task requires
 
-Always read this guide. Then read only the relevant sources:
+Always read this guide. Then read only relevant sources:
 
-1. the closest scoped `AGENTS.md`, if one exists;
-2. `docs/architecture.md` and the owning code for architecture/lifecycle work;
-3. `docs/features.md` for current feature contracts;
-4. `.engineering/commands.json` for setup/dev/check/test/E2E/build/package/cleanup;
-5. `.engineering/e2e.json` when a complete workflow, macOS/audio/model or package-fidelity claim is affected;
-6. `design/ux-contract.json`, `design/brand-kit.json` and `skills/design-product-experience/SKILL.md` for meaningful UI/UX work;
-7. the owning implementation, direct consumers/fakes and nearby tests.
+1. closest scoped `AGENTS.md`, if present;
+2. `docs/architecture.md` plus owning code for architecture/lifecycle work;
+3. `docs/features.md` for feature contracts;
+4. `.engineering/commands.json` for operations;
+5. `.engineering/e2e.json` for complete workflow, macOS/audio/model or package-fidelity claims;
+6. `design/*` and `skills/design-product-experience/SKILL.md` for meaningful UI/UX work;
+7. owning implementation, consumers/fakes and nearby tests.
 
-Do not ingest generated assets, model caches, dependencies or all historical plans for a local change.
+Do not ingest generated assets, model caches, dependencies or historical plans for a local change.
 
 ## Repository purpose
 
-ClosedRoom is a privacy-first macOS meeting workspace. It records microphone/system audio locally, transcribes through local ASR, persists meeting/transcription/job state, and can enrich or analyze meetings through explicitly selected local or remote providers. The primary runtime is a macOS Apple Silicon desktop app built around a loopback FastAPI service, native helpers and a React UI hosted in WKWebView.
+ClosedRoom is a privacy-first macOS meeting workspace. It records microphone/system audio locally, transcribes through local ASR, persists meeting/transcription/job state, and can enrich or analyze meetings through explicitly selected local or remote providers. The primary runtime is a macOS Apple Silicon app built around a loopback FastAPI service, native helpers and a React UI in WKWebView.
 
 ## Non-negotiable invariants
 
-- Local-first is the default trust boundary. Never add an implicit cloud fallback; remote ASR/LLM providers must be explicit user/configuration choices.
-- Sensitive audio, transcripts, prompts and generated meeting content must not enter ordinary telemetry/logs by default.
-- The application service binds to loopback by default; preserve session/auth/origin restrictions and do not broaden network exposure casually.
-- `server.py` is a composition root. Reusable policy belongs in domain/service/runtime owners rather than new global state.
-- `CatalogStore` owns cross-feature queryable metadata; do not create parallel unsynchronized indexes.
-- User-data and bundle/dev paths are resolved through `paths.py`/settings owners; do not hardcode user paths or machine-local package dependencies.
-- Recording/job/model work must have explicit lifecycle, bounded concurrency/backpressure where applicable, cancellation and deterministic cleanup.
-- Native capture/audio routing must restore temporary system/device state after stop, error, cancellation, crash recovery and shutdown where ownership permits.
+- Local-first is the default trust boundary. No implicit cloud fallback; remote ASR/LLM providers must be explicit choices.
+- Sensitive audio, transcripts, prompts and meeting content must not enter ordinary telemetry/logs by default.
+- Bind the application service to loopback by default; preserve session/auth/origin restrictions.
+- `server.py` is a composition root; reusable policy belongs in domain/service/runtime owners.
+- `CatalogStore` owns cross-feature queryable metadata; do not create parallel indexes.
+- Resolve user-data and bundle/dev paths through `paths.py`/settings; never hardcode machine-local dependencies.
+- Recording/job/model work needs explicit lifecycle, bounded concurrency/backpressure where applicable, cancellation and cleanup.
+- Native capture/audio routing must restore run-owned system/device state on stop, error, cancellation and shutdown.
 - Cocoa/WebKit UI mutations stay on the macOS main thread.
-- A model/backend identity must be validated before expensive local-AI load; absence of resource telemetry is unknown, not zero.
-- Do not use a production Whisper/MLX model download as a cheap regression check when deterministic fixtures or mocks prove the same invariant.
-- Generated frontend assets under `src/local_asr_server/static/assets/` are build output; edit `frontend/src/` and regenerate instead of hand-editing hashes/minified files.
-- Finalized build directories under `dist/artifacts/` are immutable evidence. Do not modify a successful artifact in place; create a new build identity.
+- Validate model/backend identity before expensive local-AI load; missing resource telemetry is unknown, not zero.
+- Prefer deterministic fixtures/mocks over production model downloads for cheap regressions.
+- Edit `frontend/src/`, not generated `src/local_asr_server/static/assets/` bundles.
+- Finalized `dist/artifacts/` build directories are immutable; create a new build identity instead of modifying one.
 
 ## Ownership and routing
 
 | Change | Start here | Inspect next |
 | --- | --- | --- |
-| FastAPI composition/public API | `src/local_asr_server/server.py`, `routers/`, `schemas.py` | services, frontend API client, tests |
-| Recording/persistence/catalog | `recordings.py`, `catalog.py`, `transcriptions.py`, `jobs/` | routers/services/tests |
-| ASR/model runtime | `runtime/asr_worker.py`, `asr_provider.py`, `transcriber.py` | transcription service/jobs/settings/tests |
-| Local LLM sidecar/runtime | `runtime/llm_sidecar.py`, `runtime/service_manager.py`, `llm.py` | settings/services/diagnostics/tests |
-| Native audio/capture/permissions | `native_capture.py`, native helpers, `audio_router.py`, `macos_permissions.py` | recordings/window/build/tests |
-| Speaker/visual intelligence | `speaker_diarization.py`, `speaker_labels.py`, `visual_intelligence/` | transcription/meeting UI/benchmarks/tests |
-| Runtime ports/process leases | `runtime/port_manager.py`, `runtime/leases.py`, service manager | CLI/menubar/tests |
-| Frontend/product experience | `frontend/src/` | `design/*`, API contract, i18n, E2E journeys |
-| macOS packaging/artifacts | `scripts/build_artifact.sh`, `build.sh`, `ClosedRoom.spec`, `build_assets/` | finalizer, smoke, E2E contract |
-| CI/preflight scope | `scripts/select_validation_profile.py`, `.github/workflows/preflight.yml` | commands/E2E/contracts/tests |
+| FastAPI/public API | `server.py`, `routers/`, `schemas.py` | services, frontend API, tests |
+| Recording/persistence | `recordings.py`, `catalog.py`, `transcriptions.py`, `jobs/` | routers/services/tests |
+| ASR/model runtime | `runtime/asr_worker.py`, `asr_provider.py`, `transcriber.py` | service/jobs/settings/tests |
+| Local LLM runtime | `runtime/llm_sidecar.py`, `runtime/service_manager.py`, `llm.py` | settings/services/diagnostics/tests |
+| Native audio/capture | `native_capture.py`, helpers, `audio_router.py`, `macos_permissions.py` | recordings/window/build/tests |
+| Speaker/visual intelligence | `speaker_diarization.py`, `speaker_labels.py`, `visual_intelligence/` | transcription/UI/benchmarks/tests |
+| Ports/process leases | `runtime/port_manager.py`, `runtime/leases.py`, service manager | CLI/menubar/tests |
+| Frontend | `frontend/src/` | `design/*`, API contract, i18n, E2E |
+| Packaging/artifacts | `scripts/build_artifact.sh`, `build.sh`, `ClosedRoom.spec`, `build_assets/` | finalizer/smoke/E2E |
+| CI/preflight | selector + `.github/workflows/preflight.yml` | commands/E2E/tests |
 
-A public API change requires coordinated inspection of the owning router/schema/service, `frontend/src/api/`, direct callers and tests. A persisted-data change requires migration/recovery compatibility review before implementation.
+Public API changes require router/schema/service, frontend API consumers and tests. Persisted-data changes require migration/recovery compatibility review.
 
 ## Core engineering workflow
 
-Use the repo-template-sw 0.8 core skills now vendored in `skills/`:
+Use the repo-template-sw 0.8 core skills in `skills/`: `structured-change`, `design-product-experience`, `validate-change`, `preflight-change`, `remote-preflight`, `plan-workstream`, `finalize-workstream`, `review-reference-quality`.
 
-- `structured-change` before and after meaningful code/product changes;
-- `design-product-experience` for meaningful UX/UI semantics;
-- `validate-change` for the narrowest sufficient iteration evidence;
-- `preflight-change` before publishing a change;
-- `remote-preflight` when deterministic required gates are automatable but unavailable agent-local;
-- `plan-workstream` only when dependency/state coordination is useful;
-- `finalize-workstream` when an active plan is done;
-- `review-reference-quality` for maturity/reference-grade audits.
-
-Existing ClosedRoom-specific skills (`build-guided-product-tours`, `maintain-feature-docs`, `structured-change-guard`) are retained as local specializations. Do not let them create a second source of truth: the 0.8 operating/E2E/product contracts and the project-specific invariants in this file govern conflicts.
+ClosedRoom-specific skills remain local specializations; universal 0.8 contracts and this file govern conflicts.
 
 ## Project operating commands
 
-`.engineering/commands.json` is canonical. Use intent rather than inventing another run path:
+`.engineering/commands.json` is canonical:
 
 `setup -> doctor -> dev -> check -> test -> e2e -> build -> smoke -> package -> stop -> clean`
 
-`build` and `package` go through `scripts/build_artifact.sh`, which wraps the existing native builder with unique build identity, immutable successful artifact directories, manifest/SHA-256 evidence, build delta and bounded lineage retention. Do not call `build.sh` as the canonical release/evidence path.
+`build`/`package` use `scripts/build_artifact.sh`, wrapping the existing builder with unique identity, immutable successful artifacts, manifest/SHA-256 evidence, build delta and bounded retention. `build.sh` is not the canonical release/evidence path.
 
-`smoke` exercises the finalized `.app` through its frozen executable, loopback health/static frontend, graceful stop and zero-residue listener/child checks. It is package evidence at the fidelity declared in `.engineering/e2e.json`; it is not evidence of interactive WKWebView behavior, TCC prompts, physical audio devices or production MLX performance. `stop` remains N/A as a standalone repository command because dev/app lifecycle owners already stop their own processes and the smoke harness owns its test process lifecycle.
+`smoke` exercises the finalized `.app` frozen executable, loopback health/static frontend, graceful stop and listener/child cleanup. It does not prove interactive WKWebView, TCC, physical audio or production MLX behavior. `stop` is N/A as a standalone command because runtime/smoke owners stop their own processes.
 
-Validation depth is machine-selected by `scripts/select_validation_profile.py`: LEAN for docs/governance, SCOPED for contained implementation, STRONG for runtime/native/persistence/E2E boundaries, FULL for build/dependency/CI/selector machinery or unknown paths. Unknown paths fail safe to FULL. `.github/workflows/preflight.yml` checks out the exact PR head and routes the selected deterministic gates with read-only repository contents permission.
+`select_validation_profile.py` chooses LEAN for docs/governance, SCOPED for contained implementation, STRONG for runtime/native/persistence/E2E boundaries, and FULL for build/dependency/CI/selector machinery or unknown paths. `.github/workflows/preflight.yml` validates the exact PR head with read-only repository contents permission.
 
-Execution capability (`AGENT_LOCAL`, `REMOTE_AUTOMATED`, `REAL_ENVIRONMENT`) is separate from E2E environment fidelity. Read `.engineering/e2e.json` before making claims about real macOS permissions/audio, Apple hardware, packaged-app behavior or production model performance.
+Execution capability (`AGENT_LOCAL`, `REMOTE_AUTOMATED`, `REAL_ENVIRONMENT`) is separate from E2E fidelity. Read `.engineering/e2e.json` before claims about real macOS permissions/audio, packaged behavior or production models.
 
 ## Product experience routing
 
-For structural UX, use this order at proportional depth:
+For structural UX use: `user outcome -> task model -> IA/journey -> hierarchy -> disclosure/defaults -> states/feedback/recovery -> platform/adaptive -> accessibility -> components -> motion -> polish -> evidence`.
 
-`user outcome -> task model -> IA/journey -> hierarchy -> disclosure/defaults -> states/feedback/recovery -> platform/adaptive -> accessibility -> components -> motion -> polish -> evidence`
-
-Reuse semantic components/tokens from `frontend/src/components/ui` and `frontend/src/index.css`. Advanced diagnostics/configuration should remain progressively disclosed. Motion must serve feedback, continuity, state, progress or orientation and respect reduced-motion behavior.
+Reuse semantic components/tokens from `frontend/src/components/ui` and `frontend/src/index.css`; keep diagnostics progressively disclosed and motion purposeful/reduced-motion aware.
 
 ## Documentation lifecycle
 
-- `docs/architecture.md` is the detailed current architecture/ownership source and is intentionally allowed a larger local budget than the generic template.
-- `docs/features.md` remains the existing aggregate feature registry; `docs/features/` is available for future bounded feature docs when splitting reduces duplication/context.
-- `docs/current-state.md` is the short operational ledger.
-- `docs/adr/` stores accepted durable decisions only.
-- `docs/workstreams/` stores active bounded plans only; completed plans are deleted by default after durable truth is transferred.
-- Existing historical planning documents are not automatically current truth; confirm against code/current architecture before relying on them.
+- `docs/architecture.md`: detailed current architecture; intentionally larger local budget.
+- `docs/features.md`: aggregate current feature registry; split into `docs/features/` only when useful.
+- `docs/current-state.md`: short operational ledger.
+- `docs/adr/`: accepted durable decisions only.
+- `docs/workstreams/`: active bounded plans only; delete completed plans after transferring durable truth.
+- Historical plans are not current truth unless confirmed against code/current docs.
 
 ## Validation and evidence
 
-Run focused tests while iterating, then the profile-selected canonical gates. The full Python suite is:
+Full Python suite:
 
 ```bash
 UV_CACHE_DIR=.cache/uv uv run python -m unittest discover -s test -v
 ```
 
-Frontend deterministic checks are:
+Frontend deterministic checks:
 
 ```bash
 cd frontend
@@ -115,8 +104,8 @@ pnpm run lint
 pnpm exec tsc --noEmit
 ```
 
-For package/native/runtime evidence use `bash scripts/build_artifact.sh --no-dmg` followed by `python3 scripts/smoke_packaged_app.py`, or let exact-head remote preflight run the required profile. Real macOS audio/TCC/interactive-WKWebView/production-MLX evidence remains separate from automated representative-virtual package smoke. Never claim a gate passed unless it ran on the relevant head/environment.
+For package/native/runtime evidence use `bash scripts/build_artifact.sh --no-dmg` then `python3 scripts/smoke_packaged_app.py`, or exact-head remote preflight. Real audio/TCC/interactive-WKWebView/production-MLX evidence remains separate. Never claim a gate passed unless it ran on the relevant head/environment.
 
 ## Stop conditions
 
-Surface a conflict instead of improvising when a request would create a second owner, silently move data to cloud, weaken auth/privacy, bypass persisted-data migration review, leave unbounded runtime resources, bypass macOS cleanup/permission invariants, bypass canonical commands/E2E fidelity/design contracts, weaken legitimate tests to obtain green CI, mutate a finalized artifact, or claim physical/package/model evidence that was not executed.
+Surface conflicts instead of improvising when a request would create a second owner, silently move data to cloud, weaken auth/privacy, bypass migration review, leave unbounded resources, bypass cleanup/permission/command/E2E/design contracts, weaken tests for green CI, mutate a finalized artifact, or claim evidence that was not executed.
