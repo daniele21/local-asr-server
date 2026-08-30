@@ -7,7 +7,6 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from local_asr_server.server import create_app
-from local_asr_server.transcriptions import TranscriptionStore
 
 class TranscriptionMergeTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -39,7 +38,7 @@ class TranscriptionMergeTests(unittest.TestCase):
             enable_auth=False,
         )
         self.client = TestClient(self.app)
-        self.store = TranscriptionStore()
+        self.store = self.app.state.transcription_store
 
     def tearDown(self) -> None:
         self.settings_patcher.stop()
