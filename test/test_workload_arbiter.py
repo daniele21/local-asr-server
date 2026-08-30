@@ -1,0 +1,140 @@
+from __future__ import annotations
+
+import threading
+import time
+import unittest
+
+from local_asr_server.runtime.workload_arbiter import HeavyWorkloadArbiter, WorkloadQueueFull
+from local_asr_server.transcription_jobs import TranscriptionJobManager
+
+
+class HeavyWorkloadArbiterTests(unittest.TestCase):
+    def test_serializes_heavy_work_by_default(self) -> None:
+        arbiter = HeavyWorkloadArbiter(max_concurrent=1, queue_capacity=2)
+        first_started = threading.Event()
+        release_first = threading.Event()
+        second_started = threading.Event()
+        order: list[str] = []
+
+        def first() -> None:
+            order.append("first-start")
+            first_started.set()
+            release_first.wait(timeout=2.0)
+            order.append("first-end")
+
+        def second() -> None:
+            order.append("second-start")
+            second_started.set()
+
+        try:
+            arbiter.submit(task_id="one", workload_type="transcription", run=first)
+            self.assertTrue(first_started.wait(timeout=1.0))
+            arbiter.submit(task_id="two", workload_type="analysis", run=second)
+
+            snapshot = arbiter.snapshot()
+            self.assertEqual(snapshot["active_count"], 1)
+            self.assertEqual(snapshot["queue_depth"], 1)
+            self.assertFalse(second_started.wait(timeout=0.05))
+
+            release_first.set()
+            self.assertTrue(second_started.wait(timeout=1.0))
+            deadline = time.monotonic() + 1.0
+            while time.monotonic() < deadline and arbiter.snapshot()["completed"] < 2:
+                time.sleep(0.01)
+
+            self.assertEqual(order, ["first-start", "first-end", "second-start"])
+            self.assertEqual(arbiter.snapshot()["completed"], 2)
+        finally:
+            release_first.set()
+            arbiter.shutdown()
+
+    def test_rejects_when_pending_capacity_is_full(self) -> None:
+        arbiter = HeavyWorkloadArbiter(max_concurrent=1, queue_capacity=1)
+        first_started = threading.Event()
+        release_first = threading.Event()
+
+        def first() -> None:
+            first_started.set()
+            release_first.wait(timeout=2.0)
+
+        try:
+            arbiter.submit(task_id="one", workload_type="transcription", run=first)
+            self.assertTrue(first_started.wait(timeout=1.0))
+            arbiter.submit(task_id="two", workload_type="analysis", run=lambda: None)
+            with self.assertRaises(WorkloadQueueFull):
+                arbiter.submit(task_id="three", workload_type="vision", run=lambda: None)
+            self.assertEqual(arbiter.snapshot()["rejected"], 1)
+            self.assertEqual(arbiter.snapshot()["queue_depth"], 1)
+        finally:
+            release_first.set()
+            arbiter.shutdown()
+
+    def test_cancels_pending_work_without_running_it(self) -> None:
+        arbiter = HeavyWorkloadArbiter(max_concurrent=1, queue_capacity=2)
+        first_started = threading.Event()
+        release_first = threading.Event()
+        cancelled = threading.Event()
+        second_ran = threading.Event()
+
+        def first() -> None:
+            first_started.set()
+            release_first.wait(timeout=2.0)
+
+        try:
+            arbiter.submit(task_id="one", workload_type="transcription", run=first)
+            self.assertTrue(first_started.wait(timeout=1.0))
+            arbiter.submit(
+                task_id="two",
+                workload_type="analysis",
+                run=second_ran.set,
+                on_cancel=lambda _reason: cancelled.set(),
+            )
+            self.assertTrue(arbiter.cancel_pending("two"))
+            release_first.set()
+            self.assertTrue(cancelled.wait(timeout=1.0))
+            self.assertFalse(second_ran.is_set())
+            self.assertEqual(arbiter.snapshot()["cancelled_pending"], 1)
+        finally:
+            release_first.set()
+            arbiter.shutdown()
+
+    def test_transcription_manager_uses_shared_arbiter(self) -> None:
+        arbiter = HeavyWorkloadArbiter(max_concurrent=1, queue_capacity=2)
+        manager = TranscriptionJobManager(arbiter=arbiter)
+        first_started = threading.Event()
+        release_first = threading.Event()
+        second_started = threading.Event()
+
+        def first_runner(_job):
+            first_started.set()
+            release_first.wait(timeout=2.0)
+            return {"outcome_status": "completed", "diagnostics": []}
+
+        def second_runner(_job):
+            second_started.set()
+            return {"outcome_status": "completed", "diagnostics": []}
+
+        try:
+            first = manager.create("rec-1", first_runner)
+            self.assertTrue(first_started.wait(timeout=1.0))
+            second = manager.create("rec-2", second_runner)
+            self.assertFalse(second_started.wait(timeout=0.05))
+            self.assertEqual(arbiter.snapshot()["queue_depth"], 1)
+
+            release_first.set()
+            self.assertTrue(second_started.wait(timeout=1.0))
+            deadline = time.monotonic() + 1.0
+            while time.monotonic() < deadline:
+                if manager.get(second["id"])["status"] == "completed":
+                    break
+                time.sleep(0.01)
+
+            self.assertEqual(manager.get(first["id"])["status"], "completed")
+            self.assertEqual(manager.get(second["id"])["status"], "completed")
+        finally:
+            release_first.set()
+            arbiter.shutdown()
+
+
+if __name__ == "__main__":
+    unittest.main()

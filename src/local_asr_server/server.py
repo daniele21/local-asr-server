@@ -23,6 +23,7 @@ from local_asr_server.recordings import RecordingStore
 from local_asr_server.transcription_jobs import TranscriptionJobManager
 from local_asr_server.paths import get_static_dir
 from local_asr_server.runtime.service_manager import RuntimeServiceManager
+from local_asr_server.runtime.workload_arbiter import HeavyWorkloadArbiter
 from local_asr_server.services.transcription_service import TranscriptionService
 from local_asr_server.transcriber import transcribe_file_sync
 from local_asr_server.app_logging import configure_application_logging
@@ -78,6 +79,8 @@ def create_app(
     app.state.default_model = default_model
     capture_manager = NativeCaptureManager()
     runtime_services = RuntimeServiceManager()
+    heavy_workloads = HeavyWorkloadArbiter.from_env()
+    app.state.heavy_workload_arbiter = heavy_workloads
     from local_asr_server.runtime.leases import ModelRuntimeLeaseManager
     ModelRuntimeLeaseManager.set_service_manager(runtime_services)
     transcription_service = TranscriptionService()
@@ -148,7 +151,7 @@ def create_app(
         [job["id"] for job in interrupted_jobs if job["type"] == "analysis"],
         reason="Interrupted by server restart",
     )
-    transcription_jobs = TranscriptionJobManager(job_store)
+    transcription_jobs = TranscriptionJobManager(job_store, arbiter=heavy_workloads)
     recording_store = RecordingStore(
         recordings_dir or Path("~/Recordings/local-asr"),
         use_settings_dir=recordings_dir is None,
@@ -169,7 +172,7 @@ def create_app(
         recordings=recording_store,
         transcriptions=transcription_store,
     )
-    services.analysis_jobs = AnalysisJobManager(services, job_store)
+    services.analysis_jobs = AnalysisJobManager(services, job_store, arbiter=heavy_workloads)
     install_compatibility_aliases(app, services)
 
     # Clean up any orphan aggregate devices from previous runs/crashes
@@ -206,7 +209,7 @@ def create_app(
     def read_index() -> FileResponse:
         return FileResponse(
             static_dir / "index.html",
-            headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
         )
 
     # Include routers
@@ -223,6 +226,7 @@ def create_app(
 
     @app.on_event("shutdown")
     def shutdown_event():
+        heavy_workloads.shutdown(cancel_pending=True, wait_timeout=2.0)
         print("Stopping local LLM sidecar...")
         logger.info("Stopping local LLM sidecar...")
         runtime_services.shutdown()
