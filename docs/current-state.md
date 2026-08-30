@@ -6,6 +6,10 @@ ClosedRoom follows `daniele21/repo-template-sw` **0.8.0** with target maturity *
 
 The 0.8 baseline is integrated on `speaker_detection`, the advanced product branch that was verified ahead of `main`, `pipeline`, `tech-improvements` and `ux-refactoring` at adoption time.
 
+## Active workstream
+
+- [`docs/workstreams/resource-efficient-runtime.md`](workstreams/resource-efficient-runtime.md) coordinates the current resource-efficiency hardening: latest-source `local-llm-server` integration, bounded heavy-workload orchestration, capture backpressure, process/memory telemetry and soak evidence.
+
 ## Strong existing evidence to preserve
 
 - Detailed current architecture and a broad Python unit/integration suite.
