@@ -95,11 +95,14 @@ jobs:
         run: |
           test "$(git rev-parse HEAD)" = "${{ needs.select.outputs.head_sha }}"
           test "$(uname -m)" = "arm64"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Install project toolchain
         run: |
           brew list uv >/dev/null 2>&1 || brew install uv
-          brew list pnpm >/dev/null 2>&1 || brew install pnpm
-          uv sync --all-extras --frozen
+          npm install --global pnpm@9
+          uv sync --all-extras --frozen --python 3.12
           cd frontend
           pnpm install --frozen-lockfile
       - name: Frontend deterministic checks
@@ -110,7 +113,7 @@ jobs:
       - name: Python unit and integration suite
         env:
           UV_CACHE_DIR: .cache/uv
-        run: uv run --frozen python -m unittest discover -s test -v
+        run: uv run --frozen --python 3.12 python -m unittest discover -s test -v
 
   packaged-app:
     name: Packaged app / ${{ needs.select.outputs.profile }}
@@ -132,15 +135,19 @@ jobs:
         run: |
           test "$(git rev-parse HEAD)" = "${{ needs.select.outputs.head_sha }}"
           test "$(uname -m)" = "arm64"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Install packaging toolchain
         run: |
           brew list uv >/dev/null 2>&1 || brew install uv
-          brew list pnpm >/dev/null 2>&1 || brew install pnpm
+          npm install --global pnpm@9
           brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
           brew list librsvg >/dev/null 2>&1 || brew install librsvg
       - name: Build unique finalized artifact
         env:
           CLOSEDROOM_BUILD_CHANNEL: ci
+          CLOSEDROOM_BUILD_PYTHON_VERSION: "3.12"
         run: bash scripts/build_artifact.sh --no-dmg
       - name: Smoke finalized .app lifecycle
         run: python3 scripts/smoke_packaged_app.py
