@@ -97,7 +97,12 @@ def apply_speaker_labels(
         "source": "manual" if manual else existing.get("source") or "diarization",
         "mappings": mappings,
     }
-    payload["text"] = "\n".join(text_lines)
+    # Speaker labeling is allowed to rebuild text only when there are transcript
+    # segments to label. Text-only/imported transcriptions may legitimately have
+    # no segments; replacing their canonical text with an empty reconstruction
+    # would be destructive and breaks merge/export workflows.
+    if segments:
+        payload["text"] = "\n".join(text_lines)
     payload["speaker_attribution"] = attribution
     payload.setdefault("stats", {})["speaker_attribution"] = attribution
     return payload
