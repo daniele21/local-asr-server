@@ -32,12 +32,18 @@ REQUIRED = (
     ".engineering/e2e.json",
     ".github/pull_request_template.md",
     ".github/workflows/repository-health.yml",
+    ".github/workflows/preflight.yml",
     "docs/README.md",
     "docs/architecture.md",
     "docs/current-state.md",
     "docs/features/README.md",
     "docs/adr/README.md",
     "docs/workstreams/README.md",
+    "scripts/build_artifact.sh",
+    "scripts/clean_build_state.py",
+    "scripts/finalize_build_artifact.py",
+    "scripts/select_validation_profile.py",
+    "scripts/smoke_packaged_app.py",
     "scripts/verify_operations.py",
     "scripts/verify_e2e.py",
     "scripts/verify_product_experience.py",
@@ -121,6 +127,12 @@ def main() -> int:
             for marker in PLACEHOLDER_MARKERS:
                 if marker in text:
                     errors.append(f"unresolved adopter placeholder {marker} in {path.relative_to(root)}")
+
+    pyproject = root / "pyproject.toml"
+    if pyproject.is_file():
+        text = pyproject.read_text(encoding="utf-8")
+        if "file:///Users/" in text or "file:///home/" in text:
+            errors.append("pyproject.toml contains a developer-machine absolute file dependency")
 
     common_generated = ("node_modules", ".venv", "build", "dist", "__pycache__")
     present = [name for name in common_generated if (root / name).exists()]

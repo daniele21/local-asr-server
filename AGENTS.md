@@ -27,13 +27,14 @@ ClosedRoom is a privacy-first macOS meeting workspace. It records microphone/sys
 - The application service binds to loopback by default; preserve session/auth/origin restrictions and do not broaden network exposure casually.
 - `server.py` is a composition root. Reusable policy belongs in domain/service/runtime owners rather than new global state.
 - `CatalogStore` owns cross-feature queryable metadata; do not create parallel unsynchronized indexes.
-- User-data and bundle/dev paths are resolved through `paths.py`/settings owners; do not hardcode user paths.
+- User-data and bundle/dev paths are resolved through `paths.py`/settings owners; do not hardcode user paths or machine-local package dependencies.
 - Recording/job/model work must have explicit lifecycle, bounded concurrency/backpressure where applicable, cancellation and deterministic cleanup.
 - Native capture/audio routing must restore temporary system/device state after stop, error, cancellation, crash recovery and shutdown where ownership permits.
 - Cocoa/WebKit UI mutations stay on the macOS main thread.
 - A model/backend identity must be validated before expensive local-AI load; absence of resource telemetry is unknown, not zero.
 - Do not use a production Whisper/MLX model download as a cheap regression check when deterministic fixtures or mocks prove the same invariant.
 - Generated frontend assets under `src/local_asr_server/static/assets/` are build output; edit `frontend/src/` and regenerate instead of hand-editing hashes/minified files.
+- Finalized build directories under `dist/artifacts/` are immutable evidence. Do not modify a successful artifact in place; create a new build identity.
 
 ## Ownership and routing
 
@@ -47,7 +48,8 @@ ClosedRoom is a privacy-first macOS meeting workspace. It records microphone/sys
 | Speaker/visual intelligence | `speaker_diarization.py`, `speaker_labels.py`, `visual_intelligence/` | transcription/meeting UI/benchmarks/tests |
 | Runtime ports/process leases | `runtime/port_manager.py`, `runtime/leases.py`, service manager | CLI/menubar/tests |
 | Frontend/product experience | `frontend/src/` | `design/*`, API contract, i18n, E2E journeys |
-| macOS packaging | `ClosedRoom.spec`, `build.sh`, `build_assets/`, `create_dmg.sh` | paths/native helpers/smoke evidence |
+| macOS packaging/artifacts | `scripts/build_artifact.sh`, `build.sh`, `ClosedRoom.spec`, `build_assets/` | finalizer, smoke, E2E contract |
+| CI/preflight scope | `scripts/select_validation_profile.py`, `.github/workflows/preflight.yml` | commands/E2E/contracts/tests |
 
 A public API change requires coordinated inspection of the owning router/schema/service, `frontend/src/api/`, direct callers and tests. A persisted-data change requires migration/recovery compatibility review before implementation.
 
@@ -72,9 +74,11 @@ Existing ClosedRoom-specific skills (`build-guided-product-tours`, `maintain-fea
 
 `setup -> doctor -> dev -> check -> test -> e2e -> build -> smoke -> package -> stop -> clean`
 
-`smoke` and `stop` are currently declared unavailable as canonical automation rather than faked. `docs/current-state.md` records the gap. Do not promote source tests into packaged-app evidence.
+`build` and `package` go through `scripts/build_artifact.sh`, which wraps the existing native builder with unique build identity, immutable successful artifact directories, manifest/SHA-256 evidence, build delta and bounded lineage retention. Do not call `build.sh` as the canonical release/evidence path.
 
-Validation depth follows blast radius: LEAN for governance/docs, SCOPED for contained owners, STRONG for shared/native/persistence/security/package boundaries, FULL for promotion or changes to validation/global build/dependency machinery. Unknown executable paths fail safe to FULL until selector automation exists.
+`smoke` exercises the finalized `.app` through its frozen executable, loopback health/static frontend, graceful stop and zero-residue listener/child checks. It is package evidence at the fidelity declared in `.engineering/e2e.json`; it is not evidence of interactive WKWebView behavior, TCC prompts, physical audio devices or production MLX performance. `stop` remains N/A as a standalone repository command because dev/app lifecycle owners already stop their own processes and the smoke harness owns its test process lifecycle.
+
+Validation depth is machine-selected by `scripts/select_validation_profile.py`: LEAN for docs/governance, SCOPED for contained implementation, STRONG for runtime/native/persistence/E2E boundaries, FULL for build/dependency/CI/selector machinery or unknown paths. Unknown paths fail safe to FULL. `.github/workflows/preflight.yml` checks out the exact PR head and routes the selected deterministic gates with read-only repository contents permission.
 
 Execution capability (`AGENT_LOCAL`, `REMOTE_AUTOMATED`, `REAL_ENVIRONMENT`) is separate from E2E environment fidelity. Read `.engineering/e2e.json` before making claims about real macOS permissions/audio, Apple hardware, packaged-app behavior or production model performance.
 
@@ -111,8 +115,8 @@ pnpm run lint
 pnpm exec tsc --noEmit
 ```
 
-Use `./build.sh --no-dmg` when package/native/runtime resources are affected. Real macOS audio/TCC/MLX evidence remains separate from source-contract tests. Never claim a gate passed unless it ran on the relevant head/environment.
+For package/native/runtime evidence use `bash scripts/build_artifact.sh --no-dmg` followed by `python3 scripts/smoke_packaged_app.py`, or let exact-head remote preflight run the required profile. Real macOS audio/TCC/interactive-WKWebView/production-MLX evidence remains separate from automated representative-virtual package smoke. Never claim a gate passed unless it ran on the relevant head/environment.
 
 ## Stop conditions
 
-Surface a conflict instead of improvising when a request would create a second owner, silently move data to cloud, weaken auth/privacy, bypass persisted-data migration review, leave unbounded runtime resources, bypass macOS cleanup/permission invariants, bypass canonical commands/E2E fidelity/design contracts, weaken legitimate tests to obtain green CI, or claim physical/package/model evidence that was not executed.
+Surface a conflict instead of improvising when a request would create a second owner, silently move data to cloud, weaken auth/privacy, bypass persisted-data migration review, leave unbounded runtime resources, bypass macOS cleanup/permission invariants, bypass canonical commands/E2E fidelity/design contracts, weaken legitimate tests to obtain green CI, mutate a finalized artifact, or claim physical/package/model evidence that was not executed.
