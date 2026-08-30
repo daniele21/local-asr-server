@@ -357,7 +357,7 @@ fi
 
 log "  Building python wheel..."
 rm -rf dist/wheels
-uv build --no-build-isolation --wheel --out-dir dist/wheels/
+uv build --wheel --out-dir dist/wheels/
 
 log "  Creating clean build virtual environment with Python $BUILD_PYTHON_VERSION..."
 rm -rf build_venv
