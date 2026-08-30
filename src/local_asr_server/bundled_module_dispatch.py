@@ -5,7 +5,11 @@ import sys
 from collections.abc import Sequence
 
 
-SUPPORTED_BUNDLED_MODULES = {"local_llm_server", "mlx_vlm.server"}
+SUPPORTED_BUNDLED_MODULES = {
+    "local_llm_server",
+    "local_asr_server.runtime.local_llm_entrypoint",
+    "mlx_vlm.server",
+}
 # Keep deterministic non-Cocoa commands available from the frozen executable.
 # `serve` is used by packaged-app CI smoke to exercise the real bundled Python
 # runtime and static assets without requiring TCC prompts or interactive UI.
@@ -37,6 +41,10 @@ def dispatch_bundled_module(argv: Sequence[str] | None = None) -> bool:
         from local_llm_server.cli import main
 
         main()
+    elif module == "local_asr_server.runtime.local_llm_entrypoint":
+        from local_asr_server.runtime.local_llm_entrypoint import run_local_llm_server_cli
+
+        run_local_llm_server_cli()
     else:
         runpy.run_module(module, run_name="__main__")
     return True
