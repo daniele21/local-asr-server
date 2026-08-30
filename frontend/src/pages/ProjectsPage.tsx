@@ -23,8 +23,7 @@ import { Button } from '../components/ui/Button';
 import { ProjectPromptModal } from '../components/ui/ProjectPromptModal';
 import { TimeRangeFilter } from '../components/workspace/TimeRangeFilter';
 import { TaskProcessingLoader } from '../components/workspace/TaskProcessingLoader';
-import { InsightDetailDialog } from '../components/workspace/InsightDetailDialog';
-import type { InsightTab } from '../components/workspace/InsightDetailDialog';
+import { InsightDetailDialog, type InsightTab } from '../components/workspace/InsightDetailDialog';
 import {
   ActionChecklist,
   AdvancedDetailsAccordion,

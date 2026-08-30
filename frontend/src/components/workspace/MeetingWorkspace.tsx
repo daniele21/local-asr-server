@@ -19,8 +19,8 @@ import {
   Sparkles,
   Target,
   UserRound,
+  type LucideIcon,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Meeting, Project } from '../../api/apiClient';
 import { ANALYSIS_TYPE_LABELS } from '../../api/config';
