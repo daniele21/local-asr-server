@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import signal
+import sys
 import unittest
 from unittest.mock import Mock, patch
 
@@ -30,7 +31,6 @@ class LocalLLMSidecarTests(unittest.TestCase):
     def test_build_command_keeps_registry_model_when_overriding_model_path(self) -> None:
         sidecar = LocalLLMSidecar()
         with (
-            patch("local_asr_server.runtime.llm_sidecar.shutil.which", return_value="local-llm"),
             patch("local_asr_server.settings.load_settings", return_value={"visual_llm_model": "qwen3-vl-4b"}),
             patch("local_asr_server.local_llm_params.load_local_llm_params", return_value={}),
         ):
@@ -49,7 +49,8 @@ class LocalLLMSidecarTests(unittest.TestCase):
         self.assertEqual(
             command,
             [
-                "local-llm", "serve", "--host", "127.0.0.1", "--port", "45678",
+                sys.executable, "-m", "local_asr_server.runtime.local_llm_entrypoint", "serve",
+                "--host", "127.0.0.1", "--port", "45678",
                 "--enable-admin-api", "--mlx-vlm-server-port", "45679",
                 "--models", "voxtral-mini-3b", "qwen3-vl-4b", "--model-path", "/models/voxtral.gguf",
                 "--backend", "llama_server", "--mmproj-path", "/models/mmproj.gguf",

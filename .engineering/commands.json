@@ -5,14 +5,14 @@
     "setup": {"status": "required", "run": "./setup.sh && (cd frontend && pnpm install --frozen-lockfile)"},
     "doctor": {"status": "recommended", "run": "UV_CACHE_DIR=.cache/uv uv run local-asr doctor"},
     "dev": {"status": "recommended", "run": "./run.sh"},
-    "check": {"status": "required", "run": "python3 scripts/verify_repository.py && python3 scripts/verify_operations.py && python3 scripts/verify_e2e.py && python3 scripts/verify_product_experience.py && python3 scripts/verify_docs.py && python3 scripts/verify_agent_context.py && (cd frontend && pnpm run lint && pnpm exec tsc --noEmit)"},
+    "check": {"status": "required", "run": "python3 scripts/verify_repository.py && python3 scripts/verify_operations.py && python3 scripts/verify_e2e.py && python3 scripts/verify_product_experience.py && python3 scripts/verify_docs.py && python3 scripts/verify_agent_context.py && python3 -m unittest test.test_validation_profile_selector test.test_build_artifact_metadata -v && (cd frontend && pnpm run lint && pnpm exec tsc --noEmit)"},
     "test": {"status": "required", "run": "UV_CACHE_DIR=.cache/uv uv run python -m unittest discover -s test -v"},
     "e2e": {"status": "recommended", "run": "UV_CACHE_DIR=.cache/uv uv run python -m unittest test.test_frontend_transcription_workflow test.test_recording_api test.test_native_capture -v"},
-    "build": {"status": "required", "run": "./build.sh --no-dmg"},
-    "smoke": {"status": "n/a", "run": ""},
-    "package": {"status": "optional", "run": "./build.sh"},
+    "build": {"status": "required", "run": "bash scripts/build_artifact.sh --no-dmg"},
+    "smoke": {"status": "recommended", "run": "python3 scripts/smoke_packaged_app.py"},
+    "package": {"status": "optional", "run": "bash scripts/build_artifact.sh --dmg"},
     "stop": {"status": "n/a", "run": ""},
-    "clean": {"status": "required", "run": "rm -rf build build_venv dist .cache/uv frontend/node_modules"}
+    "clean": {"status": "required", "run": "python3 scripts/clean_build_state.py"}
   },
   "publication_gate": {
     "agent_preflight_required": true,
@@ -36,7 +36,7 @@
   "validation_profiles": {
     "default": "auto",
     "profiles": ["lean", "scoped", "strong", "full"],
-    "selector": "Use AGENTS.md ownership routing plus preflight-change blast-radius rules; unknown executable paths fail safe to full until a repository selector is automated.",
+    "selector": "python3 scripts/select_validation_profile.py --base <base-revision> --head <head-revision>",
     "unknown_executable_paths_fail_safe": true,
     "selector_changes_force_full": true,
     "promotion_validation_full": true,
@@ -45,8 +45,8 @@
     "report_selected_profile_and_reason": true
   },
   "remote_preflight": {
-    "status": "n/a",
-    "trigger": "",
+    "status": "required",
+    "trigger": ".github/workflows/preflight.yml on pull_request; checks out and validates the exact PR head SHA with read-only contents permission",
     "default_profile": "auto",
     "stronger_profile_override_allowed": true,
     "weaker_profile_override_requires_explicit_justification": true,

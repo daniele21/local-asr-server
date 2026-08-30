@@ -17,6 +17,28 @@ class BundledModuleDispatchTests(unittest.TestCase):
             main.assert_called_once_with()
             self.assertEqual(sys.argv, ["local_llm_server", "serve", "--port", "1235"])
 
+    def test_dispatches_closedroom_local_llm_entrypoint(self) -> None:
+        with patch(
+            "local_asr_server.runtime.local_llm_entrypoint.run_local_llm_server_cli"
+        ) as run_local_llm, patch.object(sys, "argv", ["ClosedRoom"]):
+            self.assertTrue(
+                dispatch_bundled_module([
+                    "ClosedRoom", "-m",
+                    "local_asr_server.runtime.local_llm_entrypoint",
+                    "serve", "--port", "1235",
+                ])
+            )
+            run_local_llm.assert_called_once_with()
+            self.assertEqual(
+                sys.argv,
+                [
+                    "local_asr_server.runtime.local_llm_entrypoint",
+                    "serve",
+                    "--port",
+                    "1235",
+                ],
+            )
+
     def test_dispatches_mlx_vlm_server_module(self) -> None:
         with patch("local_asr_server.bundled_module_dispatch.runpy.run_module") as run_module, patch.object(sys, "argv", ["ClosedRoom"]):
             self.assertTrue(dispatch_bundled_module(["ClosedRoom", "-m", "mlx_vlm.server", "--port", "8092"]))

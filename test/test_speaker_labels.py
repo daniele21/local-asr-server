@@ -40,6 +40,20 @@ class SpeakerLabelsTests(unittest.TestCase):
         self.assertEqual(mapping["source"], "manual")
         self.assertEqual(mapping["status"], "accepted")
 
+    def test_text_only_transcription_preserves_canonical_text(self) -> None:
+        payload = {
+            "text": "Imported transcript without timestamped segments",
+            "segments": [],
+        }
+
+        result = apply_speaker_labels(payload)
+
+        self.assertEqual(
+            result["text"],
+            "Imported transcript without timestamped segments",
+        )
+        self.assertEqual(result["speaker_attribution"]["mappings"], [])
+
     def test_accepted_visual_name_has_priority_over_fallback(self) -> None:
         payload = {
             "segments": [
@@ -110,4 +124,3 @@ class SpeakerLabelsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

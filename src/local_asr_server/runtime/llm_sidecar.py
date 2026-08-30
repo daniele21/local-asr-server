@@ -328,8 +328,12 @@ class LocalLLMSidecar:
         port: int,
         vision_port: int | None = None,
     ) -> list[str]:
-        binary = shutil.which("local-llm-server")
-        cmd = [binary, "serve"] if binary else [sys.executable, "-m", "local_llm_server", "serve"]
+        cmd = [
+            sys.executable,
+            "-m",
+            "local_asr_server.runtime.local_llm_entrypoint",
+            "serve",
+        ]
         cmd.extend(["--host", self.host, "--port", str(port), "--enable-admin-api"])
         if vision_port is not None:
             cmd.extend(["--mlx-vlm-server-port", str(vision_port)])

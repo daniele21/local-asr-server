@@ -1,0 +1,184 @@
+name: Remote preflight
+
+on:
+  pull_request:
+    branches: [speaker_detection]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [speaker_detection]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: closedroom-preflight-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  select:
+    name: Select validation profile
+    runs-on: ubuntu-latest
+    outputs:
+      profile: ${{ steps.profile.outputs.profile }}
+      reason: ${{ steps.profile.outputs.reason }}
+      head_sha: ${{ steps.identity.outputs.head_sha }}
+      base_sha: ${{ steps.identity.outputs.base_sha }}
+    steps:
+      - name: Check out exact head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Resolve exact base/head
+        id: identity
+        env:
+          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          HEAD_SHA="${EVENT_HEAD_SHA:-$(git rev-parse HEAD)}"
+          BASE_SHA="${EVENT_BASE_SHA:-$(git rev-parse HEAD^)}"
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+      - name: Select blast-radius profile
+        id: profile
+        run: |
+          python3 scripts/select_validation_profile.py \
+            --base "${{ steps.identity.outputs.base_sha }}" \
+            --head "${{ steps.identity.outputs.head_sha }}" \
+            --format github >> "$GITHUB_OUTPUT"
+          python3 scripts/select_validation_profile.py \
+            --base "${{ steps.identity.outputs.base_sha }}" \
+            --head "${{ steps.identity.outputs.head_sha }}"
+
+  governance:
+    name: Governance / ${{ needs.select.outputs.profile }}
+    needs: select
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.select.outputs.head_sha }}
+          fetch-depth: 0
+      - name: Verify exact head
+        run: test "$(git rev-parse HEAD)" = "${{ needs.select.outputs.head_sha }}"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Repository and contract checks
+        run: |
+          python3 scripts/verify_repository.py
+          python3 scripts/verify_operations.py
+          python3 scripts/verify_e2e.py
+          python3 scripts/verify_product_experience.py
+          python3 scripts/verify_docs.py
+          python3 scripts/verify_agent_context.py
+      - name: Validation infrastructure unit tests
+        run: |
+          python3 -m unittest discover -s test -p 'test_validation_profile_selector.py' -v
+          python3 -m unittest discover -s test -p 'test_build_artifact_metadata.py' -v
+
+  tests:
+    name: Source tests / ${{ needs.select.outputs.profile }}
+    needs: [select, governance]
+    if: needs.select.outputs.profile != 'lean'
+    runs-on: macos-14
+    steps:
+      - name: Check out exact head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.select.outputs.head_sha }}
+          fetch-depth: 0
+      - name: Verify arm64 exact head
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ needs.select.outputs.head_sha }}"
+          test "$(uname -m)" = "arm64"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project toolchain
+        run: |
+          brew list uv >/dev/null 2>&1 || brew install uv
+          npm install --global pnpm@9
+          uv sync --all-extras --frozen --python 3.12
+          cd frontend
+          pnpm install --frozen-lockfile
+      - name: Frontend deterministic checks
+        run: |
+          cd frontend
+          pnpm run lint
+          pnpm exec tsc --noEmit
+      - name: Python unit and integration suite
+        env:
+          UV_CACHE_DIR: .cache/uv
+        run: uv run --frozen --python 3.12 python -m unittest discover -s test -v
+
+  packaged-app:
+    name: Packaged app / ${{ needs.select.outputs.profile }}
+    needs: [select, governance, tests]
+    if: >-
+      ${{
+        (needs.select.outputs.profile == 'strong' || needs.select.outputs.profile == 'full') &&
+        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      }}
+    runs-on: macos-14
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
+    steps:
+      - name: Check out exact head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.select.outputs.head_sha }}
+          fetch-depth: 0
+      - name: Verify arm64 exact head
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ needs.select.outputs.head_sha }}"
+          test "$(uname -m)" = "arm64"
+      - name: Verify Swift 6 packaging toolchain
+        run: |
+          set -euo pipefail
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version
+          swift --version
+          swift --version | grep -Eq 'Swift version 6\.'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install packaging toolchain
+        run: |
+          brew list uv >/dev/null 2>&1 || brew install uv
+          npm install --global pnpm@9
+          brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
+          brew list librsvg >/dev/null 2>&1 || brew install librsvg
+      - name: Build unique finalized artifact
+        env:
+          CLOSEDROOM_BUILD_CHANNEL: ci
+          CLOSEDROOM_BUILD_PYTHON_VERSION: "3.12"
+        run: bash scripts/build_artifact.sh --no-dmg
+      - name: Smoke finalized .app lifecycle
+        run: python3 scripts/smoke_packaged_app.py
+      - name: Prepare immutable CI archive
+        id: artifact
+        run: |
+          set -euo pipefail
+          ARTIFACT_DIR="$(python3 -c 'import json; print(json.load(open("dist/last-build.json"))["artifact_dir"])')"
+          APP="$(python3 -c 'import json; print(json.load(open("dist/last-build.json"))["app"])')"
+          ZIP="$ARTIFACT_DIR/$(basename "$APP").zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+          echo "artifact_dir=$ARTIFACT_DIR" >> "$GITHUB_OUTPUT"
+          echo "build_id=$(python3 -c 'import json; print(json.load(open("dist/last-build.json"))["build_id"])')" >> "$GITHUB_OUTPUT"
+      - name: Upload build + smoke evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: closedroom-${{ steps.artifact.outputs.build_id }}
+          path: |
+            ${{ steps.artifact.outputs.artifact_dir }}/build-manifest.json
+            ${{ steps.artifact.outputs.artifact_dir }}/BUILD_CHANGELOG.md
+            ${{ steps.artifact.outputs.artifact_dir }}/SHA256SUMS
+            ${{ steps.artifact.outputs.artifact_dir }}/packaged-app-smoke.json
+            ${{ steps.artifact.outputs.artifact_dir }}/*.zip
+          if-no-files-found: error
+          retention-days: 7
