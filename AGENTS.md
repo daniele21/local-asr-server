@@ -35,6 +35,8 @@ ClosedRoom is a privacy-first macOS meeting workspace. It records microphone/sys
 - Prefer deterministic fixtures/mocks over production model downloads for cheap regressions.
 - Edit `frontend/src/`, not generated `src/local_asr_server/static/assets/` bundles.
 - Finalized `dist/artifacts/` build directories are immutable; create a new build identity instead of modifying one.
+- Code and durable documentation ship together: before publication, assess documentation impact and update every affected canonical owner in the same change.
+- README identity and README usage are separate owners. Do not rewrite stable mission/positioning for a usage-only change; do not leave stale setup/run/configuration/public examples because the identity remains valid.
 
 ## Ownership and routing
 
@@ -50,6 +52,7 @@ ClosedRoom is a privacy-first macOS meeting workspace. It records microphone/sys
 | Frontend | `frontend/src/` | `design/*`, API contract, i18n, E2E |
 | Packaging/artifacts | `scripts/build_artifact.sh`, `build.sh`, `ClosedRoom.spec`, `build_assets/` | finalizer/smoke/E2E |
 | CI/preflight | selector + `.github/workflows/preflight.yml` | commands/E2E/tests |
+| Documentation impact | `docs/README.md` | README identity/usage, feature/architecture/ADR/security/current-state owner |
 
 Public API changes require router/schema/service, frontend API consumers and tests. Persisted-data changes require migration/recovery compatibility review.
 
@@ -58,6 +61,8 @@ Public API changes require router/schema/service, frontend API consumers and tes
 Use the repo-template-sw 0.8 core skills in `skills/`: `structured-change`, `design-product-experience`, `validate-change`, `preflight-change`, `remote-preflight`, `plan-workstream`, `finalize-workstream`, `review-reference-quality`.
 
 ClosedRoom-specific skills remain local specializations; universal 0.8 contracts and this file govern conflicts.
+
+Before publication, `preflight-change` must classify `README_IDENTITY`, `README_USAGE`, feature docs, architecture, ADR, security/data, operations, product experience and current state as `UPDATED` or `N/A`, and `DOCS_CURRENT_WITH_IMPLEMENTATION` must be `PASS`.
 
 ## Project operating commands
 
@@ -81,8 +86,10 @@ Reuse semantic components/tokens from `frontend/src/components/ui` and `frontend
 
 ## Documentation lifecycle
 
+- README identity sections: what ClosedRoom is/why it exists/primary audience and outcome. Change only when those claims materially change.
+- README usage sections: prerequisites/setup/run/configuration/public usage/examples. Update in the same change whenever old instructions become incomplete, wrong or misleading.
 - `docs/architecture.md`: detailed current architecture; intentionally larger local budget.
-- `docs/features.md`: aggregate current feature registry; split into `docs/features/` only when useful.
+- `docs/features.md`: aggregate current feature registry; split into `docs/features/` only when useful. Existing feature owners change in the same change as the durable behavior they describe.
 - `docs/current-state.md`: short operational ledger.
 - `docs/adr/`: accepted durable decisions only.
 - `docs/workstreams/`: active bounded plans only; delete completed plans after transferring durable truth.
@@ -108,4 +115,4 @@ For package/native/runtime evidence use `bash scripts/build_artifact.sh --no-dmg
 
 ## Stop conditions
 
-Surface conflicts instead of improvising when a request would create a second owner, silently move data to cloud, weaken auth/privacy, bypass migration review, leave unbounded resources, bypass cleanup/permission/command/E2E/design contracts, weaken tests for green CI, mutate a finalized artifact, or claim evidence that was not executed.
+Surface conflicts instead of improvising when a request would create a second owner, silently move data to cloud, weaken auth/privacy, bypass migration review, leave unbounded resources, bypass cleanup/permission/command/E2E/design/documentation-freshness contracts, weaken tests for green CI, mutate a finalized artifact, or claim evidence that was not executed.
