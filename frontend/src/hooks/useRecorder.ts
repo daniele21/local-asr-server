@@ -5,6 +5,7 @@ import { useTranslation } from '../i18n/i18n';
 import { useToast } from '../context/ToastContext';
 import { useAudioDevices, AudioDevice, AudioRouteStatus } from './useAudioDevices';
 import { drawAudioMeterOnCanvas } from '../utils/audioVisualizer';
+import { BrowserUploadBacklog } from '../utils/browserUploadBacklog';
 
 export type { AudioDevice, AudioRouteStatus };
 
@@ -84,6 +85,8 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
   const sessionIdRef = useRef<string | null>(null);
   const sequenceRef = useRef<Map<string, number>>(new Map());
   const uploadChainsRef = useRef<Map<string, Promise<any>>>(new Map());
+  const browserUploadBacklogRef = useRef(new BrowserUploadBacklog());
+  const browserBackpressureTriggeredRef = useRef(false);
   const startedAtRef = useRef(0);
   const routeActivatedRef = useRef(false);
   const captureBackendRef = useRef<'browser' | 'native'>('browser');
@@ -312,6 +315,11 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
           setStatusState('error');
           setProgressText(t('recording.emptyRecordingWarning'));
           showToast(t('recording.emptyRecordingWarning'), 'error');
+        } else if (browserBackpressureTriggeredRef.current) {
+          const message = t('recording.uploadBackpressure');
+          setStatusText(t('common.error'));
+          setStatusState('error');
+          setProgressText(message);
         } else {
           setStatusText(t('recording.saved'));
           setStatusState('success');
@@ -325,6 +333,8 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
       setStatusState('error');
       showToast(t('recording.finalizationFailed', { error: error.message }), 'error');
     } finally {
+      browserUploadBacklogRef.current.reset();
+      browserBackpressureTriggeredRef.current = false;
       await restoreAudioRoute();
     }
   }, [t, onSaved, releaseMedia, restoreAudioRoute, showToast]);
@@ -730,6 +740,8 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
       localStorage.setItem('asr-active-recording-id', session.id);
       sequenceRef.current = new Map();
       uploadChainsRef.current = new Map();
+      browserUploadBacklogRef.current.reset();
+      browserBackpressureTriggeredRef.current = false;
 
       // 5. Start MediaRecorder
       const recorderInputs: Array<{ trackId: string; stream: MediaStream }> = [];
@@ -757,16 +769,34 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
 
         recorder.addEventListener('dataavailable', (event) => {
           if (!event.data || event.data.size === 0 || !sessionIdRef.current) return;
+          const blob = event.data;
+          const backlogSnapshot = browserUploadBacklogRef.current.accept(blob.size);
           const currentSequence = sequenceRef.current.get(trackId) || 0;
           sequenceRef.current.set(trackId, currentSequence + 1);
           const currentChain = uploadChainsRef.current.get(trackId) || Promise.resolve();
-          const nextChain = currentChain.then(() => uploadChunk(trackId, event.data, currentSequence));
+          const nextChain = currentChain
+            .then(() => uploadChunk(trackId, blob, currentSequence))
+            .finally(() => {
+              browserUploadBacklogRef.current.release(blob.size);
+            });
           uploadChainsRef.current.set(trackId, nextChain);
           nextChain.catch((error) => {
             setStatusText(t('common.error'));
             setStatusState('error');
             showToast(t('recording.chunkSaveFailed', { error: error.message }), 'error');
           });
+
+          if (backlogSnapshot.saturated && !browserBackpressureTriggeredRef.current) {
+            browserBackpressureTriggeredRef.current = true;
+            const message = t('recording.uploadBackpressure');
+            setStatusText(t('recording.finalizing'));
+            setStatusState('working');
+            setProgressText(message);
+            showToast(message, 'error');
+            queueMicrotask(() => {
+              void stopRecording();
+            });
+          }
         });
 
         recorder.addEventListener('error', (event: any) => {
@@ -827,7 +857,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
       setStatusState('error');
       showToast(t('recording.startFailed', { error: error.message }), 'error');
     }
-  }, [t, selectedMicrophone, selectedSystemDevice, captureCapabilities, setCapturePermissions, startAudioMeter, loadDevices, releaseMedia, restoreAudioRoute, showToast]);
+  }, [t, selectedMicrophone, selectedSystemDevice, captureCapabilities, setCapturePermissions, startAudioMeter, loadDevices, releaseMedia, restoreAudioRoute, showToast, stopRecording]);
 
   const toggleTestAudioRoute = async () => {
     setIsVerifying(true);
