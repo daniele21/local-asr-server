@@ -209,7 +209,8 @@ def create_app(
     def read_index() -> FileResponse:
         return FileResponse(
             static_dir / "index.html",
-            headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0}")
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+        )
 
     # Include routers
     app.include_router(analysis.router)
