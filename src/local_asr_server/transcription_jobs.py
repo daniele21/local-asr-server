@@ -9,6 +9,11 @@ from typing import Any, Callable
 
 from local_asr_server.jobs import JobStore
 from local_asr_server.jobs.models import TERMINAL_JOB_STATUSES
+from local_asr_server.runtime.workload_arbiter import (
+    HeavyWorkloadArbiter,
+    WorkloadArbiterClosed,
+    WorkloadQueueFull,
+)
 
 TRANSCRIPTION_JOB_TYPE = "transcription"
 DIARIZATION_JOB_TYPE = "diarization"
@@ -52,10 +57,16 @@ class TranscriptionJob:
 
 
 class TranscriptionJobManager:
-    def __init__(self, store: JobStore | None = None) -> None:
+    def __init__(
+        self,
+        store: JobStore | None = None,
+        *,
+        arbiter: HeavyWorkloadArbiter | None = None,
+    ) -> None:
         self._lock = threading.Lock()
         self._jobs: dict[str, TranscriptionJob] = {}
         self._store = store
+        self._arbiter = arbiter
 
     def create(
         self,
@@ -88,7 +99,28 @@ class TranscriptionJobManager:
             job.events.put(job.public())
         else:
             self._emit(job, "queued", 0)
-        threading.Thread(target=self._run, args=(job, runner), daemon=True).start()
+
+        if self._arbiter is None:
+            threading.Thread(target=self._run, args=(job, runner), daemon=True).start()
+            return job.public()
+
+        try:
+            self._arbiter.submit(
+                task_id=job.id,
+                workload_type=job.job_type,
+                run=lambda: self._run(job, runner),
+                on_cancel=lambda reason: self._cancel_before_start(job, reason),
+            )
+        except (WorkloadQueueFull, WorkloadArbiterClosed) as exc:
+            job.error = str(exc)[:2000]
+            self._emit(
+                job,
+                "failed",
+                job.progress,
+                "resource_admission",
+                message="heavy_workload_not_admitted",
+                event_payload={"reason": job.error},
+            )
         return job.public()
 
     def get(self, job_id: str) -> dict[str, Any] | None:
@@ -142,6 +174,8 @@ class TranscriptionJobManager:
         job.cancel_requested = True
         if self._store is not None:
             self._store.request_cancel(job.id)
+        if self._arbiter is not None:
+            self._arbiter.cancel_pending(job.id)
         self._emit(job, "cancelling", job.progress, "cancelling")
         return job.public()
 
@@ -180,6 +214,21 @@ class TranscriptionJobManager:
             return [self._event_public(event) for event in events]
         events = self.drain_events(job_id)
         return events
+
+    def _cancel_before_start(self, job: TranscriptionJob, reason: str) -> None:
+        if job.status in TERMINAL_JOB_STATUSES:
+            return
+        job.cancel_requested = True
+        if self._store is not None:
+            self._store.request_cancel(job.id)
+        self._emit(
+            job,
+            "cancelled",
+            job.progress,
+            "cancelled",
+            message=reason,
+            event_payload={"reason": reason},
+        )
 
     def _run(self, job: TranscriptionJob, runner: Callable[[TranscriptionJob], dict[str, Any]]) -> None:
         try:
