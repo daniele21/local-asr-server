@@ -17,6 +17,16 @@ For meaningful changes use the repo-local `structured-change` skill. For meaning
 - Preserve cancellation, shutdown, failure recovery and cleanup for run-owned processes, listeners, devices, jobs and temporary files.
 - Do not hand-edit generated Vite assets when the frontend source can regenerate them.
 
+## Branch strategy
+
+ClosedRoom uses `dev -> main` as the canonical flow.
+
+- `dev` is the integration/development branch. Feature, fix, refactor, UX/UI and engineering work should branch from the latest `dev` and open a pull request back to `dev`.
+- `main` is the stable branch. It should receive changes only through a promotion pull request from `dev` after the required exact-head validation is green.
+- Direct feature branches to `main` are non-canonical and fail the repository branch-flow preflight.
+- `speaker_detection` is retained only as historical context for the earlier product line; it is not a canonical development or release target.
+- Keep `dev` rebased/merged from the latest accepted work before opening `dev -> main`; do not maintain independent product changes directly on `main`.
+
 ## Validation
 
 Use the narrowest sufficient iteration checks, then `preflight-change` before publication. Canonical commands and current availability are defined in `.engineering/commands.json`.
@@ -29,4 +39,4 @@ When an E2E claim depends on macOS permissions/audio hardware, packaged app beha
 
 Keep one coherent outcome per PR. Describe the owning boundary, user-visible/contract impact, selected validation profile, executed evidence, pending remote/real-environment evidence and documentation/design-contract changes. Never mark a known-red or unexecuted gate as passing.
 
-For the current baseline migration, `speaker_detection` is the product base from which `engineering-baseline-0.8` was derived. Re-check the intended target base before future work rather than assuming this branch relationship remains permanent.
+Before opening a PR, verify the target branch explicitly: ordinary work targets `dev`; only stable promotion uses `dev -> main`.

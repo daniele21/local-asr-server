@@ -2,6 +2,12 @@
 
 Describe the user/system outcome and the owning boundary changed.
 
+## Branch flow
+
+- Target branch: `dev` for ordinary work / `main` only for `dev -> main` stable promotion
+- Source branch:
+- [ ] This PR follows the canonical `feature|fix|chore -> dev` or `dev -> main` flow
+
 ## Scope and contracts
 
 - Owning source(s):

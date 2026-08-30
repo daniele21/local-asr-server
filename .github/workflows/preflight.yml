@@ -2,10 +2,10 @@ name: Remote preflight
 
 on:
   pull_request:
-    branches: [speaker_detection]
+    branches: [dev, main]
     types: [opened, synchronize, reopened, ready_for_review]
   push:
-    branches: [speaker_detection]
+    branches: [dev, main]
 
 permissions:
   contents: read
@@ -29,6 +29,34 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
+      - name: Enforce canonical branch flow
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
+            exit 0
+          fi
+          case "$BASE_REF" in
+            dev)
+              if [[ "$HEAD_REF" == "main" ]]; then
+                echo "main is the stable branch and must not flow back into dev via PR." >&2
+                exit 1
+              fi
+              ;;
+            main)
+              if [[ "$HEAD_REF" != "dev" ]]; then
+                echo "Stable promotion must be dev -> main; got $HEAD_REF -> main." >&2
+                exit 1
+              fi
+              ;;
+            *)
+              echo "Canonical PR targets are dev and main; got $BASE_REF." >&2
+              exit 1
+              ;;
+          esac
       - name: Resolve exact base/head
         id: identity
         env:
