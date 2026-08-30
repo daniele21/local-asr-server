@@ -133,10 +133,11 @@ class AudioIntelligenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "silent.wav"
             write_tone_wav(path, tone_ranges=[])
-            result = TranscriptionService._skip_near_silent_track(path, {"id": "mic"})
+            result, stats = TranscriptionService._inspect_track(path, {"id": "mic"})
         self.assertIsNotNone(result)
         self.assertTrue(result["metadata"]["skipped"])
         self.assertEqual(result["metadata"]["skip_reason"], "near_silent_track")
+        self.assertLessEqual(stats["peak"], 0.003)
 
 
 if __name__ == "__main__":
