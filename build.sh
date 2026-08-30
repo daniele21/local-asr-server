@@ -35,7 +35,10 @@ APP_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('$SCRIPT_DIR/p
 BUNDLE_ID="${CLOSEDROOM_APP_BUNDLE_ID:-com.closedroom.app}"
 BUILD_PYTHON_VERSION="${CLOSEDROOM_BUILD_PYTHON_VERSION:-3.10}"
 BUILD_ASSETS="$SCRIPT_DIR/build_assets"
-export UV_CACHE_DIR="${UV_CACHE_DIR:-$SCRIPT_DIR/.cache/uv}"
+# uv refuses to build a source tree when its cache lives inside that same tree.
+# Keep the packaging cache outside the repository while still allowing callers
+# to provide their own external cache location.
+export UV_CACHE_DIR="${UV_CACHE_DIR:-$HOME/Library/Caches/ClosedRoom/uv}"
 export PYINSTALLER_CONFIG_DIR="${PYINSTALLER_CONFIG_DIR:-$SCRIPT_DIR/.cache/pyinstaller}"
 DIST_DIR="$SCRIPT_DIR/dist"
 APP_BUNDLE_BASENAME="${APP_NAME}-${APP_VERSION}"
