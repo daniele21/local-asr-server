@@ -18,7 +18,6 @@ import { NEW_RECORDING_PROJECT_STORAGE_KEY } from '../api/config';
 import { useTranslation } from '../i18n/i18n';
 import { useToast } from '../context/ToastContext';
 import { openBrowserPopup, useRecorder } from '../hooks/useRecorder';
-import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Checkbox } from '../components/ui/Checkbox';
@@ -40,6 +39,7 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
   const [projectName, setProjectName] = useState('');
   const [sourceMode, setSourceMode] = useState<'both' | 'mic_only' | 'pc_only'>('both');
   const [recordingsDir, setRecordingsDir] = useState('');
+  const [storageConfigured, setStorageConfigured] = useState(false);
   const [projectsList, setProjectsList] = useState<string[]>([]);
   const [visualIntelligenceEnabled, setVisualIntelligenceEnabled] = useState(false);
   const [speakerDiarizationEnabled, setSpeakerDiarizationEnabled] = useState(false);
@@ -56,6 +56,7 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
   const [storageSaving, setStorageSaving] = useState(false);
 
   const recorder = useRecorder((recording: Recording) => {
+    // Meetings are addressed by recording id throughout the meeting API.
     navigateTo('meeting', recording.id);
   });
 
@@ -86,10 +87,8 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
   const computerReady = nativeCaptureReady
     ? ((sourceMode === 'mic_only' && !visualCaptureSelected) || recorder.capturePermissions?.screen_capture === 'granted')
     : (!needsComputerAudio || Boolean(recorder.audioRouteStatus?.ready_to_record) || recorder.systemDevices.length > 0);
-  const storageReady = recordingsDir.trim().length > 0;
-  const readyToRecord = nativeCaptureReady
-    ? ((recorder.capturePermissions?.modes?.[sourceMode]?.ok ?? false) && storageReady)
-    : (micReady && computerReady && storageReady);
+  const storageReady = storageConfigured && recordingsDir.trim().length > 0;
+  const readyToRecord = micReady && computerReady && storageReady;
 
   const captureModeOptions = [
     { value: 'both', label: t('recording.captureModeBoth') },
@@ -114,7 +113,9 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
     const loadSettings = async () => {
       try {
         const settings = await ApiClient.getSettings();
-        setRecordingsDir(settings.recordings_dir || '');
+        const configuredDir = settings.recordings_dir || '';
+        setRecordingsDir(configuredDir);
+        setStorageConfigured(Boolean(configuredDir.trim()));
         setSpeakerDiarizationEnabled(Boolean(settings.speaker_diarization_enabled));
         setVisualIntelligenceEnabled(Boolean(settings.visual_intelligence_enabled));
         setVisualModel(settings.visual_llm_model || '');
@@ -194,30 +195,42 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
     }
   };
 
-  const handleBrowseDir = async () => {
-    try {
-      const result = await ApiClient.selectDirectory();
-      if (result?.path) setRecordingsDir(result.path);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : t('transcription.browseError'), 'error');
-    }
-  };
-
-  const handleSaveStorage = async () => {
-    if (!recordingsDir.trim()) return;
+  const persistStorageDir = async (path: string) => {
+    if (!path.trim()) return;
     setStorageSaving(true);
     try {
-      await ApiClient.updateSettings({ recordings_dir: recordingsDir.trim() });
+      await ApiClient.updateSettings({ recordings_dir: path.trim() });
+      setRecordingsDir(path.trim());
+      setStorageConfigured(true);
       showToast(t('transcription.saveSuccessAudioDir'), 'success');
     } catch (err) {
+      setStorageConfigured(false);
       showToast(err instanceof Error ? err.message : t('common.error'), 'error');
     } finally {
       setStorageSaving(false);
     }
   };
 
+  const handleBrowseDir = async () => {
+    try {
+      const result = await ApiClient.selectDirectory();
+      if (result?.path) await persistStorageDir(result.path);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : t('transcription.browseError'), 'error');
+    }
+  };
+
   const statusSummary = (() => {
-    if (recorder.isRecording) return { tone: 'recording', title: t('recording.statusRecording'), detail: recorder.progressText };
+    if (recorder.isRecording) {
+      return { tone: 'recording', title: t('recording.statusRecording'), detail: recorder.progressText };
+    }
+    if (recorder.statusState === 'error') {
+      return {
+        tone: 'blocked',
+        title: recorder.statusText || t('common.error'),
+        detail: recorder.progressText || (lang === 'it' ? 'Controlla il problema e riprova.' : 'Check the issue and try again.'),
+      };
+    }
     if (readyToRecord) {
       return {
         tone: 'ready',
@@ -233,7 +246,9 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
       return {
         tone: 'blocked',
         title: lang === 'it' ? 'Scegli dove salvare i meeting' : 'Choose where meetings are saved',
-        detail: lang === 'it' ? 'Serve una cartella locale prima della prima registrazione.' : 'A local folder is required before the first recording.',
+        detail: lang === 'it'
+          ? 'Serve una cartella locale prima della prima registrazione.'
+          : 'A local folder is required before the first recording.',
       };
     }
     if (nativeCaptureReady && (!micReady || !computerReady)) {
@@ -242,13 +257,17 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
         title: lang === 'it' ? 'ClosedRoom ha bisogno di un permesso' : 'ClosedRoom needs a permission',
         detail: !micReady
           ? (lang === 'it' ? 'Consenti l’accesso al microfono per continuare.' : 'Allow microphone access to continue.')
-          : (lang === 'it' ? 'Consenti Registrazione schermo per acquisire l’audio del computer.' : 'Allow Screen Recording to capture computer audio.'),
+          : (lang === 'it'
+            ? 'Consenti Registrazione schermo per acquisire l’audio del computer.'
+            : 'Allow Screen Recording to capture computer audio.'),
       };
     }
     return {
       tone: 'blocked',
       title: lang === 'it' ? 'Configurazione audio da completare' : 'Audio setup needs attention',
-      detail: lang === 'it' ? 'Apri le opzioni audio e verifica il dispositivo da usare.' : 'Open audio options and verify the device to use.',
+      detail: lang === 'it'
+        ? 'Apri le opzioni audio e verifica il dispositivo da usare.'
+        : 'Open audio options and verify the device to use.',
     };
   })();
 
@@ -335,12 +354,12 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
               </Button>
             )}
             {!recorder.isRecording && !storageReady && (
-              <Button type="button" size="sm" variant="secondary" onClick={handleBrowseDir} className="shrink-0">
+              <Button type="button" size="sm" variant="secondary" onClick={handleBrowseDir} isLoading={storageSaving} className="shrink-0">
                 <FolderOpen className="h-4 w-4" />
                 {t('settings.btnBrowse')}
               </Button>
             )}
-            {!recorder.isRecording && !nativeCaptureReady && nativeCaptureChecked && !readyToRecord && (
+            {!recorder.isRecording && !nativeCaptureReady && nativeCaptureChecked && !readyToRecord && storageReady && (
               <Button type="button" size="sm" variant="secondary" onClick={() => setShowOptions(true)} className="shrink-0">
                 <SlidersHorizontal className="h-4 w-4" />
                 {lang === 'it' ? 'Configura audio' : 'Configure audio'}
@@ -356,24 +375,33 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
                 <Input
                   label={t('settings.recordingsFolderLabel')}
                   value={recordingsDir}
-                  onChange={(event) => setRecordingsDir(event.target.value)}
+                  onChange={(event) => {
+                    setRecordingsDir(event.target.value);
+                    setStorageConfigured(false);
+                  }}
                   placeholder="~/ClosedRoom/Recordings"
                 />
               </div>
               <div className="flex gap-2">
-                <Button type="button" variant="secondary" onClick={handleBrowseDir}>
+                <Button type="button" variant="secondary" onClick={handleBrowseDir} isLoading={storageSaving}>
                   <FolderOpen className="h-4 w-4" />
                   {t('settings.btnBrowse')}
                 </Button>
-                <Button type="button" variant="secondary" onClick={handleSaveStorage} isLoading={storageSaving} disabled={!recordingsDir.trim()}>
-                  {t('common.save')}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => persistStorageDir(recordingsDir)}
+                  isLoading={storageSaving}
+                  disabled={!recordingsDir.trim()}
+                >
+                  {lang === 'it' ? 'Salva' : 'Save'}
                 </Button>
               </div>
             </div>
           </section>
         )}
 
-        {/* Keep the canvas mounted so the recorder can bind its visualizer before recording starts. */}
+        {/* Keep the canvas mounted so useRecorder can bind its visualizer before capture starts. */}
         <section className={recorder.isRecording ? 'rounded-xl border border-border-subtle bg-bg-elevated p-4' : 'hidden'}>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -386,7 +414,7 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
                 <strong className="mt-1 block font-mono text-text-primary">{recorder.signalLevelMic}</strong>
               </div>
               <div className="rounded-lg border border-border-subtle bg-bg-surface px-3 py-2">
-                <span className="block text-text-muted">{lang === 'it' ? 'Computer' : 'Computer'}</span>
+                <span className="block text-text-muted">Computer</span>
                 <strong className="mt-1 block font-mono text-text-primary">{recorder.signalLevelSystem}</strong>
               </div>
             </div>
@@ -441,7 +469,10 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
               <Select
                 label={lang === 'it' ? 'Audio da registrare' : 'Audio to record'}
                 value={sourceMode}
-                onChange={(event) => setSourceMode(event.target.value as 'both' | 'mic_only' | 'pc_only')}
+                onChange={(event) => {
+                  setSourceMode(event.target.value as 'both' | 'mic_only' | 'pc_only');
+                  setPermissionError(null);
+                }}
                 disabled={recorder.isRecording}
               >
                 {captureModeOptions.map((option) => (
@@ -475,7 +506,10 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
                       <Select
                         label={t('recording.visualWindowLabel')}
                         value={selectedVisualWindowId}
-                        onChange={(event) => setSelectedVisualWindowId(event.target.value)}
+                        onChange={(event) => {
+                          setSelectedVisualWindowId(event.target.value);
+                          setPermissionError(null);
+                        }}
                         disabled={captureWindowsLoading || recorder.isRecording}
                       >
                         <option value="">
@@ -595,8 +629,10 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
               {!nativeCaptureReady && recorder.audioRouteStatus && (
                 <div className="rounded-lg border border-border-subtle bg-bg-surface p-3">
                   <div><strong className="text-text-primary">Audio route:</strong> {recorder.audioRouteStatus.ready_to_record ? 'ready' : 'not ready'}</div>
-                  {recorder.audioRouteStatus.output_device && <div className="mt-1">Output: {recorder.audioRouteStatus.output_device}</div>}
-                  {recorder.audioRouteStatus.input_device && <div className="mt-1">Input: {recorder.audioRouteStatus.input_device}</div>}
+                  {recorder.audioRouteStatus.physical_output && <div className="mt-1">Output: {recorder.audioRouteStatus.physical_output}</div>}
+                  {recorder.audioRouteStatus.missing && recorder.audioRouteStatus.missing.length > 0 && (
+                    <div className="mt-1 text-warning">Missing: {recorder.audioRouteStatus.missing.join(', ')}</div>
+                  )}
                 </div>
               )}
 
