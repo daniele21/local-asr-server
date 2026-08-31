@@ -25,6 +25,24 @@ class ValidationProfileSelectorTests(unittest.TestCase):
         result = selector.select_profile(["src/local_asr_server/runtime/service_manager.py"])
         self.assertEqual(result["profile"], "strong")
 
+    def test_e2e_contract_dot_path_is_strong(self):
+        result = selector.select_profile([".engineering/e2e.json"])
+        self.assertEqual(result["profile"], "strong")
+
+    def test_workflow_dot_path_is_full(self):
+        result = selector.select_profile([".github/workflows/preflight.yml"])
+        self.assertEqual(result["profile"], "full")
+
+    def test_exact_dotfile_keeps_its_profile(self):
+        result = selector.select_profile([".editorconfig"])
+        self.assertEqual(result["profile"], "lean")
+
+    def test_dot_slash_prefix_preserves_dot_path_classification(self):
+        self.assertEqual(
+            selector.classify_path("./.engineering/e2e.json"),
+            selector.classify_path(".engineering/e2e.json"),
+        )
+
     def test_build_or_selector_change_is_full(self):
         for path in ("build.sh", "pyproject.toml", "scripts/select_validation_profile.py"):
             with self.subTest(path=path):
