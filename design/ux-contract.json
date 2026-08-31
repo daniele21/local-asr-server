@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "contract_version": "0.5.0",
+  "contract_version": "0.6.0",
   "applicable": true,
   "design_source_of_truth": {
     "type": "code-first",
@@ -42,6 +42,40 @@
     "platform_appropriate": true,
     "bounded_information_density": true,
     "actionable_error_recovery": true
+  },
+  "golden_path": {
+    "steps": [
+      "home",
+      "new_meeting",
+      "record",
+      "stop",
+      "transcribe",
+      "analyze",
+      "review"
+    ],
+    "normal_path_rule": "A configured user can complete the golden path without understanding backend, helper, process, port, model-path or routing concepts.",
+    "surface_hierarchy": {
+      "home": "understand what happened, what needs attention and what to open or do next",
+      "new_meeting": "confirm meeting context and start recording",
+      "record": "understand capture status and safely stop",
+      "transcribe": "start transcription, understand progress and recover from failure",
+      "analyze": "choose the trust/runtime boundary in user language and run analysis with strong defaults",
+      "review": "review transcript, speakers, actions, decisions, risks and derived insights"
+    }
+  },
+  "complexity_disclosure": {
+    "tiers": [
+      "essential",
+      "contextual",
+      "advanced",
+      "diagnostics"
+    ],
+    "essential": "Information and actions required to complete the user's current task.",
+    "contextual": "Optional task-relevant choices such as project, capture source or enrichment that can change the outcome.",
+    "advanced": "Expert configuration such as model or quality overrides that normal use does not require.",
+    "diagnostics": "Internal runtime, helper, process, port, log, routing and model-path details used for troubleshooting rather than normal operation.",
+    "diagnostics_default_hidden": true,
+    "recovery_exception": "A technical condition may surface outside diagnostics only when the user must act on it; present the user-facing consequence and recovery action before raw technical detail."
   },
   "critical_states": [
     "loading",

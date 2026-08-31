@@ -44,6 +44,10 @@ The gap-closing implementation is on `close-baseline-gaps`. Its deterministic un
 
 Historical planning documents still need a separate lifecycle cleanup; they are not treated as current operational truth.
 
+## Active workstream
+
+- [`docs/workstreams/ux-simplification.md`](workstreams/ux-simplification.md): simplify the primary meeting journey, progressively disclose runtime diagnostics, and harden accessibility/evidence across recording, meeting review, analysis and settings.
+
 ## Next highest-value work
 
 1. Obtain green exact-head remote preflight for the gap-closing PR, including finalized `.app` package smoke on macOS arm64.

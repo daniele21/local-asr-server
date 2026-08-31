@@ -51,6 +51,18 @@ function analysisLabel(type: string): string {
   return ANALYSIS_TYPE_LABELS[type] || type;
 }
 
+function meetingStatusLabel(status: string, lang: string): string {
+  const labels: Record<string, { it: string; en: string }> = {
+    ready: { it: 'Pronto', en: 'Ready' },
+    analyzing: { it: 'Analisi in corso', en: 'Analyzing' },
+    processing: { it: 'Elaborazione', en: 'Processing' },
+    recording: { it: 'Registrazione', en: 'Recording' },
+    completed: { it: 'Completato', en: 'Completed' },
+    failed: { it: 'Errore', en: 'Failed' },
+  };
+  return labels[status]?.[lang === 'it' ? 'it' : 'en'] || status;
+}
+
 export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = false }: MeetingDetailPageProps) {
   const { t, lang } = useTranslation();
   const [meeting, setMeeting] = useState<Meeting | null>(null);
@@ -81,7 +93,6 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
   const { data: visualData, loading: visualLoading, error: visualError } = useVisualIntelligence(
     demoMode ? null : recordingId, visualEnabled,
   );
-
 
   const load = async () => {
     if (!recordingId) return;
@@ -188,8 +199,8 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-accent" />
+      <div className="flex flex-col items-center justify-center py-20 gap-3" role="status" aria-live="polite">
+        <Loader2 className="w-8 h-8 animate-spin text-accent" aria-hidden="true" />
         <span className="text-sm text-text-secondary">{t('meeting.loadingMeeting')}</span>
       </div>
     );
@@ -197,7 +208,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
 
   if (!meeting) {
     return (
-      <div className="border border-border-subtle rounded-lg p-8 text-center">
+      <div className="border border-border-subtle rounded-lg p-8 text-center" role="alert">
         <p className="text-danger">{error || t('meeting.errorNotFound')}</p>
         <Button className="mt-4" variant="secondary" onClick={() => navigateTo('home')}>{t('meeting.backToToday')}</Button>
       </div>
@@ -232,16 +243,19 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
     return <Badge variant="idle">{t('meeting.enrichmentUnavailable')}</Badge>;
   };
 
+  const tabId = (tab: 'transcript' | 'analysis' | 'speakers') => `meeting-tab-${tab}`;
+  const panelId = (tab: 'transcript' | 'analysis' | 'speakers') => `meeting-panel-${tab}`;
+
   return (
     <div className="flex flex-col gap-5">
-      {/* Redesigned Header Block */}
+      {/* Header */}
       <section className="flex flex-col gap-4 border-b border-border-subtle pb-4">
         <div className="flex items-center justify-between gap-4">
           <button
             onClick={() => navigateTo('home')}
             className="inline-flex items-center gap-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors"
           >
-            <ArrowLeft className="w-3.5 h-3.5" />
+            <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
             <span>{t('dashboard.title')}</span>
           </button>
         </div>
@@ -256,14 +270,14 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                 </span>
               )}
               <Badge variant={meeting.status === 'ready' ? 'success' : meeting.status === 'analyzing' ? 'warning' : 'idle'}>
-                {meeting.status}
+                {meetingStatusLabel(meeting.status, lang)}
               </Badge>
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-text-muted">
               <span>{formatProjectDate(meeting.created_at, lang)}</span>
-              <span>•</span>
+              <span aria-hidden="true">•</span>
               <span>{recordingDuration > 0 ? `${Math.round(recordingDuration / 60)} min` : t('projects.durationNotAvailable')}</span>
-              <span>•</span>
+              <span aria-hidden="true">•</span>
               <span>{formatBytes(meeting.recording.bytes_written || 0)}</span>
             </div>
           </div>
@@ -273,7 +287,9 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               variant="ghost"
               size="sm"
               onClick={() => setShowAudioPlayer((prev) => !prev)}
-              className={cn("h-8 px-2.5", showAudioPlayer && "bg-bg-hover text-text-primary")}
+              className={cn('h-8 px-2.5', showAudioPlayer && 'bg-bg-hover text-text-primary')}
+              aria-expanded={showAudioPlayer}
+              aria-controls="meeting-audio-player"
             >
               <PlayCircle className="w-4 h-4 text-accent" />
               <span>{t('meeting.audioTitle')}</span>
@@ -289,12 +305,11 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
           </div>
         </div>
 
-        {/* Inline Toggleable Audio Player */}
         {showAudioPlayer && (
-          <div className="workspace-panel rounded-xl border border-border-subtle p-3.5 animate-in slide-in-from-top-3 duration-250">
+          <div id="meeting-audio-player" className="workspace-panel rounded-xl border border-border-subtle p-3.5 animate-in slide-in-from-top-3 duration-250">
             <div className="flex items-center justify-between gap-3 mb-2">
               <span className="text-xs font-semibold text-text-primary flex items-center gap-1.5">
-                <PlayCircle className="h-3.5 h-3.5 text-accent" />
+                <PlayCircle className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
                 {t('meeting.audioTitle')}
               </span>
               <button
@@ -330,67 +345,18 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
         </section>
       )}
 
-      {/* Busy / Processing State */}
+      {/* Processing state keeps user-facing progress in the main journey; diagnostics live in Details. */}
       {(activeJobs.length > 0 || meeting.analysis_runs.some((run) => activeJobStatuses.has(run.status))) && (
-        <section className="border border-warning/30 bg-warning/5 rounded-xl px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs animate-in fade-in duration-200">
+        <section
+          className="border border-warning/30 bg-warning/5 rounded-xl px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs animate-in fade-in duration-200"
+          role="status"
+          aria-live="polite"
+        >
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0 flex-1">
             <div className="flex items-center gap-2 text-sm font-semibold text-text-primary shrink-0">
-              <Clock3 className="w-4 h-4 text-warning" />
+              <Clock3 className="w-4 h-4 text-warning" aria-hidden="true" />
               <span>{t('meeting.processingTitle')}</span>
             </div>
-
-            {diagnostics.length > 0 && (
-              <div className="rounded-xl border border-border-subtle bg-bg-surface p-4">
-                <h4 className="text-[10px] font-bold text-text-muted uppercase tracking-wider mb-3">
-                  {t('meeting.diagnosticsTitle')}
-                </h4>
-                <div className="flex flex-col gap-3">
-                  {diagnostics.map((item, index) => (
-                    <div key={`${item.component}-${index}`} className="border-b border-border-subtle pb-3 last:border-0 last:pb-0 text-xs">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="font-semibold text-text-primary">{item.component}</span>
-                        {enrichmentBadge(item.status)}
-                      </div>
-                      {(item.requested_backend || item.actual_backend) && (
-                        <p className="mt-1 text-text-muted font-mono break-all">
-                          {item.requested_backend || '—'} → {item.actual_backend || '—'}
-                        </p>
-                      )}
-                      {(item.fallback_used || item.fallback_reason) && (
-                        <p className="mt-1 text-warning">{t('meeting.fallbackLabel')}: {item.fallback_reason || 'fallback'}</p>
-                      )}
-                      {item.error && <p className="mt-1 text-danger break-words">{item.error}</p>}
-                      {Boolean(item.details?.model_path) && (
-                        <p className="mt-1 text-text-muted font-mono break-all">
-                          {t('meeting.modelPathLabel')}: {String(item.details?.model_path)}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                {diagnosticWarnings.length === 0 && (
-                  <p className="mt-3 text-xs text-text-muted">{t('meeting.noDiagnosticWarnings')}</p>
-                )}
-                {diagnosticReport?.log_file && (
-                  <div className="mt-4 border-t border-border-subtle pt-3">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">{t('meeting.logFileLabel')}</p>
-                    <button
-                      type="button"
-                      className="mt-1 text-left text-xs font-mono text-accent hover:underline break-all"
-                      onClick={() => navigator.clipboard?.writeText(diagnosticReport.log_file || '')}
-                      title={t('meeting.copyLogPath')}
-                    >
-                      {diagnosticReport.log_file}
-                    </button>
-                    {diagnosticReport.log_lines.length > 0 && (
-                      <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-md bg-bg-elevated p-2 text-[10px] text-text-muted">
-                        {diagnosticReport.log_lines.join('\n')}
-                      </pre>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-text-secondary">
               {activeJobs.map((job) => (
                 <div key={job.id} className="flex items-center gap-2">
@@ -400,7 +366,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                     onClick={() => handleCancelJob(job.id)}
                     className="text-danger hover:text-danger-hover transition-colors font-semibold text-[11px] flex items-center gap-1 cursor-pointer bg-danger/10 hover:bg-danger/20 px-2 py-0.5 rounded"
                   >
-                    <XCircle className="w-3 h-3" />
+                    <XCircle className="w-3 h-3" aria-hidden="true" />
                     {t('common.cancel')}
                   </button>
                 </div>
@@ -414,7 +380,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                       onClick={() => handleCancelJob(run.job_id!)}
                       className="text-danger hover:text-danger-hover transition-colors font-semibold text-[11px] flex items-center gap-1 cursor-pointer bg-danger/10 hover:bg-danger/20 px-2 py-0.5 rounded"
                     >
-                      <XCircle className="w-3 h-3" />
+                      <XCircle className="w-3 h-3" aria-hidden="true" />
                       {t('common.cancel')}
                     </button>
                   )}
@@ -422,16 +388,17 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               ))}
             </div>
           </div>
+          <Button variant="ghost" size="sm" onClick={() => setDetailsOpen(true)} className="shrink-0">
+            {lang === 'it' ? 'Dettagli' : 'Details'}
+          </Button>
         </section>
       )}
 
-      {/* Main Single Column Layout */}
       <div className="flex flex-col gap-5 w-full">
-        {/* Next Step Contestual CTA Banners */}
         {!isBusy && !meeting.transcription && (
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-4 py-3.5 rounded-xl border border-warning/25 bg-warning/5">
             <div className="flex items-start gap-2.5 min-w-0">
-              <FileText className="h-5 w-5 text-warning shrink-0 mt-0.5" />
+              <FileText className="h-5 w-5 text-warning shrink-0 mt-0.5" aria-hidden="true" />
               <div>
                 <h4 className="text-xs font-semibold text-text-primary">{lang === 'it' ? 'Passo successivo: Trascrizione' : 'Next Step: Transcription'}</h4>
                 <p className="text-[11px] text-text-secondary leading-relaxed mt-0.5">{t('meeting.transcribeDescription')}</p>
@@ -452,7 +419,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
         {!isBusy && meeting.transcription && Object.keys(meeting.latest_analysis || {}).length === 0 && (
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-4 py-3.5 rounded-xl border border-accent/25 bg-accent-soft">
             <div className="flex items-start gap-2.5 min-w-0">
-              <Sparkles className="h-5 w-5 text-accent shrink-0 mt-0.5" />
+              <Sparkles className="h-5 w-5 text-accent shrink-0 mt-0.5" aria-hidden="true" />
               <div>
                 <h4 className="text-xs font-semibold text-text-primary">{lang === 'it' ? 'Passo successivo: Analisi AI' : 'Next Step: AI Analysis'}</h4>
                 <p className="text-[11px] text-text-secondary leading-relaxed mt-0.5">{t('meeting.analyzeDescription')}</p>
@@ -463,7 +430,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                 size="sm"
                 onClick={() => openAnalysisSetup('meeting_default')}
                 isLoading={busyAction === 'meeting_default'}
-                className="flex-1 sm:flex-none shadow-cta animate-pulse"
+                className="flex-1 sm:flex-none shadow-cta"
               >
                 <Sparkles className="h-4 w-4" />
                 {t('meeting.btnAnalyze')}
@@ -483,70 +450,87 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
         )}
 
         {error && (
-          <div className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger animate-fade-in">
+          <div className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger animate-fade-in" role="alert">
             {error}
           </div>
         )}
 
-        {/* Content Section: Analysis Card (Full Width) */}
         <main className="flex flex-col gap-5 w-full">
-          {/* Tab bar */}
-          <div className="flex border border-border-subtle bg-bg-surface/30 p-1 rounded-xl gap-1">
+          <div
+            className="flex border border-border-subtle bg-bg-surface/30 p-1 rounded-xl gap-1"
+            role="tablist"
+            aria-label={lang === 'it' ? 'Contenuto del meeting' : 'Meeting content'}
+          >
             <button
+              id={tabId('transcript')}
+              role="tab"
+              aria-selected={activeTab === 'transcript'}
+              aria-controls={panelId('transcript')}
+              tabIndex={activeTab === 'transcript' ? 0 : -1}
               onClick={() => setActiveTab('transcript')}
               className={cn(
-                "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer",
+                'flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer',
                 activeTab === 'transcript'
-                  ? "bg-accent text-white shadow-sm"
-                  : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+                  ? 'bg-accent text-white shadow-sm'
+                  : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover',
               )}
             >
-              <FileText className="w-4 h-4" />
+              <FileText className="w-4 h-4" aria-hidden="true" />
               <span>{t('meeting.tabTranscript')}</span>
               {meeting.transcription && (
                 <span className={cn(
-                  "ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold border",
-                  activeTab === 'transcript' ? "bg-white/20 border-white/20 text-white" : "bg-bg-elevated border-border-subtle text-text-secondary"
+                  'ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold border',
+                  activeTab === 'transcript' ? 'bg-white/20 border-white/20 text-white' : 'bg-bg-elevated border-border-subtle text-text-secondary',
                 )}>
                   {meeting.transcription.segments?.length || 0}
                 </span>
               )}
             </button>
             <button
+              id={tabId('analysis')}
+              role="tab"
+              aria-selected={activeTab === 'analysis'}
+              aria-controls={panelId('analysis')}
+              tabIndex={activeTab === 'analysis' ? 0 : -1}
               onClick={() => setActiveTab('analysis')}
               className={cn(
-                "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer",
+                'flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer',
                 activeTab === 'analysis'
-                  ? "bg-accent text-white shadow-sm"
-                  : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+                  ? 'bg-accent text-white shadow-sm'
+                  : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover',
               )}
             >
-              <Sparkles className="w-4 h-4" />
+              <Sparkles className="w-4 h-4" aria-hidden="true" />
               <span>{t('meeting.tabAnalysis')}</span>
               {meeting.analysis_runs.length > 0 && (
                 <span className={cn(
-                  "ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold border",
-                  activeTab === 'analysis' ? "bg-white/20 border-white/20 text-white" : "bg-bg-elevated border-border-subtle text-text-secondary"
+                  'ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold border',
+                  activeTab === 'analysis' ? 'bg-white/20 border-white/20 text-white' : 'bg-bg-elevated border-border-subtle text-text-secondary',
                 )}>
                   {meeting.analysis_runs.length}
                 </span>
               )}
             </button>
             <button
+              id={tabId('speakers')}
+              role="tab"
+              aria-selected={activeTab === 'speakers'}
+              aria-controls={panelId('speakers')}
+              tabIndex={activeTab === 'speakers' ? 0 : -1}
               onClick={() => setActiveTab('speakers')}
               className={cn(
-                "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer",
+                'flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer',
                 activeTab === 'speakers'
-                  ? "bg-accent text-white shadow-sm"
-                  : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+                  ? 'bg-accent text-white shadow-sm'
+                  : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover',
               )}
             >
-              <Users className="w-4 h-4" />
+              <Users className="w-4 h-4" aria-hidden="true" />
               <span>{t('meeting.tabSpeakers')}</span>
               {speakerMappings.length > 0 && (
                 <span className={cn(
-                  "ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold border",
-                  activeTab === 'speakers' ? "bg-white/20 border-white/20 text-white" : "bg-bg-elevated border-border-subtle text-text-secondary"
+                  'ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold border',
+                  activeTab === 'speakers' ? 'bg-white/20 border-white/20 text-white' : 'bg-bg-elevated border-border-subtle text-text-secondary',
                 )}>
                   {speakerMappings.length}
                 </span>
@@ -554,10 +538,15 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
             </button>
           </div>
 
-          {/* Active Tab Content */}
           <div className="flex flex-col gap-5 w-full">
             {activeTab === 'transcript' && (
-              <div className="surface-primary rounded-xl border border-border-subtle shadow-premium overflow-hidden">
+              <div
+                id={panelId('transcript')}
+                role="tabpanel"
+                aria-labelledby={tabId('transcript')}
+                tabIndex={0}
+                className="surface-primary rounded-xl border border-border-subtle shadow-premium overflow-hidden"
+              >
                 {meeting.transcription && !demoMode && (
                   <div className="px-4 py-3 border-b border-border-subtle bg-bg-elevated flex items-center justify-between gap-3">
                     <span className="text-xs text-text-secondary font-medium">
@@ -593,7 +582,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                   </div>
                 ) : (
                   <div className="text-center py-16 bg-bg-elevated">
-                    <FileText className="w-8 h-8 mx-auto text-text-muted mb-3" />
+                    <FileText className="w-8 h-8 mx-auto text-text-muted mb-3" aria-hidden="true" />
                     <p className="text-sm text-text-secondary">{t('meeting.transcriptNotAvailable')}</p>
                     {!isBusy && !demoMode && (
                       <Button
@@ -611,10 +600,16 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
             )}
 
             {activeTab === 'analysis' && (
-              <div className="surface-primary rounded-xl overflow-hidden border border-border-subtle shadow-premium">
+              <div
+                id={panelId('analysis')}
+                role="tabpanel"
+                aria-labelledby={tabId('analysis')}
+                tabIndex={0}
+                className="surface-primary rounded-xl overflow-hidden border border-border-subtle shadow-premium"
+              >
                 <div className="px-4 py-3 border-b border-border-subtle bg-bg-elevated flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-accent animate-pulse" />
+                    <Sparkles className="w-4 h-4 text-accent" aria-hidden="true" />
                     <h3 className="text-sm font-semibold text-text-primary">{t('meeting.analysisTitle')}</h3>
                   </div>
                   <div className="flex items-center gap-2">
@@ -625,6 +620,8 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                           variant="ghost"
                           onClick={() => setMoreOpen((open) => !open)}
                           aria-expanded={moreOpen}
+                          aria-haspopup="menu"
+                          aria-controls="meeting-analysis-menu"
                           className="h-7 text-xs text-text-muted hover:text-text-primary"
                         >
                           <Sparkles className="h-3.5 w-3.5 text-accent" />
@@ -632,9 +629,10 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                           <ChevronDown className="h-3 w-3" />
                         </Button>
                         {moreOpen && (
-                          <div className="absolute right-0 top-8 z-40 w-48 rounded-lg border border-border-subtle bg-bg-surface p-1 shadow-premium">
+                          <div id="meeting-analysis-menu" role="menu" className="absolute right-0 top-8 z-40 w-48 rounded-lg border border-border-subtle bg-bg-surface p-1 shadow-premium">
                             <button
                               type="button"
+                              role="menuitem"
                               disabled={demoMode || isBusy}
                               onClick={() => {
                                 setMoreOpen(false);
@@ -642,11 +640,12 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                               }}
                               className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50"
                             >
-                              <Sparkles className="h-3.5 w-3.5" />
+                              <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
                               {t('meeting.analyzeDetail')}
                             </button>
                             <button
                               type="button"
+                              role="menuitem"
                               disabled={demoMode || isBusy}
                               onClick={() => {
                                 setMoreOpen(false);
@@ -654,7 +653,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                               }}
                               className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50"
                             >
-                              <ListChecks className="h-3.5 w-3.5" />
+                              <ListChecks className="h-3.5 w-3.5" aria-hidden="true" />
                               {t('meeting.deepDetail')}
                             </button>
                           </div>
@@ -667,7 +666,6 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                   </div>
                 </div>
 
-                {/* Smart Analysis Tabs (Show only generated or default brief if none exist) */}
                 <div className="flex flex-wrap gap-1 p-2 border-b border-border-subtle bg-bg-surface/50">
                   {analysisTypes
                     .filter((type) => meeting.latest_analysis?.[type] || (!Object.keys(meeting.latest_analysis || {}).length && type === 'meeting_brief'))
@@ -684,7 +682,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                           }`}
                         >
                           {analysisLabel(type)}
-                          {run && <CheckCircle2 className="inline-block ml-1.5 w-3.5 h-3.5 text-white" />}
+                          {run && <CheckCircle2 className="inline-block ml-1.5 w-3.5 h-3.5 text-white" aria-hidden="true" />}
                         </button>
                       );
                     })}
@@ -697,7 +695,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                     </div>
                   ) : (
                     <div className="text-center py-12">
-                      <Sparkles className="w-8 h-8 mx-auto text-text-muted mb-3" />
+                      <Sparkles className="w-8 h-8 mx-auto text-text-muted mb-3" aria-hidden="true" />
                       <p className="text-sm text-text-secondary">{t('meeting.noAnalysisAvailable', { type: analysisLabel(selectedAnalysisType) })}</p>
                       {!isBusy && meeting.transcription && (
                         <Button
@@ -716,7 +714,13 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
             )}
 
             {activeTab === 'speakers' && (
-              <div className="animate-in fade-in duration-200">
+              <div
+                id={panelId('speakers')}
+                role="tabpanel"
+                aria-labelledby={tabId('speakers')}
+                tabIndex={0}
+                className="animate-in fade-in duration-200"
+              >
                 {meeting.transcription ? (
                   <SpeakerDiarizationEditor
                     transcription={meeting.transcription}
@@ -727,7 +731,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                   />
                 ) : (
                   <div className="text-center py-16 bg-bg-elevated rounded-xl border border-border-subtle">
-                    <Users className="w-8 h-8 mx-auto text-text-muted mb-3" />
+                    <Users className="w-8 h-8 mx-auto text-text-muted mb-3" aria-hidden="true" />
                     <p className="text-sm text-text-secondary">{t('meeting.noSpeakerClusters')}</p>
                   </div>
                 )}
@@ -743,22 +747,16 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               error={visualError}
             />
           )}
-
-          {recordingId && visualEnabled && (
-            <VisualDebugPanel recordingId={recordingId} />
-          )}
         </main>
       </div>
 
-      {/* Right Drawer Slide-Over Sheet for Details */}
       <Sheet open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <SheetContent side="right" className="bg-bg-elevated border-l border-border-subtle w-full sm:w-[380px]">
+        <SheetContent side="right" className="bg-bg-elevated border-l border-border-subtle w-full sm:w-[420px]">
           <SheetHeader
             title={t('meeting.statusTitle')}
             description={t('workspace.advancedDesc')}
           />
           <SheetBody className="flex flex-col gap-5 overflow-y-auto pt-2">
-            {/* 1. Component Status Card */}
             <div className="rounded-xl border border-border-subtle bg-bg-surface p-4">
               <h4 className="text-[10px] font-bold text-text-muted uppercase tracking-wider mb-3">
                 {lang === 'it' ? 'Stato Componenti' : 'Component Status'}
@@ -777,7 +775,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                 <div className="flex items-center justify-between gap-3">
                   <span>{t('meeting.analysisLabel')}</span>
                   <Badge variant={Object.keys(meeting.latest_analysis || {}).length > 0 ? 'success' : 'idle'}>
-                    {Object.keys(meeting.latest_analysis || {}).length}
+                    {Object.keys(meeting.latest_analysis || {}).length > 0 ? t('meeting.statusReady') : t('meeting.statusMissing')}
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between gap-3">
@@ -811,7 +809,6 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               </div>
             )}
 
-            {/* 2. Available Actions Card */}
             <div className="rounded-xl border border-border-subtle bg-bg-surface p-4">
               <h4 className="text-[10px] font-bold text-text-muted uppercase tracking-wider mb-3">
                 {lang === 'it' ? 'Azioni Disponibili' : 'Available Actions'}
@@ -859,10 +856,9 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               </div>
             </div>
 
-            {/* 3. Run History Card */}
             <div className="rounded-xl border border-border-subtle bg-bg-surface p-4">
               <div className="flex items-center gap-2 mb-3">
-                <History className="w-3.5 h-3.5 text-text-muted" />
+                <History className="w-3.5 h-3.5 text-text-muted" aria-hidden="true" />
                 <h4 className="text-[10px] font-bold text-text-muted uppercase tracking-wider">
                   {t('meeting.runHistoryTitle')}
                 </h4>
@@ -889,7 +885,61 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               </div>
             </div>
 
-            {/* 4. Technical Details Accordion */}
+            {(diagnostics.length > 0 || diagnosticReport?.log_file || (recordingId && visualEnabled)) && (
+              <AdvancedDetailsAccordion title={t('meeting.diagnosticsTitle')}>
+                <div className="flex flex-col gap-3 pt-1">
+                  {diagnostics.map((item, index) => (
+                    <div key={`${item.component}-${index}`} className="border-b border-border-subtle pb-3 last:border-0 last:pb-0 text-xs">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-semibold text-text-primary">{item.component}</span>
+                        {enrichmentBadge(item.status)}
+                      </div>
+                      {(item.requested_backend || item.actual_backend) && (
+                        <p className="mt-1 text-text-muted font-mono break-all">
+                          {item.requested_backend || '—'} → {item.actual_backend || '—'}
+                        </p>
+                      )}
+                      {(item.fallback_used || item.fallback_reason) && (
+                        <p className="mt-1 text-warning">{t('meeting.fallbackLabel')}: {item.fallback_reason || 'fallback'}</p>
+                      )}
+                      {item.error && <p className="mt-1 text-danger break-words">{item.error}</p>}
+                      {Boolean(item.details?.model_path) && (
+                        <p className="mt-1 text-text-muted font-mono break-all">
+                          {t('meeting.modelPathLabel')}: {String(item.details?.model_path)}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                  {diagnostics.length > 0 && diagnosticWarnings.length === 0 && (
+                    <p className="text-xs text-text-muted">{t('meeting.noDiagnosticWarnings')}</p>
+                  )}
+                  {diagnosticReport?.log_file && (
+                    <div className="border-t border-border-subtle pt-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">{t('meeting.logFileLabel')}</p>
+                      <button
+                        type="button"
+                        className="mt-1 text-left text-xs font-mono text-accent hover:underline break-all"
+                        onClick={() => navigator.clipboard?.writeText(diagnosticReport.log_file || '')}
+                        title={t('meeting.copyLogPath')}
+                      >
+                        {diagnosticReport.log_file}
+                      </button>
+                      {diagnosticReport.log_lines.length > 0 && (
+                        <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-md bg-bg-elevated p-2 text-[10px] text-text-muted">
+                          {diagnosticReport.log_lines.join('\n')}
+                        </pre>
+                      )}
+                    </div>
+                  )}
+                  {recordingId && visualEnabled && (
+                    <div className="border-t border-border-subtle pt-3">
+                      <VisualDebugPanel recordingId={recordingId} />
+                    </div>
+                  )}
+                </div>
+              </AdvancedDetailsAccordion>
+            )}
+
             <AdvancedDetailsAccordion title={t('meeting.techDetailsTitle')}>
               <dl className="grid grid-cols-[100px_minmax(0,1fr)] gap-2 text-[11px] pt-1">
                 <dt className="text-text-muted">Recording ID</dt>

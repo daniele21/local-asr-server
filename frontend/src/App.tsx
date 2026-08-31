@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BarChart3, ChevronDown, ExternalLink, FolderKanban, Languages, Mic, Moon, Palette, PlayCircle, Settings, Sparkles, Sun } from 'lucide-react';
+import { BarChart3, ChevronDown, FolderKanban, Languages, Mic, Moon, Palette, PlayCircle, Settings, Sparkles, Sun } from 'lucide-react';
 import { I18nProvider, useTranslation } from './i18n/i18n';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { ApiClient } from './api/apiClient';
@@ -29,7 +29,6 @@ function MainApp() {
   const [defaultModel, setDefaultModel] = useState('');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [moreOpen, setMoreOpen] = useState(false);
-  const [openingLocalLlmUi, setOpeningLocalLlmUi] = useState(false);
   const [routeDetail, setRouteDetail] = useState<string | null>(null);
   const [tourStep, setTourStep] = useState<TourStepId | null>(null);
   const [tourReturnHash, setTourReturnHash] = useState('');
@@ -64,38 +63,6 @@ function MainApp() {
       window.location.reload();
     } catch (err: any) {
       showToast(err.message || 'Error clearing mock data', 'error');
-    }
-  };
-
-  const openLocalLlmUi = async () => {
-    const popup = window.open('', 'ClosedRoomLocalLlmUi');
-    if (!popup) {
-      showToast(t('header.localLlmPopupBlocked'), 'warning');
-      return;
-    }
-
-    popup.opener = null;
-    setOpeningLocalLlmUi(true);
-
-    try {
-      let service = await ApiClient.getLlmService();
-      if (!service.url && service.mode === 'auto') {
-        service = await ApiClient.startLlmService();
-      }
-      if (!service.url) {
-        throw new Error(service.error || t('header.localLlmUnavailable'));
-      }
-
-      popup.location.replace(service.url);
-      popup.focus();
-    } catch (err) {
-      popup.close();
-      const message = err instanceof Error && err.message
-        ? err.message
-        : t('header.localLlmUnavailable');
-      showToast(message, 'error');
-    } finally {
-      setOpeningLocalLlmUi(false);
     }
   };
 
@@ -222,7 +189,7 @@ function MainApp() {
     return () => clearInterval(interval);
   }, [isDemoActive]);
 
-  // Close more panel on outside click
+  // Close settings menu on outside click or Escape.
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -230,8 +197,15 @@ function MainApp() {
         setMoreOpen(false);
       }
     };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMoreOpen(false);
+    };
     document.addEventListener('click', handleClick);
-    return () => document.removeEventListener('click', handleClick);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('click', handleClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   const renderPage = () => {
@@ -298,7 +272,7 @@ function MainApp() {
         </button>
 
         {/* Navigation */}
-        <nav className="app-nav flex w-full gap-1 overflow-x-auto rounded-lg border border-border-subtle bg-bg-elevated/85 p-1 shadow-[inset_0_1px_1px_rgba(255,255,255,0.04)] select-none lg:w-auto lg:shrink-0">
+        <nav className="app-nav flex w-full gap-1 overflow-x-auto rounded-lg border border-border-subtle bg-bg-elevated/85 p-1 shadow-[inset_0_1px_1px_rgba(255,255,255,0.04)] select-none lg:w-auto lg:shrink-0" aria-label={t('header.subtitle')}>
           {[
             { id: 'home', label: t('nav.home'), icon: BarChart3 },
             { id: 'projects', label: t('nav.projects'), icon: FolderKanban },
@@ -312,8 +286,9 @@ function MainApp() {
                   ? 'primary-gradient-surface text-white shadow-md shadow-accent/20'
                   : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover'
               }`}
+              aria-current={activePage === item.id || (item.id === 'home' && activePage === 'meeting') ? 'page' : undefined}
             >
-              <item.icon className="w-4 h-4" />
+              <item.icon className="w-4 h-4" aria-hidden="true" />
               <span className="hidden md:inline">{item.label}</span>
             </button>
           ))}
@@ -333,22 +308,7 @@ function MainApp() {
             <span>{t('header.newMeeting')}</span>
           </Button>
 
-          {!isDemoActive && (
-            <Button
-              onClick={openLocalLlmUi}
-              variant="secondary"
-              size="md"
-              isLoading={openingLocalLlmUi}
-              title={t('header.localLlmUiTitle')}
-              aria-label={t('header.localLlmUiTitle')}
-              className="shrink-0"
-            >
-              {!openingLocalLlmUi && <ExternalLink className="h-4 w-4" />}
-              <span className="hidden xl:inline">{t('header.localLlmUi')}</span>
-            </Button>
-          )}
-
-          {/* Server status */}
+          {/* Server status stays informational; runtime management lives in Settings. */}
           {!isDemoActive && (
             <Badge
               variant={serverOnline ? 'online' : 'offline'}
@@ -371,26 +331,30 @@ function MainApp() {
                     : 'border-border-subtle hover:border-border-focus text-text-secondary hover:text-text-primary'
                 }`}
                 aria-expanded={moreOpen}
+                aria-haspopup="menu"
+                aria-controls="app-settings-menu"
               >
-                <Settings className="w-[18px] h-[18px]" />
+                <Settings className="w-[18px] h-[18px]" aria-hidden="true" />
                 <span className="hidden sm:inline">{t('common.settings')}</span>
-                <ChevronDown className="h-3.5 w-3.5 text-text-muted" />
+                <ChevronDown className="h-3.5 w-3.5 text-text-muted" aria-hidden="true" />
               </button>
             </Tooltip>
 
             {moreOpen && (
-              <div className="ui-overlay-surface absolute right-0 top-11 z-50 flex w-72 flex-col gap-2 rounded-xl border border-border-subtle p-3 animate-in fade-in slide-in-from-top-2 duration-150">
+              <div id="app-settings-menu" role="menu" className="ui-overlay-surface absolute right-0 top-11 z-50 flex w-72 flex-col gap-2 rounded-xl border border-border-subtle p-3 animate-in fade-in slide-in-from-top-2 duration-150">
                 <button
+                  role="menuitem"
                   onClick={() => {
                     setMoreOpen(false);
                     navigateTo('settings');
                   }}
                   className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
                 >
-                  <Settings className="h-4 w-4 text-text-muted" />
+                  <Settings className="h-4 w-4 text-text-muted" aria-hidden="true" />
                   {t('common.settings')}
                 </button>
                 <button
+                  role="menuitem"
                   onClick={() => {
                     setMoreOpen(false);
                     startTour();
@@ -398,36 +362,38 @@ function MainApp() {
                   }}
                   className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
                 >
-                  <PlayCircle className="h-4 w-4 text-text-muted" />
+                  <PlayCircle className="h-4 w-4 text-text-muted" aria-hidden="true" />
                   {t('help.tour')}
                 </button>
                 {demoMode ? (
                   <button
+                    role="menuitem"
                     onClick={() => {
                       setMoreOpen(false);
                       exitDemo();
                     }}
                     className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-red-500 transition-colors hover:bg-red-500/10 hover:text-red-600"
                   >
-                    <Sparkles className="h-4 w-4 text-red-500" />
+                    <Sparkles className="h-4 w-4 text-red-500" aria-hidden="true" />
                     {t('demo.bannerExit')}
                   </button>
                 ) : (
                   <button
+                    role="menuitem"
                     onClick={() => {
                       setMoreOpen(false);
                       activateDemo();
                     }}
                     className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
                   >
-                    <Sparkles className="h-4 w-4 text-text-muted" />
+                    <Sparkles className="h-4 w-4 text-text-muted" aria-hidden="true" />
                     {t('help.populateMock')}
                   </button>
                 )}
                 <hr className="border-border-subtle my-1" />
                 <div className="rounded-lg border border-border-subtle bg-bg-elevated p-2">
                   <div className="mb-2 flex items-center gap-2 px-1 text-[11px] font-semibold uppercase text-text-muted">
-                    <Languages className="h-3.5 w-3.5" />
+                    <Languages className="h-3.5 w-3.5" aria-hidden="true" />
                     {t('common.language')}
                   </div>
                   <div className="grid grid-cols-2 gap-1">
@@ -437,6 +403,8 @@ function MainApp() {
                     ].map((item) => (
                       <button
                         key={item.id}
+                        role="menuitemradio"
+                        aria-checked={lang === item.id}
                         onClick={() => setLang(item.id as 'it' | 'en')}
                         className={`rounded-md px-2 py-1.5 text-xs font-semibold transition-all ${
                           lang === item.id
@@ -450,14 +418,15 @@ function MainApp() {
                   </div>
                 </div>
                 <button
+                  role="menuitem"
                   onClick={toggleTheme}
                   className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
                 >
                   <span className="inline-flex items-center gap-2">
-                    <Palette className="h-4 w-4 text-text-muted" />
+                    <Palette className="h-4 w-4 text-text-muted" aria-hidden="true" />
                     {t('common.theme')}
                   </span>
-                  {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                  {theme === 'dark' ? <Sun className="h-4 w-4" aria-hidden="true" /> : <Moon className="h-4 w-4" aria-hidden="true" />}
                 </button>
               </div>
             )}
