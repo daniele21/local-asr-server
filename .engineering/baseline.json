@@ -2,7 +2,8 @@
   "schema_version": 1,
   "standard": {
     "source": "daniele21/repo-template-sw",
-    "version": "0.8.0"
+    "version": "0.8.0",
+    "revision": "6677c5349d64ea6d935f1b460d03a47c236821bc"
   },
   "target_level": "L2",
   "profiles": [
