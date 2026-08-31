@@ -20,6 +20,7 @@ FIDELITY_RANK = {name: index for index, name in enumerate(FIDELITY_ORDER)}
 APPLICABILITY = {"required", "recommended", "n/a"}
 AUTOMATION = {"automated", "real_environment"}
 REAL_CONFIRMATION = {"required", "conditional", "not_required"}
+REQUIRED_UI_MEDIA = {"screenshots", "video"}
 PLACEHOLDER_MARKERS = ("<REPLACE_WITH_", "<PROJECT_")
 REQUIRED_PRINCIPLES = (
     "final_environment_should_confirm_not_discover",
@@ -28,6 +29,7 @@ REQUIRED_PRINCIPLES = (
     "critical_journeys_only",
     "built_artifact_when_material",
     "residual_fidelity_gaps_explicit",
+    "ui_journey_screenshot_and_video_artifacts_required",
 )
 
 
@@ -133,8 +135,8 @@ def main() -> int:
 
     if data.get("schema_version") != 1:
         errors.append("schema_version must be 1")
-    if data.get("contract_version") != "0.1.0":
-        errors.append("contract_version must be 0.1.0")
+    if data.get("contract_version") != "0.1.1":
+        errors.append("contract_version must be 0.1.1")
 
     applicability = data.get("applicability")
     if not isinstance(applicability, dict):
@@ -243,6 +245,25 @@ def main() -> int:
     for journey_id, journey in journeys.items():
         if not non_empty_string(journey.get("claim")):
             errors.append(f"critical_journeys.{journey_id}.claim is required")
+
+        ui_surface = journey.get("ui_surface")
+        if not isinstance(ui_surface, bool):
+            errors.append(f"critical_journeys.{journey_id}.ui_surface must be boolean")
+
+        media = journey.get("required_media_artifacts")
+        if not isinstance(media, list) or not all(non_empty_string(item) for item in media):
+            errors.append(
+                f"critical_journeys.{journey_id}.required_media_artifacts must be a string list"
+            )
+        elif ui_surface is True and set(media) != REQUIRED_UI_MEDIA:
+            errors.append(
+                f"critical_journeys.{journey_id}.required_media_artifacts must contain screenshots and video for UI journeys"
+            )
+        elif ui_surface is False and media:
+            errors.append(
+                f"critical_journeys.{journey_id}.required_media_artifacts must be empty when ui_surface is false"
+            )
+
         validate_refs(
             journey.get("target_environment_refs"),
             set(targets),
