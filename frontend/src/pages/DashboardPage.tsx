@@ -65,8 +65,6 @@ interface DashboardPageProps {
   onActivateDemo?: () => void;
 }
 
-// ─── Small "view all" action link ────────────────────────────────────────────
-
 function ViewAllLink({ onClick, label }: { onClick: () => void; label: string }) {
   return (
     <button type="button" onClick={onClick} className="view-all-link">
@@ -75,8 +73,6 @@ function ViewAllLink({ onClick, label }: { onClick: () => void; label: string })
     </button>
   );
 }
-
-// ─── Compact insight preview (actions/decisions/risks) ────────────────────────
 
 function InsightPreviewCard({
   text,
@@ -104,8 +100,6 @@ function InsightPreviewCard({
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
-
 export default function DashboardPage({
   navigateTo,
   demoMode = false,
@@ -123,11 +117,9 @@ export default function DashboardPage({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const periodMenuRef = useRef<HTMLDivElement>(null);
 
-  // Rename state
   const [editingRecordingId, setEditingRecordingId] = useState<string | null>(null);
   const [editTitleValue, setEditTitleValue] = useState('');
 
-  // Drawer state
   const [insightDialogOpen, setInsightDialogOpen] = useState(false);
   const [insightDialogTab, setInsightDialogTab] = useState<InsightTab>('actions');
   const [meetingListDialogOpen, setMeetingListDialogOpen] = useState(false);
@@ -216,8 +208,6 @@ export default function DashboardPage({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // ─── Computed data ──────────────────────────────────────────────────────────
-
   const resolvedRange = useMemo(() => resolveTimeRange(timeRange), [timeRange]);
   const rangeLabel = useMemo(() => formatTimeRangeLabel(timeRange, lang), [timeRange, lang]);
 
@@ -250,7 +240,6 @@ export default function DashboardPage({
     (m) => m.status === 'analyzing' || m.jobs.some((j) => !['completed', 'failed', 'cancelled', 'interrupted'].includes(j.status)),
   ).length;
   const readyCount = periodMeetings.filter((m) => m.status === 'ready').length;
-
   const hasAnyData = meetings.length > 0;
 
   const handleRenameClick = (meeting: Meeting) => {
@@ -285,8 +274,6 @@ export default function DashboardPage({
     }
   };
 
-  // ─── Loading ────────────────────────────────────────────────────────────────
-
   if (loading) {
     return (
       <div className="py-16">
@@ -305,8 +292,6 @@ export default function DashboardPage({
 
   const activeOption = rangeOptions.find((opt) => opt.mode === timeRange.mode);
   const activeLabel = activeOption ? activeOption.label : '';
-
-  // ─── Empty state (no data, not demo) ────────────────────────────────────────
 
   if (!hasAnyData && !demoMode) {
     return (
@@ -332,11 +317,8 @@ export default function DashboardPage({
     );
   }
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
-
   return (
     <div className="flex flex-col gap-5">
-      {/* ── LEVEL 1: Hero — period, search, summary and guidance ── */}
       <section
         data-tour="today-summary"
         className="premium-hero page-hero rounded-2xl p-5 sm:p-6"
@@ -482,7 +464,6 @@ export default function DashboardPage({
         </div>
       </section>
 
-      {/* ── LEVEL 2: Main content — Spotlight ── */}
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.8fr)_minmax(300px,1fr)]">
         <main className="flex min-w-0 flex-col gap-5">
           <section className="surface-primary flex flex-col gap-3 rounded-2xl p-4 theme-audio" data-tour="today-meetings">
@@ -661,7 +642,6 @@ export default function DashboardPage({
         </section>
       )}
 
-      {/* ── LEVEL 3: On-demand dialogs ── */}
       <InsightDetailDialog
         dataTour="insight-detail-dialog-content"
         open={insightDialogOpen}
@@ -746,7 +726,7 @@ export default function DashboardPage({
                 {lang === 'it' ? 'Nessun meeting trovato' : 'No meetings found'}
               </div>
             ) : (
-              <div className="flex flex-col gap-1.5" role="list">
+              <div className="flex flex-col gap-1.5">
                 <div className="px-3 py-1.5 text-xs font-semibold uppercase text-text-muted">
                   {lang === 'it' ? 'Risultati' : 'Results'} ({searchedMeetings.length})
                 </div>
@@ -754,7 +734,6 @@ export default function DashboardPage({
                   <button
                     key={meeting.id}
                     type="button"
-                    role="listitem"
                     onClick={() => { navigateTo('meeting', meeting.id); setIsSearchOpen(false); }}
                     className="group flex w-full items-center justify-between rounded-xl border border-transparent p-3 text-left transition-colors hover:border-border-focus hover:bg-bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
                   >
