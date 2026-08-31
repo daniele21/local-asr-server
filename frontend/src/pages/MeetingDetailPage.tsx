@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useState, useRef } from 'react';
 import {
   ArrowLeft,
   ChevronDown,
@@ -41,7 +41,10 @@ interface MeetingDetailPageProps {
   demoMode?: boolean;
 }
 
+type MeetingTab = 'transcript' | 'analysis' | 'speakers';
+
 const activeJobStatuses = new Set(['queued', 'running', 'waiting_for_service', 'retrying', 'cancelling']);
+const meetingTabs: MeetingTab[] = ['transcript', 'analysis', 'speakers'];
 
 function runMarkdown(run: AnalysisRun): string {
   return run.result_markdown || run.result?.markdown || '';
@@ -76,9 +79,12 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
   const [analysisPipelineTarget, setAnalysisPipelineTarget] = useState('meeting_default');
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [showAudioPlayer, setShowAudioPlayer] = useState(false);
-  const [activeTab, setActiveTab] = useState<'transcript' | 'analysis' | 'speakers'>('transcript');
+  const [activeTab, setActiveTab] = useState<MeetingTab>('transcript');
   const [currentTime, setCurrentTime] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const tabListRef = useRef<HTMLDivElement | null>(null);
+  const analysisMenuRef = useRef<HTMLDivElement | null>(null);
+  const analysisMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   const handleTimestampClick = (time: number) => {
     setShowAudioPlayer(true);
@@ -146,6 +152,16 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
     return () => window.clearInterval(timer);
   }, [meeting?.id, activeJobs.length, meeting?.analysis_runs.length]);
 
+  useEffect(() => {
+    if (!moreOpen) return;
+    const frame = window.requestAnimationFrame(() => {
+      analysisMenuRef.current
+        ?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')
+        ?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [moreOpen]);
+
   const openTranscriptionWorkflow = () => {
     if (!meeting || demoMode || isBusy) return;
     navigateTo(
@@ -186,6 +202,48 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
     } catch (err: any) {
       setError(err?.message || (lang === 'it' ? 'Impossibile annullare il job' : 'Failed to cancel job'));
     }
+  };
+
+  const focusTab = (tab: MeetingTab) => {
+    setActiveTab(tab);
+    window.requestAnimationFrame(() => {
+      document.getElementById(`meeting-tab-${tab}`)?.focus();
+    });
+  };
+
+  const handleTabListKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const currentIndex = meetingTabs.indexOf(activeTab);
+    let nextIndex = currentIndex;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % meetingTabs.length;
+    else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + meetingTabs.length) % meetingTabs.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = meetingTabs.length - 1;
+    event.preventDefault();
+    focusTab(meetingTabs[nextIndex]);
+  };
+
+  const handleAnalysisMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(
+      analysisMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [],
+    );
+    if (!items.length) return;
+    const currentIndex = Math.max(0, items.indexOf(document.activeElement as HTMLButtonElement));
+    let nextIndex = currentIndex;
+    if (event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % items.length;
+    else if (event.key === 'ArrowUp') nextIndex = (currentIndex - 1 + items.length) % items.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = items.length - 1;
+    else if (event.key === 'Escape') {
+      event.preventDefault();
+      setMoreOpen(false);
+      analysisMenuTriggerRef.current?.focus();
+      return;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    items[nextIndex]?.focus();
   };
 
   if (!recordingId) {
@@ -243,15 +301,15 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
     return <Badge variant="idle">{t('meeting.enrichmentUnavailable')}</Badge>;
   };
 
-  const tabId = (tab: 'transcript' | 'analysis' | 'speakers') => `meeting-tab-${tab}`;
-  const panelId = (tab: 'transcript' | 'analysis' | 'speakers') => `meeting-panel-${tab}`;
+  const tabId = (tab: MeetingTab) => `meeting-tab-${tab}`;
+  const panelId = (tab: MeetingTab) => `meeting-panel-${tab}`;
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Header */}
       <section className="flex flex-col gap-4 border-b border-border-subtle pb-4">
         <div className="flex items-center justify-between gap-4">
           <button
+            type="button"
             onClick={() => navigateTo('home')}
             className="inline-flex items-center gap-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors"
           >
@@ -291,28 +349,29 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               aria-expanded={showAudioPlayer}
               aria-controls="meeting-audio-player"
             >
-              <PlayCircle className="w-4 h-4 text-accent" />
+              <PlayCircle className="w-4 h-4 text-accent" aria-hidden="true" />
               <span>{t('meeting.audioTitle')}</span>
             </Button>
             <Button variant="ghost" size="sm" onClick={load} className="h-8 px-2.5">
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className="w-4 h-4" aria-hidden="true" />
               <span>{t('meeting.btnUpdate')}</span>
             </Button>
             <Button variant="ghost" size="sm" onClick={() => setDetailsOpen(true)} className="h-8 px-2.5">
-              <Info className="w-4 h-4 text-text-muted" />
+              <Info className="w-4 h-4 text-text-muted" aria-hidden="true" />
               <span>{lang === 'it' ? 'Dettagli' : 'Details'}</span>
             </Button>
           </div>
         </div>
 
         {showAudioPlayer && (
-          <div id="meeting-audio-player" className="workspace-panel rounded-xl border border-border-subtle p-3.5 animate-in slide-in-from-top-3 duration-250">
+          <div id="meeting-audio-player" className="workspace-panel rounded-xl border border-border-subtle p-3.5 animate-in slide-in-from-top-3 duration-200">
             <div className="flex items-center justify-between gap-3 mb-2">
               <span className="text-xs font-semibold text-text-primary flex items-center gap-1.5">
                 <PlayCircle className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
                 {t('meeting.audioTitle')}
               </span>
               <button
+                type="button"
                 onClick={() => setShowAudioPlayer(false)}
                 className="text-[10px] text-text-muted hover:text-text-primary transition-colors font-semibold cursor-pointer"
               >
@@ -345,7 +404,6 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
         </section>
       )}
 
-      {/* Processing state keeps user-facing progress in the main journey; diagnostics live in Details. */}
       {(activeJobs.length > 0 || meeting.analysis_runs.some((run) => activeJobStatuses.has(run.status))) && (
         <section
           className="border border-warning/30 bg-warning/5 rounded-xl px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs animate-in fade-in duration-200"
@@ -410,7 +468,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               onClick={openTranscriptionWorkflow}
               className="shrink-0 w-full sm:w-auto shadow-cta"
             >
-              <FileText className="h-4 w-4" />
+              <FileText className="h-4 w-4" aria-hidden="true" />
               {t('meeting.btnTranscribe')}
             </Button>
           </div>
@@ -432,7 +490,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                 isLoading={busyAction === 'meeting_default'}
                 className="flex-1 sm:flex-none shadow-cta"
               >
-                <Sparkles className="h-4 w-4" />
+                <Sparkles className="h-4 w-4" aria-hidden="true" />
                 {t('meeting.btnAnalyze')}
               </Button>
               <Button
@@ -442,7 +500,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                 isLoading={busyAction === 'meeting_deep'}
                 className="flex-1 sm:flex-none"
               >
-                <ListChecks className="h-4 w-4" />
+                <ListChecks className="h-4 w-4" aria-hidden="true" />
                 {t('meeting.btnDeep')}
               </Button>
             </div>
@@ -457,11 +515,15 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
 
         <main className="flex flex-col gap-5 w-full">
           <div
+            ref={tabListRef}
             className="flex border border-border-subtle bg-bg-surface/30 p-1 rounded-xl gap-1"
             role="tablist"
+            aria-orientation="horizontal"
             aria-label={lang === 'it' ? 'Contenuto del meeting' : 'Meeting content'}
+            onKeyDown={handleTabListKeyDown}
           >
             <button
+              type="button"
               id={tabId('transcript')}
               role="tab"
               aria-selected={activeTab === 'transcript'}
@@ -469,7 +531,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               tabIndex={activeTab === 'transcript' ? 0 : -1}
               onClick={() => setActiveTab('transcript')}
               className={cn(
-                'flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer',
+                'flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus',
                 activeTab === 'transcript'
                   ? 'bg-accent text-white shadow-sm'
                   : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover',
@@ -487,6 +549,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               )}
             </button>
             <button
+              type="button"
               id={tabId('analysis')}
               role="tab"
               aria-selected={activeTab === 'analysis'}
@@ -494,7 +557,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               tabIndex={activeTab === 'analysis' ? 0 : -1}
               onClick={() => setActiveTab('analysis')}
               className={cn(
-                'flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer',
+                'flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus',
                 activeTab === 'analysis'
                   ? 'bg-accent text-white shadow-sm'
                   : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover',
@@ -512,6 +575,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               )}
             </button>
             <button
+              type="button"
               id={tabId('speakers')}
               role="tab"
               aria-selected={activeTab === 'speakers'}
@@ -519,7 +583,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               tabIndex={activeTab === 'speakers' ? 0 : -1}
               onClick={() => setActiveTab('speakers')}
               className={cn(
-                'flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer',
+                'flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus',
                 activeTab === 'speakers'
                   ? 'bg-accent text-white shadow-sm'
                   : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover',
@@ -616,6 +680,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                     {meeting.transcription && (
                       <div className="relative">
                         <Button
+                          ref={analysisMenuTriggerRef}
                           size="sm"
                           variant="ghost"
                           onClick={() => setMoreOpen((open) => !open)}
@@ -624,12 +689,19 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                           aria-controls="meeting-analysis-menu"
                           className="h-7 text-xs text-text-muted hover:text-text-primary"
                         >
-                          <Sparkles className="h-3.5 w-3.5 text-accent" />
+                          <Sparkles className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
                           <span>{lang === 'it' ? 'Esegui Analisi' : 'Run Analysis'}</span>
-                          <ChevronDown className="h-3 w-3" />
+                          <ChevronDown className="h-3 w-3" aria-hidden="true" />
                         </Button>
                         {moreOpen && (
-                          <div id="meeting-analysis-menu" role="menu" className="absolute right-0 top-8 z-40 w-48 rounded-lg border border-border-subtle bg-bg-surface p-1 shadow-premium">
+                          <div
+                            id="meeting-analysis-menu"
+                            ref={analysisMenuRef}
+                            role="menu"
+                            aria-label={lang === 'it' ? 'Scegli analisi' : 'Choose analysis'}
+                            onKeyDown={handleAnalysisMenuKeyDown}
+                            className="absolute right-0 top-8 z-40 w-48 rounded-lg border border-border-subtle bg-bg-surface p-1 shadow-premium"
+                          >
                             <button
                               type="button"
                               role="menuitem"
@@ -638,7 +710,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                                 setMoreOpen(false);
                                 openAnalysisSetup('meeting_default');
                               }}
-                              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50"
+                              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-50"
                             >
                               <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
                               {t('meeting.analyzeDetail')}
@@ -651,7 +723,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                                 setMoreOpen(false);
                                 openAnalysisSetup('meeting_deep');
                               }}
-                              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:opacity-50"
+                              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-50"
                             >
                               <ListChecks className="h-3.5 w-3.5" aria-hidden="true" />
                               {t('meeting.deepDetail')}
@@ -674,8 +746,9 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                       return (
                         <button
                           key={type}
+                          type="button"
                           onClick={() => setSelectedAnalysisType(type)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200 cursor-pointer ${
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors duration-200 cursor-pointer ${
                             selectedAnalysisType === type
                               ? 'bg-accent text-white border-accent shadow-sm'
                               : 'bg-bg-elevated text-text-secondary border-border-subtle hover:bg-bg-hover hover:text-text-primary'
@@ -824,7 +897,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                   }}
                   className="w-full justify-start text-left text-xs"
                 >
-                  <FileText className="h-3.5 w-3.5 mr-2 text-text-muted" />
+                  <FileText className="h-3.5 w-3.5 mr-2 text-text-muted" aria-hidden="true" />
                   {t('meeting.btnTranscribe')}
                 </Button>
                 <Button
@@ -837,7 +910,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                   }}
                   className="w-full justify-start text-left text-xs"
                 >
-                  <Sparkles className="h-3.5 w-3.5 mr-2 text-accent" />
+                  <Sparkles className="h-3.5 w-3.5 mr-2 text-accent" aria-hidden="true" />
                   {t('meeting.btnAnalyze')} (Pipeline rapida)
                 </Button>
                 <Button
@@ -850,7 +923,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                   }}
                   className="w-full justify-start text-left text-xs"
                 >
-                  <ListChecks className="h-3.5 w-3.5 mr-2 text-accent" />
+                  <ListChecks className="h-3.5 w-3.5 mr-2 text-accent" aria-hidden="true" />
                   {t('meeting.btnDeep')} (Pipeline completa)
                 </Button>
               </div>
