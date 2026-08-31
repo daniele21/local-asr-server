@@ -382,6 +382,7 @@ class PostMeetingVisualService:
             }
             return payload
         finally:
+            services.runtime.release_llm_residency()
             if not preserve_staging:
                 services.recordings.finish_visual_processing(recording_id)
 
@@ -420,6 +421,7 @@ class PostMeetingVisualService:
         completed = False
         processed_candidates = 0
         chat_params = {}
+        llm_phase_acquired = False
 
         try:
             rejected_candidates = int(routing_summary.get("rejected_task_evaluations") or 0)
@@ -547,6 +549,7 @@ class PostMeetingVisualService:
                                     reasoning="off",
                                     overrides={"local_llm_model": model},
                                 )
+                                llm_phase_acquired = True
                                 client = self._client(ready["base_url"], model)
                             inf_start = time.perf_counter()
                             qwen_calls += 1
@@ -790,6 +793,8 @@ class PostMeetingVisualService:
             }
             return payload
         finally:
+            if llm_phase_acquired:
+                services.runtime.release_llm_residency()
             try:
                 trace_path.unlink(missing_ok=True)
             except Exception:

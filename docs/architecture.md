@@ -458,6 +458,19 @@ supera `speaker_diarization_minimum_overlap`. Il valore assegnato ha forma
 6. applica un mapping conservativo solo a cluster speaker già esistenti;
 7. conserva i JPEG come artefatti della registrazione per consultazione e retry.
 
+Il sidecar LLM/VLM gestito parte con un solo modello residente. Per i modelli
+di prodotto registrati (`nemotron-nano-4b`, `nemotron-nano-4b-q8`,
+`qwen3-vl-4b`) `RuntimeServiceManager` usa il control plane pubblico di
+local-llm-server 0.4 per attivare il modello richiesto dopo aver evacuato
+quello della fase precedente. Al termine di visual intelligence o analisi
+locale, tutti i runtime registrati vengono scaricati e il sidecar resta sano
+in stato zero-resident. Endpoint `external` non vengono mai mutati. Modelli
+con path configurato esplicitamente, custom o non registrati mantengono il
+boundary più conservativo stop/restart del processo posseduto, così
+l'artefatto esplicito non viene perso. Un failure
+del control plane durante il cleanup degrada a stop del sidecar posseduto,
+evitando residency orfana e senza mascherare il risultato del workload.
+
 Dopo tre errori infrastrutturali consecutivi dal backend visuale, un circuit
 breaker interrompe le richieste residue, marca il checkpoint come
 `retryable_failure` e conserva lo staging. Il successivo avvio non riusa dalla
