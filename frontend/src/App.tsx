@@ -5,6 +5,7 @@ import { ToastProvider, useToast } from './context/ToastContext';
 import { ApiClient } from './api/apiClient';
 import { HEALTH_CHECK_INTERVAL_MS } from './api/config';
 import DashboardPage from './pages/DashboardPage';
+import NewRecordingPage from './pages/NewRecordingPage';
 import RecordingPage from './pages/RecordingPage';
 import TranscriptionPage from './pages/TranscriptionPage';
 import ProjectsPage from './pages/ProjectsPage';
@@ -224,7 +225,9 @@ function MainApp() {
         if (isDemoActive) {
           return <TourRecordingMock />;
         }
-        return <RecordingPage detailId={routeDetail} navigateTo={navigateTo} />;
+        return routeDetail
+          ? <RecordingPage detailId={routeDetail} navigateTo={navigateTo} />
+          : <NewRecordingPage navigateTo={navigateTo} />;
       case 'transcription':
         return <TranscriptionPage detailPath={routeDetail} navigateTo={navigateTo} demoMode={isDemoActive} />;
       case 'projects':
