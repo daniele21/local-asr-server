@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { type KeyboardEvent as ReactKeyboardEvent, useState, useEffect, useRef } from 'react';
 import { BarChart3, ChevronDown, FolderKanban, Languages, Mic, Moon, Palette, PlayCircle, Settings, Sparkles, Sun } from 'lucide-react';
 import { I18nProvider, useTranslation } from './i18n/i18n';
 import { ToastProvider, useToast } from './context/ToastContext';
@@ -33,14 +33,14 @@ function MainApp() {
   const [routeDetail, setRouteDetail] = useState<string | null>(null);
   const [tourStep, setTourStep] = useState<TourStepId | null>(null);
   const [tourReturnHash, setTourReturnHash] = useState('');
+  const moreTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
   const [demoMode, setDemoMode] = useState(() => {
-    // Support ?demo=true URL param in addition to localStorage
     const urlParams = new URLSearchParams(window.location.search);
     return urlParams.get('demo') === 'true' || localStorage.getItem('demoMode') === 'true';
   });
   const isDemoActive = demoMode || Boolean(tourStep);
 
-  // Demo mode uses backend-populated mock database entries and client-side flags.
   const activateDemo = async () => {
     try {
       await ApiClient.populateMockData(lang);
@@ -67,7 +67,6 @@ function MainApp() {
     }
   };
 
-  // Sync hash with activePage
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '');
@@ -94,7 +93,6 @@ function MainApp() {
     };
 
     window.addEventListener('hashchange', handleHashChange);
-    // Initial check
     if (!window.location.hash) {
       window.location.hash = '#home';
     } else {
@@ -156,7 +154,6 @@ function MainApp() {
     if (returnHash) window.location.hash = returnHash;
   };
 
-  // Theme Sync
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') || 'dark';
     document.documentElement.setAttribute('data-theme', savedTheme);
@@ -170,12 +167,9 @@ function MainApp() {
     setTheme(next);
   };
 
-  // Server health polling
   useEffect(() => {
     const checkHealth = async () => {
-      if (isDemoActive) {
-        return;
-      }
+      if (isDemoActive) return;
       try {
         const data = await ApiClient.health();
         setServerOnline(true);
@@ -190,24 +184,51 @@ function MainApp() {
     return () => clearInterval(interval);
   }, [isDemoActive]);
 
-  // Close settings menu on outside click or Escape.
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (!target.closest('.more-menu-container')) {
-        setMoreOpen(false);
-      }
-    };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMoreOpen(false);
+      if (!target.closest('.more-menu-container')) setMoreOpen(false);
     };
     document.addEventListener('click', handleClick);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('click', handleClick);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
+    return () => document.removeEventListener('click', handleClick);
   }, []);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    const frame = window.requestAnimationFrame(() => {
+      const selectedLanguage = moreMenuRef.current
+        ?.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]');
+      const firstItem = moreMenuRef.current
+        ?.querySelector<HTMLButtonElement>('[role="menuitem"], [role="menuitemradio"]');
+      (selectedLanguage || firstItem)?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [moreOpen]);
+
+  const handleMoreMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(
+      moreMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled), [role="menuitemradio"]:not(:disabled)') ?? [],
+    );
+    if (!items.length) return;
+
+    const currentIndex = Math.max(0, items.indexOf(document.activeElement as HTMLButtonElement));
+    let nextIndex = currentIndex;
+    if (event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % items.length;
+    else if (event.key === 'ArrowUp') nextIndex = (currentIndex - 1 + items.length) % items.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = items.length - 1;
+    else if (event.key === 'Escape') {
+      event.preventDefault();
+      setMoreOpen(false);
+      moreTriggerRef.current?.focus();
+      return;
+    } else {
+      return;
+    }
+
+    event.preventDefault();
+    items[nextIndex]?.focus();
+  };
 
   const renderPage = () => {
     switch (activePage) {
@@ -222,9 +243,7 @@ function MainApp() {
       case 'meeting':
         return <MeetingDetailPage recordingId={routeDetail} navigateTo={navigateTo} demoMode={isDemoActive} />;
       case 'recording':
-        if (isDemoActive) {
-          return <TourRecordingMock />;
-        }
+        if (isDemoActive) return <TourRecordingMock />;
         return routeDetail
           ? <RecordingPage detailId={routeDetail} navigateTo={navigateTo} />
           : <NewRecordingPage navigateTo={navigateTo} />;
@@ -247,217 +266,222 @@ function MainApp() {
     }
   };
 
-  if (activePage === 'overlay') {
-    return <RecordingOverlayPage />;
-  }
+  if (activePage === 'overlay') return <RecordingOverlayPage />;
 
   return (
     <div className="app-chrome min-h-screen">
       <div className="app-shell relative z-10 mx-auto flex min-h-screen w-full max-w-[1480px] flex-col gap-6 px-4 py-5 sm:px-6 lg:px-10">
-      {/* Header */}
-      <header className="app-header surface-supporting flex flex-col gap-3 rounded-2xl px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-        {/* Brand */}
-        <button
-          onClick={() => navigateTo('home')}
-          className="group flex min-w-0 cursor-pointer select-none items-center gap-3 border-0 bg-transparent p-0 text-left text-inherit focus-visible:rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-8 focus-visible:outline-border-focus lg:flex-[1_1_0]"
-        >
-          <span className="brand-mark brand-mark-compact" aria-hidden="true">
-            <span className="brand-mark-halo" />
-            <img src="/logo-dark.svg" alt="" className="brand-logo brand-logo-dark" />
-            <img src="/logo-light.svg" alt="" className="brand-logo brand-logo-light" />
-          </span>
-          <span className="min-w-0">
-            <h1 className="text-lg font-bold leading-none text-text-primary transition-colors duration-200 group-hover:text-accent-hover">
-              ClosedRoom
-            </h1>
-            <p className="mt-1 text-xs text-text-secondary">{t('header.subtitle')}</p>
-          </span>
-        </button>
-
-        {/* Navigation */}
-        <nav className="app-nav flex w-full gap-1 overflow-x-auto rounded-lg border border-border-subtle bg-bg-elevated/85 p-1 shadow-[inset_0_1px_1px_rgba(255,255,255,0.04)] select-none lg:w-auto lg:shrink-0" aria-label={t('header.subtitle')}>
-          {[
-            { id: 'home', label: t('nav.home'), icon: BarChart3 },
-            { id: 'projects', label: t('nav.projects'), icon: FolderKanban },
-          ].map((item) => (
-            <button
-              key={item.id}
-              data-tour={`nav-${item.id}`}
-              onClick={() => navigateTo(item.id)}
-              className={`flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3.5 py-2 text-xs font-semibold transition-all duration-200 ease-spring active:scale-95 cursor-pointer ${
-                activePage === item.id || (item.id === 'home' && activePage === 'meeting')
-                  ? 'primary-gradient-surface text-white shadow-md shadow-accent/20'
-                  : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover'
-              }`}
-              aria-current={activePage === item.id || (item.id === 'home' && activePage === 'meeting') ? 'page' : undefined}
-            >
-              <item.icon className="w-4 h-4" aria-hidden="true" />
-              <span className="hidden md:inline">{item.label}</span>
-            </button>
-          ))}
-        </nav>
-
-        {/* Actions */}
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 lg:flex-[1_1_0] lg:justify-end">
-          <Button
-            data-tour="new-meeting-btn"
-            onClick={() => navigateTo('recording')}
-            size="md"
-            disabled={isDemoActive}
-            title={isDemoActive ? t('dashboard.demoReadonlyHint') : t('dashboard.btnRecord')}
-            className="shrink-0"
+        <header className="app-header surface-supporting flex flex-col gap-3 rounded-2xl px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+          <button
+            type="button"
+            onClick={() => navigateTo('home')}
+            className="group flex min-w-0 cursor-pointer select-none items-center gap-3 border-0 bg-transparent p-0 text-left text-inherit focus-visible:rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-8 focus-visible:outline-border-focus lg:flex-[1_1_0]"
           >
-            <Mic className="w-4 h-4" />
-            <span>{t('header.newMeeting')}</span>
-          </Button>
+            <span className="brand-mark brand-mark-compact" aria-hidden="true">
+              <span className="brand-mark-halo" />
+              <img src="/logo-dark.svg" alt="" className="brand-logo brand-logo-dark" />
+              <img src="/logo-light.svg" alt="" className="brand-logo brand-logo-light" />
+            </span>
+            <span className="min-w-0">
+              <h1 className="text-lg font-bold leading-none text-text-primary transition-colors duration-200 group-hover:text-accent-hover">
+                ClosedRoom
+              </h1>
+              <p className="mt-1 text-xs text-text-secondary">{t('header.subtitle')}</p>
+            </span>
+          </button>
 
-          {/* Server status stays informational; runtime management lives in Settings. */}
-          {!isDemoActive && (
-            <Badge
-              variant={serverOnline ? 'online' : 'offline'}
-              pulse={serverOnline}
-              title={serverOnline ? `${t('header.statusOnline')} · ${defaultModel}` : t('header.statusOffline')}
-              className="hidden sm:inline-flex"
-            >
-              {serverOnline ? t('header.statusOnline') : t('header.statusOffline')}
-            </Badge>
-          )}
-
-          {/* Settings / More */}
-          <div className="relative z-20 more-menu-container">
-            <Tooltip content={t('common.settings')}>
+          <nav className="app-nav flex w-full gap-1 overflow-x-auto rounded-lg border border-border-subtle bg-bg-elevated/85 p-1 shadow-[inset_0_1px_1px_rgba(255,255,255,0.04)] select-none lg:w-auto lg:shrink-0" aria-label={t('header.subtitle')}>
+            {[
+              { id: 'home', label: t('nav.home'), icon: BarChart3 },
+              { id: 'projects', label: t('nav.projects'), icon: FolderKanban },
+            ].map((item) => (
               <button
-                onClick={() => setMoreOpen(!moreOpen)}
-                className={`h-9 rounded-lg border px-3 text-xs font-semibold flex items-center gap-2 transition-all bg-transparent cursor-pointer ${
-                  activePage === 'settings'
-                    ? 'border-border-focus text-accent bg-bg-hover'
-                    : 'border-border-subtle hover:border-border-focus text-text-secondary hover:text-text-primary'
+                key={item.id}
+                type="button"
+                data-tour={`nav-${item.id}`}
+                onClick={() => navigateTo(item.id)}
+                className={`flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3.5 py-2 text-xs font-semibold transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus ${
+                  activePage === item.id || (item.id === 'home' && activePage === 'meeting')
+                    ? 'primary-gradient-surface text-white shadow-md shadow-accent/20'
+                    : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover'
                 }`}
-                aria-expanded={moreOpen}
-                aria-haspopup="menu"
-                aria-controls="app-settings-menu"
+                aria-current={activePage === item.id || (item.id === 'home' && activePage === 'meeting') ? 'page' : undefined}
               >
-                <Settings className="w-[18px] h-[18px]" aria-hidden="true" />
-                <span className="hidden sm:inline">{t('common.settings')}</span>
-                <ChevronDown className="h-3.5 w-3.5 text-text-muted" aria-hidden="true" />
+                <item.icon className="w-4 h-4" aria-hidden="true" />
+                <span className="hidden md:inline">{item.label}</span>
               </button>
-            </Tooltip>
+            ))}
+          </nav>
 
-            {moreOpen && (
-              <div id="app-settings-menu" role="menu" className="ui-overlay-surface absolute right-0 top-11 z-50 flex w-72 flex-col gap-2 rounded-xl border border-border-subtle p-3 animate-in fade-in slide-in-from-top-2 duration-150">
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    setMoreOpen(false);
-                    navigateTo('settings');
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
-                >
-                  <Settings className="h-4 w-4 text-text-muted" aria-hidden="true" />
-                  {t('common.settings')}
-                </button>
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    setMoreOpen(false);
-                    startTour();
-                    showToast(t('tour.started'), 'info');
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
-                >
-                  <PlayCircle className="h-4 w-4 text-text-muted" aria-hidden="true" />
-                  {t('help.tour')}
-                </button>
-                {demoMode ? (
-                  <button
-                    role="menuitem"
-                    onClick={() => {
-                      setMoreOpen(false);
-                      exitDemo();
-                    }}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-red-500 transition-colors hover:bg-red-500/10 hover:text-red-600"
-                  >
-                    <Sparkles className="h-4 w-4 text-red-500" aria-hidden="true" />
-                    {t('demo.bannerExit')}
-                  </button>
-                ) : (
-                  <button
-                    role="menuitem"
-                    onClick={() => {
-                      setMoreOpen(false);
-                      activateDemo();
-                    }}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
-                  >
-                    <Sparkles className="h-4 w-4 text-text-muted" aria-hidden="true" />
-                    {t('help.populateMock')}
-                  </button>
-                )}
-                <hr className="border-border-subtle my-1" />
-                <div className="rounded-lg border border-border-subtle bg-bg-elevated p-2">
-                  <div className="mb-2 flex items-center gap-2 px-1 text-[11px] font-semibold uppercase text-text-muted">
-                    <Languages className="h-3.5 w-3.5" aria-hidden="true" />
-                    {t('common.language')}
-                  </div>
-                  <div className="grid grid-cols-2 gap-1">
-                    {[
-                      { id: 'it', label: 'IT' },
-                      { id: 'en', label: 'EN' },
-                    ].map((item) => (
-                      <button
-                        key={item.id}
-                        role="menuitemradio"
-                        aria-checked={lang === item.id}
-                        onClick={() => setLang(item.id as 'it' | 'en')}
-                        className={`rounded-md px-2 py-1.5 text-xs font-semibold transition-all ${
-                          lang === item.id
-                            ? 'bg-accent text-white'
-                            : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
-                        }`}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <button
-                  role="menuitem"
-                  onClick={toggleTheme}
-                  className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
-                >
-                  <span className="inline-flex items-center gap-2">
-                    <Palette className="h-4 w-4 text-text-muted" aria-hidden="true" />
-                    {t('common.theme')}
-                  </span>
-                  {theme === 'dark' ? <Sun className="h-4 w-4" aria-hidden="true" /> : <Moon className="h-4 w-4" aria-hidden="true" />}
-                </button>
-              </div>
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 lg:flex-[1_1_0] lg:justify-end">
+            <Button
+              data-tour="new-meeting-btn"
+              onClick={() => navigateTo('recording')}
+              size="md"
+              disabled={isDemoActive}
+              title={isDemoActive ? t('dashboard.demoReadonlyHint') : t('dashboard.btnRecord')}
+              className="shrink-0"
+            >
+              <Mic className="w-4 h-4" aria-hidden="true" />
+              <span>{t('header.newMeeting')}</span>
+            </Button>
+
+            {!isDemoActive && (
+              <Badge
+                variant={serverOnline ? 'online' : 'offline'}
+                title={serverOnline ? `${t('header.statusOnline')} · ${defaultModel}` : t('header.statusOffline')}
+                className="hidden sm:inline-flex"
+              >
+                {serverOnline ? t('header.statusOnline') : t('header.statusOffline')}
+              </Badge>
             )}
+
+            <div className="relative z-20 more-menu-container">
+              <Tooltip content={t('common.settings')}>
+                <button
+                  ref={moreTriggerRef}
+                  type="button"
+                  onClick={() => setMoreOpen((open) => !open)}
+                  className={`h-9 rounded-lg border px-3 text-xs font-semibold flex items-center gap-2 transition-colors bg-transparent cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus ${
+                    activePage === 'settings'
+                      ? 'border-border-focus text-accent bg-bg-hover'
+                      : 'border-border-subtle hover:border-border-focus text-text-secondary hover:text-text-primary'
+                  }`}
+                  aria-expanded={moreOpen}
+                  aria-haspopup="menu"
+                  aria-controls="app-settings-menu"
+                >
+                  <Settings className="w-[18px] h-[18px]" aria-hidden="true" />
+                  <span className="hidden sm:inline">{t('common.settings')}</span>
+                  <ChevronDown className="h-3.5 w-3.5 text-text-muted" aria-hidden="true" />
+                </button>
+              </Tooltip>
+
+              {moreOpen && (
+                <div
+                  id="app-settings-menu"
+                  ref={moreMenuRef}
+                  role="menu"
+                  aria-label={t('common.settings')}
+                  onKeyDown={handleMoreMenuKeyDown}
+                  className="ui-overlay-surface absolute right-0 top-11 z-50 flex w-72 flex-col gap-2 rounded-xl border border-border-subtle p-3"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      navigateTo('settings');
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+                  >
+                    <Settings className="h-4 w-4 text-text-muted" aria-hidden="true" />
+                    {t('common.settings')}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      startTour();
+                      showToast(t('tour.started'), 'info');
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+                  >
+                    <PlayCircle className="h-4 w-4 text-text-muted" aria-hidden="true" />
+                    {t('help.tour')}
+                  </button>
+                  {demoMode ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMoreOpen(false);
+                        exitDemo();
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-red-500 transition-colors hover:bg-red-500/10 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+                    >
+                      <Sparkles className="h-4 w-4 text-red-500" aria-hidden="true" />
+                      {t('demo.bannerExit')}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMoreOpen(false);
+                        activateDemo();
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+                    >
+                      <Sparkles className="h-4 w-4 text-text-muted" aria-hidden="true" />
+                      {t('help.populateMock')}
+                    </button>
+                  )}
+                  <hr className="border-border-subtle my-1" />
+                  <div className="rounded-lg border border-border-subtle bg-bg-elevated p-2" role="group" aria-label={t('common.language')}>
+                    <div className="mb-2 flex items-center gap-2 px-1 text-[11px] font-semibold uppercase text-text-muted" aria-hidden="true">
+                      <Languages className="h-3.5 w-3.5" />
+                      {t('common.language')}
+                    </div>
+                    <div className="grid grid-cols-2 gap-1">
+                      {[
+                        { id: 'it', label: 'IT' },
+                        { id: 'en', label: 'EN' },
+                      ].map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={lang === item.id}
+                          onClick={() => setLang(item.id as 'it' | 'en')}
+                          className={`rounded-md px-2 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus ${
+                            lang === item.id
+                              ? 'bg-accent text-white'
+                              : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={toggleTheme}
+                    className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <Palette className="h-4 w-4 text-text-muted" aria-hidden="true" />
+                      {t('common.theme')}
+                    </span>
+                    {theme === 'dark' ? <Sun className="h-4 w-4" aria-hidden="true" /> : <Moon className="h-4 w-4" aria-hidden="true" />}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* Demo mode banner — shown below header when demo is active */}
-      {isDemoActive && !tourStep && (
-        <DemoBanner
-          onExitDemo={exitDemo}
-          onStartTour={() => {
-            startTour();
-            showToast(t('tour.started'), 'info');
-          }}
-        />
-      )}
+        {isDemoActive && !tourStep && (
+          <DemoBanner
+            onExitDemo={exitDemo}
+            onStartTour={() => {
+              startTour();
+              showToast(t('tour.started'), 'info');
+            }}
+          />
+        )}
 
-      {/* Main page content area */}
-      <main className="flex-1 flex flex-col gap-5">
-        {renderPage()}
-      </main>
+        <main className="flex-1 flex flex-col gap-5">
+          {renderPage()}
+        </main>
 
-      {/* Footer */}
-      <footer className="border-t border-border-subtle pt-4 text-center text-[11px] text-text-muted mt-8 leading-relaxed select-none">
-        <span dangerouslySetInnerHTML={{ __html: t('common.powerBy') }} />
-      </footer>
-      {tourStep && <TourOverlay step={TOUR_STEPS[tourStepIndex(tourStep)]} onNext={advanceTour} onBack={retreatTour} onClose={closeTour} />}
+        <footer className="border-t border-border-subtle pt-4 text-center text-[11px] text-text-muted mt-8 leading-relaxed select-none">
+          <span dangerouslySetInnerHTML={{ __html: t('common.powerBy') }} />
+        </footer>
+        {tourStep && <TourOverlay step={TOUR_STEPS[tourStepIndex(tourStep)]} onNext={advanceTour} onBack={retreatTour} onClose={closeTour} />}
       </div>
     </div>
   );
