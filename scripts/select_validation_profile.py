@@ -94,7 +94,11 @@ def _git_changed_files(base: str, head: str) -> list[str]:
 
 
 def classify_path(path: str) -> tuple[str, str]:
-    normalized = Path(path).as_posix().lstrip("./")
+    # Path normalisation already removes a literal "./" prefix. Do not use
+    # lstrip("./") here: lstrip treats its argument as a character set and
+    # would turn dotfiles such as .engineering/e2e.json into
+    # engineering/e2e.json, bypassing their explicit profile ownership.
+    normalized = Path(path).as_posix()
     if normalized in FULL_EXACT or normalized.startswith(FULL_PREFIXES):
         return "full", "validation/build/dependency machinery changed"
     if normalized in STRONG_EXACT or normalized.startswith(STRONG_PREFIXES):

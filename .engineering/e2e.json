@@ -64,13 +64,18 @@
       ]
     },
     {
-      "id": "target-macos-manual",
+      "id": "target-macos-real",
       "fidelity_class": "target_environment",
       "automation": "real_environment",
       "platform": "macOS Apple Silicon",
-      "artifact_surface": "built ClosedRoom .app with interactive WKWebView, native helpers, real permissions/audio devices and representative local models",
+      "command": "python3 scripts/real_environment_smoke.py --build",
+      "artifact_surface": "fresh finalized ClosedRoom .app executed on the user's real Mac with an isolated temporary HOME; macOS Accessibility drives the real WKWebView, real TCC/native microphone+system-audio capture is exercised, loopback persistence is verified and run-owned data is removed with the sandbox",
       "target_environment_refs": ["closedroom-macos-apple-silicon"],
-      "known_gaps": []
+      "known_gaps": [
+        "VoiceOver spoken-output quality and subjective usability still require human judgement even though accessibility-tree exposure and keyboard/focus behavior are exercised",
+        "production signing/notarization identity is outside this ad-hoc local build run",
+        "production MLX/Metal model quality and representative memory/performance remain separate evidence because this smoke stops after persisted recording creation"
+      ]
     }
   ],
   "critical_journeys": [
@@ -81,7 +86,8 @@
       "automated_environment_refs": ["source-contract-suite"],
       "minimum_automated_fidelity": "host_or_fake",
       "real_environment_confirmation": "conditional",
-      "residual_gaps": ["real native capture and permission behavior are outside this source-level claim"],
+      "real_environment_runner": "target-macos-real",
+      "residual_gaps": ["real native capture and permission behavior are outside the source-level claim and are confirmed by target-macos-real when material"],
       "automation_gap_reason": ""
     },
     {
@@ -101,7 +107,8 @@
       "automated_environment_refs": ["source-contract-suite"],
       "minimum_automated_fidelity": "host_or_fake",
       "real_environment_confirmation": "required",
-      "residual_gaps": ["TCC prompts, ScreenCaptureKit/AVFoundation behavior and actual microphone/system-audio devices"],
+      "real_environment_runner": "target-macos-real",
+      "residual_gaps": ["TCC prompts, ScreenCaptureKit/AVFoundation behavior and actual microphone/system-audio devices require target-macos-real evidence"],
       "automation_gap_reason": ""
     },
     {
@@ -111,10 +118,10 @@
       "automated_environment_refs": ["packaged-macos-arm64-ci"],
       "minimum_automated_fidelity": "representative_virtual",
       "real_environment_confirmation": "conditional",
+      "real_environment_runner": "target-macos-real",
       "residual_gaps": [
-        "interactive WKWebView/window rendering and focus behavior",
-        "TCC identity/prompts and physical microphone/system-audio capture",
-        "production signing/notarization and production MLX/Metal performance"
+        "interactive WKWebView/window/focus and TCC/native-audio behavior require target-macos-real when material",
+        "production signing/notarization and production MLX/Metal performance remain separate evidence"
       ],
       "automation_gap_reason": ""
     }

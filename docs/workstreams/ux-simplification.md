@@ -1,6 +1,6 @@
 # UX simplification and critical journey hardening
 
-Status: active — implementation complete; final evidence pending
+Status: active — implementation complete; final target-environment evidence pending
 Owner: frontend product experience
 Read when: implementing or validating the ClosedRoom primary meeting journey and supporting accessibility work
 
@@ -37,7 +37,7 @@ Make the normal ClosedRoom journey feel simple and task-led from meeting capture
 | UX-6 | Refine dashboard around attention and next action without redesign | `frontend/src/pages/DashboardPage.tsx` | UX-1 | yes | DONE |
 | UX-7 | Harden shared accessibility semantics for tooltip/menu/search/tabs and icon actions | `frontend/src/components/ui`, `frontend/src/App.tsx`, affected semantic consumers | UX-1 | yes | DONE |
 | UX-8 | Reduce decorative motion and normalize icon/microcopy treatment on the primary journey | affected presentation call sites | UX-2, UX-3, UX-4, UX-5, UX-6, UX-7 | no | DONE |
-| UX-9 | Critical-journey automated evidence plus declared macOS REAL_ENVIRONMENT residual checks | tests/scripts/contracts/docs | UX-2, UX-3, UX-4, UX-5, UX-6, UX-7, UX-8 | no | ACTIVE |
+| UX-9 | Critical-journey automated evidence plus declared macOS REAL_ENVIRONMENT confirmation | `scripts/real_environment_smoke.py`, `.engineering/e2e.json`, tests/docs | UX-2, UX-3, UX-4, UX-5, UX-6, UX-7, UX-8 | no | ACTIVE |
 
 Allowed states: `READY`, `ACTIVE`, `BLOCKED`, `DONE`.
 
@@ -94,29 +94,52 @@ Allowed states: `READY`, `ACTIVE`, `BLOCKED`, `DONE`.
 
 Acceptance:
 
-- Repository product-experience verification, docs verification, frontend lint/typecheck and the selector-required deterministic suite pass on the integrated exact HEAD.
-- Validation profile is selected from the actual complete diff and is not silently downgraded.
-- The PR remains based on the current `dev` revision and the complete diff contains no unrelated/generated/private residue.
-- Interactive WKWebView rendering/focus, VoiceOver behavior and real TCC/audio-device behavior remain explicitly `REAL_ENVIRONMENT` where repository automation cannot prove them.
+- Repository product-experience verification, docs verification, frontend lint/typecheck and the selector-required deterministic suite pass on the exact runner HEAD.
+- `.engineering/e2e.json` declares `target-macos-real` and points to the canonical real-environment command.
+- A clean real Apple Silicon checkout can run `python3 scripts/real_environment_smoke.py --build` against a freshly finalized exact-checkout `.app`.
+- The runner verifies an accessible packaged WKWebView, `Cmd+K`/Escape focus behavior, real native capture/TCC readiness, Start/Stop, persisted native `both` audio with non-empty mic + system tracks, and Stop -> meeting navigation.
+- The runner launches the packaged executable with an isolated temporary `HOME`; normal ClosedRoom settings/catalog/recordings are untouched and the sandbox is removed on every non-debug exit.
+- Missing macOS grants produce `blocked_permission` plus concrete remediation rather than a false product failure.
+- Evidence is privacy-safe JSON under `dist/evidence/real-environment/`; no screenshots, audio or transcript content are copied into the evidence artifact.
+- VoiceOver spoken-output quality and subjective usability remain an explicit human-judgement residual after the deterministic accessibility-tree/keyboard checks pass.
 
 Validation routing:
 
-- `SCOPED` is expected from the current diff because executable changes are contained to `frontend/` and adopted `design/` / `docs/` owners are LEAN paths.
-- Repository-owned PR preflight is the `REMOTE_AUTOMATED` executor in this session.
-- `.engineering/e2e.json` remains authoritative for residual target-environment fidelity gaps.
+- This runner change is `STRONG`: `.engineering/e2e.json` is an explicit runtime/native/E2E validation boundary, while the new script/test are contained execution tooling.
+- Repository-owned PR preflight is the `REMOTE_AUTOMATED` executor for deterministic repository/source/package checks.
+- `target-macos-real` is `REAL_ENVIRONMENT`; it must run on the user's actual Apple Silicon Mac and is not replaced by GitHub-hosted macOS.
+- `.engineering/e2e.json` remains authoritative for target-environment fidelity and residual gaps.
+
+## Real-environment runner
+
+Canonical command from a clean `dev` checkout:
+
+```bash
+python3 scripts/real_environment_smoke.py --build
+```
+
+Result classes:
+
+- `pass` / exit `0`: all automated target-macOS assertions and zero-residue cleanup passed.
+- `blocked_permission` / exit `2`: macOS requires Accessibility, Automation, Microphone or Screen & System Audio Recording permission; grant only the requested item and rerun the same command.
+- `fail` / exit `1`: product/test/environment invariant failed and should be diagnosed rather than bypassed.
+
+The runner emits a short local test phrase through macOS `say` while native capture is active so the system-audio path is exercised without using user content. The recording lives only inside the temporary HOME.
 
 ## Evidence history
 
-- Earlier integrated heads passed Repository health and SCOPED remote preflight while implementation slices were landing; those runs are useful regression-isolation evidence only and are not reused for a newer material HEAD.
-- Final readiness is based only on the latest exact HEAD after this workstream-state update and PR metadata are current.
+- UX implementation exact-head SCOPED remote preflight passed before integration to `dev`; those runs prove the UI/source changes but do not count as target-environment evidence.
+- The real-environment runner itself requires a new exact-head STRONG preflight because it changes the adopted E2E contract and execution tooling.
+- Target-environment completion is recorded only after the real-Mac command above produces `status: pass`; `blocked_permission` is a rerunnable environment-preparation state, not completion.
 
 ## Durable documentation destinations
 
 - `design/ux-contract.json`: canonical journey, hierarchy/disclosure and validation expectations.
 - `design/brand-kit.json`: unchanged because the adopted visual/motion principles did not change; implementation was brought closer to the existing contract.
-- `docs/features/`: N/A; durable cross-surface behavior is sufficiently owned by the adopted UX contract and this active execution workstream.
-- tests/contracts: existing repository deterministic suites remain the executable source of truth for the affected source boundaries.
+- `.engineering/e2e.json`: canonical execution-environment fidelity and real-environment runner declaration.
+- `scripts/real_environment_smoke.py`: executable target-Mac evidence owner.
+- `test/test_real_environment_smoke.py`: deterministic helper/cleanup/evidence safety checks.
 
 ## Completion
 
-Automated implementation completion requires all selected deterministic gates to pass on the exact integrated HEAD/base. The workstream remains active after that when stronger claims still depend on the declared `target-macos-manual` residual evidence for interactive WKWebView focus/VoiceOver and real TCC/audio behavior.
+UX-9 can move to `DONE` after the runner is integrated with green exact-head deterministic preflight and `python3 scripts/real_environment_smoke.py --build` produces `status: pass` on the real target Mac. VoiceOver spoken-output quality remains a separately stated human-judgement observation and does not get silently converted into CI evidence.
