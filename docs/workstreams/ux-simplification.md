@@ -1,8 +1,8 @@
 # UX simplification and critical journey hardening
 
-Status: active
+Status: active — implementation complete; final evidence pending
 Owner: frontend product experience
-Read when: implementing or coordinating the ClosedRoom primary meeting journey and supporting accessibility work
+Read when: implementing or validating the ClosedRoom primary meeting journey and supporting accessibility work
 
 ## Goal
 
@@ -29,99 +29,94 @@ Make the normal ClosedRoom journey feel simple and task-led from meeting capture
 
 | ID | Work | Owns/writes | Depends on | Parallel | State |
 | --- | --- | --- | --- | --- | --- |
-| UX-1 | Codify golden path, hierarchy and disclosure contract | `design/ux-contract.json`, this workstream | — | no | ACTIVE |
-| UX-2 | Simplify new-meeting/recording default path and permission recovery | `frontend/src/pages/RecordingPage.tsx`, recording-specific UI helpers/i18n | UX-1 | yes | BLOCKED |
-| UX-3 | Make meeting detail the guided transcript-to-insights workspace; hide runtime diagnostics | `frontend/src/pages/MeetingDetailPage.tsx`, meeting-specific UI/i18n | UX-1 | yes | BLOCKED |
-| UX-4 | Simplify analysis setup with strong defaults and advanced disclosure | `frontend/src/components/AnalysisSetupModal.tsx`, analysis setup i18n | UX-1 | yes | BLOCKED |
-| UX-5 | Separate user preferences from runtime diagnostics; remove runtime action from global header | `frontend/src/pages/SettingsPage.tsx`, `frontend/src/App.tsx`, settings/header i18n | UX-1 | yes | BLOCKED |
-| UX-6 | Refine dashboard around attention and next action without redesign | `frontend/src/pages/DashboardPage.tsx`, dashboard-specific UI/i18n | UX-1 | yes | BLOCKED |
-| UX-7 | Harden shared accessibility semantics for tooltip/menu/search/tabs and icon actions | `frontend/src/components/ui`, affected semantic consumers | UX-1 | yes | BLOCKED |
-| UX-8 | Reduce decorative motion/glow and normalize icon/microcopy treatment | `frontend/src/index.css`, affected presentation-only call sites | UX-2, UX-3, UX-4, UX-5, UX-6, UX-7 | no | BLOCKED |
-| UX-9 | Critical-journey automated evidence plus declared macOS REAL_ENVIRONMENT residual checks | tests/scripts/contracts/docs | UX-2, UX-3, UX-4, UX-5, UX-6, UX-7, UX-8 | no | BLOCKED |
+| UX-1 | Codify golden path, hierarchy and disclosure contract | `design/ux-contract.json`, this workstream | — | no | DONE |
+| UX-2 | Simplify new-meeting/recording default path and permission recovery | `frontend/src/pages/NewRecordingPage.tsx`, `frontend/src/App.tsx` | UX-1 | yes | DONE |
+| UX-3 | Make meeting detail the guided transcript-to-insights workspace; hide runtime diagnostics | `frontend/src/pages/MeetingDetailPage.tsx` | UX-1 | yes | DONE |
+| UX-4 | Simplify analysis setup with strong defaults and advanced disclosure | `frontend/src/components/ui/AnalysisSetupModal.tsx` | UX-1 | yes | DONE |
+| UX-5 | Separate user preferences from runtime diagnostics; remove runtime action from global header | `frontend/src/pages/SettingsPage.tsx`, `frontend/src/App.tsx` | UX-1 | yes | DONE |
+| UX-6 | Refine dashboard around attention and next action without redesign | `frontend/src/pages/DashboardPage.tsx` | UX-1 | yes | DONE |
+| UX-7 | Harden shared accessibility semantics for tooltip/menu/search/tabs and icon actions | `frontend/src/components/ui`, `frontend/src/App.tsx`, affected semantic consumers | UX-1 | yes | DONE |
+| UX-8 | Reduce decorative motion and normalize icon/microcopy treatment on the primary journey | affected presentation call sites | UX-2, UX-3, UX-4, UX-5, UX-6, UX-7 | no | DONE |
+| UX-9 | Critical-journey automated evidence plus declared macOS REAL_ENVIRONMENT residual checks | tests/scripts/contracts/docs | UX-2, UX-3, UX-4, UX-5, UX-6, UX-7, UX-8 | no | ACTIVE |
 
 Allowed states: `READY`, `ACTIVE`, `BLOCKED`, `DONE`.
 
-Parallel work must stay inside the declared write boundaries or use an explicit integration commit.
+## Implemented experience
+
+### New Meeting / recording
+
+- The ordinary `New Meeting` route now uses `NewRecordingPage`; the historical recording detail remains owned by `RecordingPage` when a recording ID is present.
+- A configured user sees title, project, readiness and the dominant Start/Stop action without opening technical configuration.
+- Storage and permission blockers are summarized in user language with an immediate recovery action.
+- Source mode, diarization and visual intelligence are progressively disclosed as meeting options.
+- Capture backend, helper/permission internals and audio routing remain available under Diagnostics rather than the default path.
+- The existing `useRecorder` capture lifecycle remains the runtime owner; no parallel capture implementation was introduced.
+- After successful finalization the saved recording ID opens the meeting workspace directly.
+
+### Meeting workspace
+
+- Missing transcription makes Transcribe the dominant next action.
+- A transcript without analysis makes Analyze the dominant next action.
+- Runtime/backend/model/log and visual-debug details are absent from the normal processing surface and live under Details/Diagnostics.
+- Transcript, Analysis and Speakers use a semantic tablist with roving focus and `ArrowLeft` / `ArrowRight` / `Home` / `End` navigation.
+- The analysis action menu supports composite-menu keyboard navigation and restores focus on Escape.
+
+### Analysis setup
+
+- Normal setup exposes provider/runtime trust choice plus model and quality where applicable.
+- Temperature, reasoning, token limits, JSON mode, model path and runtime status are under Advanced.
+- Existing provider payload contracts remain unchanged.
+
+### Settings and global shell
+
+- The global header keeps navigation, `New Meeting`, service health and user-level settings; Local LLM runtime UI is no longer a peer primary action.
+- Stable online health is informational rather than continuously animated.
+- The Settings menu exposes `expanded`/menu semantics and supports ArrowUp/ArrowDown/Home/End/Escape with focus restoration.
+- User-facing storage, transcription, analysis and meeting defaults are separated from service lifecycle, endpoint, model-path, expert parameters and logs under Advanced & diagnostics.
+
+### Dashboard
+
+- Home continues to answer what happened, what needs attention and what to open next without increasing default information density.
+- Search uses the shared Radix Dialog, inheriting focus trap, Escape close and focus return.
+- Period selection exposes menu/radio state and ArrowUp/ArrowDown/Home/End/Escape keyboard behavior.
+- Icon-only search/technical controls have explicit accessible names.
+- Decorative page-entry/lift motion was removed from the touched dashboard path; state/progress motion remains available where meaningful.
+
+### Shared accessibility
+
+- Tooltip content is reachable on focus and exposed through `role="tooltip"` / `aria-describedby`.
+- Shared Dialog close labeling follows the active application language.
+- Touched composite controls expose names, selected/expanded state and keyboard focus behavior without introducing a second global interaction owner.
 
 ## Current executable slice
 
-`UX-1`
+`UX-9`
 
 Acceptance:
 
-- `design/ux-contract.json` declares the canonical golden path and disclosure tiers.
-- The normal-path contract explicitly excludes internal runtime concepts unless they create user value or are needed for recovery.
-- Recording, meeting, analysis and settings slices have observable user-outcome acceptance criteria in this workstream.
+- Repository product-experience verification, docs verification, frontend lint/typecheck and the selector-required deterministic suite pass on the integrated exact HEAD.
+- Validation profile is selected from the actual complete diff and is not silently downgraded.
+- The PR remains based on the current `dev` revision and the complete diff contains no unrelated/generated/private residue.
+- Interactive WKWebView rendering/focus, VoiceOver behavior and real TCC/audio-device behavior remain explicitly `REAL_ENVIRONMENT` where repository automation cannot prove them.
 
-Validation:
+Validation routing:
 
-- `python3 scripts/verify_product_experience.py`
-- `python3 scripts/verify_docs.py`
+- `SCOPED` is expected from the current diff because executable changes are contained to `frontend/` and adopted `design/` / `docs/` owners are LEAN paths.
+- Repository-owned PR preflight is the `REMOTE_AUTOMATED` executor in this session.
+- `.engineering/e2e.json` remains authoritative for residual target-environment fidelity gaps.
 
-## Slice acceptance
+## Evidence history
 
-### UX-2 Recording
-
-- A configured user can start a default `microphone + computer` meeting from the main form without opening technical settings.
-- Readiness is summarized as a user-facing ready/blocking state; detailed backend diagnostics are not in the default path.
-- Missing microphone/screen permission exposes one clear recovery action and supports retry.
-- Source mode, diarization and visual intelligence remain discoverable as contextual/advanced options.
-
-### UX-3 Meeting workspace
-
-- If transcription is missing, transcription is the dominant next action.
-- If transcript exists and analysis is missing, analysis is the dominant next action.
-- Runtime/backend/model/log details are absent from normal processing state and available only through explicit details/diagnostics disclosure.
-- Transcript/insights/speakers navigation has correct semantic selection relationships and keyboard focus behavior.
-
-### UX-4 Analysis setup
-
-- Default choice is understandable as Local vs Cloud/provider plus a user-facing quality preset.
-- Temperature, reasoning, token limits, JSON mode and model paths do not appear until Advanced is opened.
-- The current explicit provider/runtime trust choice remains preserved.
-
-### UX-5 Settings/header
-
-- Global header contains primary navigation, `New Meeting`, and user-level settings controls; Local LLM runtime UI is not a peer primary action.
-- User preference sections remain separate from service lifecycle/log/port/model diagnostics.
-
-### UX-6 Dashboard
-
-- Home answers `what happened`, `what needs attention`, and `what should I open/do next` without increasing default density.
-- Search and period controls use accessible interaction semantics.
-
-### UX-7 Accessibility
-
-- Tooltip content is reachable by keyboard and exposed with assistive semantics.
-- Custom menus/search/tabs expose appropriate roles, names, selected/expanded state and focus behavior.
-- Icon-only critical controls have accessible names.
-
-### UX-8 Visual polish
-
-- Frequent interactions use restrained motion; attention animation is reserved for actual state/progress/urgency.
-- Functional icons use Lucide rather than emoji where practical.
-- Hard-coded locale-specific functional copy in touched surfaces is removed.
-
-### UX-9 Evidence
-
-- Required repository product-experience verification, frontend lint/typecheck and selected E2E/contract checks pass on exact HEAD.
-- Validation profile is selected from the actual diff and is not silently downgraded.
-- Interactive WKWebView/focus/VoiceOver/TCC evidence remains explicitly `REAL_ENVIRONMENT` where automation cannot prove it.
-
-## Integration points
-
-- `design/ux-contract.json` owns journey/disclosure semantics used by every slice.
-- Shared component changes in UX-7 land before consumers depend on their semantics.
-- UX-8 may tune presentation only after task hierarchy is stable.
-- UX-9 validates the integrated exact head rather than reusing evidence from earlier slice commits.
+- Earlier integrated heads passed Repository health and SCOPED remote preflight while implementation slices were landing; those runs are useful regression-isolation evidence only and are not reused for a newer material HEAD.
+- Final readiness is based only on the latest exact HEAD after this workstream-state update and PR metadata are current.
 
 ## Durable documentation destinations
 
 - `design/ux-contract.json`: canonical journey, hierarchy/disclosure and validation expectations.
-- `design/brand-kit.json`: only if semantic visual/motion rules materially change.
-- `docs/features/`: only when durable user-visible feature behavior changes beyond the design contract.
-- tests/contracts: executable critical-journey and accessibility-adjacent deterministic truth.
+- `design/brand-kit.json`: unchanged because the adopted visual/motion principles did not change; implementation was brought closer to the existing contract.
+- `docs/features/`: N/A; durable cross-surface behavior is sufficiently owned by the adopted UX contract and this active execution workstream.
+- tests/contracts: existing repository deterministic suites remain the executable source of truth for the affected source boundaries.
 
 ## Completion
 
-The workstream is complete only when applicable code, interaction states, recovery, accessibility, adaptive behavior, validation/evidence and durable docs agree. Then update `docs/current-state.md` and delete this file by default.
+Automated implementation completion requires all selected deterministic gates to pass on the exact integrated HEAD/base. The workstream remains active after that when stronger claims still depend on the declared `target-macos-manual` residual evidence for interactive WKWebView focus/VoiceOver and real TCC/audio behavior.
