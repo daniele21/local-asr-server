@@ -3,8 +3,9 @@
 
 The run drives the packaged WKWebView via macOS Accessibility/System Events,
 uses the app's real native capture/TCC path, verifies persisted audio through the
-loopback API, and removes only the meeting it created. Missing TCC/Accessibility
-permission is BLOCKED_PERMISSION (exit 2), not a product failure.
+loopback API, and runs inside an isolated temporary HOME so user data is never
+modified. Missing TCC/Accessibility permission is BLOCKED_PERMISSION (exit 2),
+not a product failure.
 """
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -131,7 +133,7 @@ def args() -> argparse.Namespace:
     p.add_argument("--build", action="store_true", help="Build a fresh exact-checkout .app first")
     p.add_argument("--record-seconds", type=float, default=8.0)
     p.add_argument("--timeout", type=float, default=90.0)
-    p.add_argument("--keep-meeting", action="store_true")
+    p.add_argument("--keep-sandbox", action="store_true", help="Keep the isolated HOME after the run for debugging")
     p.add_argument("--evidence")
     return p.parse_args()
 
@@ -357,7 +359,9 @@ def main() -> int:
         "residual_gaps": ["VoiceOver spoken-output quality and subjective usability still require human judgement; this run verifies the accessibility tree and keyboard/focus path."],
     }
     output = evidence_path(root, a.evidence)
-    pid = port = None; api = None; owned_id = None; executable = ""
+    pid = port = None; api = None; executable = ""; app_process = None
+    sandbox_home = Path(tempfile.mkdtemp(prefix="closedroom-real-env-"))
+    report["isolated_home"] = str(sandbox_home)
 
     def check(name: str, condition: bool, detail: Any = None) -> None:
         report["checks"].append({"name": name, "status": PASS if condition else FAIL, "detail": detail})
@@ -365,27 +369,34 @@ def main() -> int:
 
     try:
         check("target_platform", platform.system() == "Darwin" and platform.machine() == "arm64", report["platform"])
+        check("checkout_clean", not dirty, {"source_revision": revision})
         if a.build: subprocess.run(["bash", "scripts/build_artifact.sh", "--no-dmg"], cwd=root, check=True)
         if a.app:
             app = Path(a.app).expanduser().resolve(); manifest_path = app.parent / "build-manifest.json"
             if not manifest_path.is_file(): manifest_path = None
         else: app, manifest_path = latest_app(root)
         report["app"] = str(app); report["manifest"] = str(manifest_path) if manifest_path else None
+        check("finalized_manifest_present", bool(manifest_path and manifest_path.is_file()))
         info = bundle_info(app); report["bundle"] = info; executable = info["executable"]
         manifest = json.loads(manifest_path.read_text()) if manifest_path else {}
         artifact_rev = str(manifest.get("source_revision") or "")
         check("artifact_matches_checkout", revision == "unknown" or not artifact_rev or artifact_rev.startswith(revision) or revision.startswith(artifact_rev), {"checkout": revision, "artifact": artifact_rev})
         check("artifact_not_already_running", not pids_for(executable))
 
-        subprocess.run(["open", "-na", str(app)], check=True)
-        found: list[int] = []
-        def find_pid() -> bool:
-            nonlocal found; found = pids_for(executable); return len(found) == 1
-        check("packaged_process_started", wait(find_pid, a.timeout), found)
-        pid = found[0]; report["pid"] = pid
+        launch_env = os.environ.copy()
+        launch_env["HOME"] = str(sandbox_home)
+        app_process = subprocess.Popen(
+            [executable], env=launch_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        pid = app_process.pid; report["pid"] = pid
+        check("packaged_process_started", wait(lambda: app_process.poll() is None, 3), {"pid": pid})
         port, health = discover_server(pid, info["bundle_id"], info["version"], a.timeout)
         report["port"] = port; report["health"] = health; api = Api(port)
         check("loopback_health", bool(health.get("ok")), health)
+        settings = api.json("/v1/settings")
+        recordings_dir = str(settings.get("recordings_dir") or "") if isinstance(settings, dict) else ""
+        report["isolated_recordings_dir"] = recordings_dir
+        check("user_data_isolated", recordings_dir.startswith(str(sandbox_home)), recordings_dir)
 
         check("wkwebview_window_accessible", bool(ui(pid, "window")))
         key(pid, "cmd-k"); check("keyboard_cmd_k_search", wait(lambda: exists(pid, LABELS["search"]), 8))
@@ -418,8 +429,10 @@ def main() -> int:
         check("runtime_recording", wait(lambda: api.health().get("status") == "recording", 20))
         check("stop_visible", wait(lambda: exists(pid, LABELS["stop"]), 8))
         # Synthetic local system audio; no user content enters the evidence.
-        tone = subprocess.Popen(["say", "-v", "Samantha", "ClosedRoom test tone"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(max(2, a.record_seconds)); tone.poll()
+        tone = subprocess.Popen(["say", "ClosedRoom test tone"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(max(2, a.record_seconds))
+        try: tone.wait(timeout=5)
+        except subprocess.TimeoutExpired: tone.terminate()
         ui(pid, "press", LABELS["stop"])
         check("runtime_stopped", wait(lambda: api.health().get("status") != "recording", 30))
 
@@ -440,11 +453,6 @@ def main() -> int:
         check("native_backend_persisted", created.get("capture_backend") == "native", report["created_recording"])
         check("both_sources_persisted", created.get("capture_mode") == "both" and {"mic", "system"}.issubset(tracks), report["created_recording"])
         check("meeting_workspace_after_stop", wait(lambda: exists(pid, LABELS["transcribe"]), 15))
-
-        if not a.keep_meeting:
-            api.json(f"/v1/recordings/{owned_id}/discard", "POST")
-            check("run_owned_meeting_removed", wait(lambda: all(str(x.get("id")) != owned_id for x in api.recordings()), 10))
-            owned_id = None
         report["status"] = PASS
 
     except PermissionError as exc:
@@ -454,13 +462,17 @@ def main() -> int:
     except (Exception,) as exc:
         report["status"] = FAIL; report["errors"].append(str(exc))
     finally:
-        if api and owned_id and not a.keep_meeting:
-            try: api.json(f"/v1/recordings/{owned_id}/discard", "POST"); report["cleanup"]["meeting_removed_after_failure"] = True
-            except Exception as exc: report["cleanup"]["meeting_cleanup_error"] = str(exc)
         if pid and executable:
             report["cleanup"].update(quit_app(pid, executable, port))
             if report["status"] == PASS and not report["cleanup"].get("process_gone"):
                 report["status"] = FAIL; report["errors"].append("ClosedRoom process survived cleanup")
+        if not a.keep_sandbox:
+            shutil.rmtree(sandbox_home, ignore_errors=True)
+            report["cleanup"]["isolated_home_removed"] = not sandbox_home.exists()
+            if report["status"] == PASS and sandbox_home.exists():
+                report["status"] = FAIL; report["errors"].append("isolated HOME survived cleanup")
+        else:
+            report["cleanup"]["isolated_home_removed"] = False
         report["finished_at"] = datetime.now(timezone.utc).isoformat()
         output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
         cleanup_old_evidence(root)
