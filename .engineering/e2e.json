@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "contract_version": "0.1.0",
+  "contract_version": "0.1.1",
   "applicability": {
     "status": "recommended",
     "reason": "ClosedRoom crosses FastAPI, persisted meeting state, a React/WKWebView UI, macOS native capture helpers and local AI runtimes; lower-level tests alone cannot prove every critical assembled workflow."
@@ -11,7 +11,8 @@
     "lowest_sufficient_test_level": true,
     "critical_journeys_only": true,
     "built_artifact_when_material": true,
-    "residual_fidelity_gaps_explicit": true
+    "residual_fidelity_gaps_explicit": true,
+    "ui_journey_screenshot_and_video_artifacts_required": true
   },
   "fidelity_order": [
     "host_or_fake",
@@ -68,8 +69,8 @@
       "fidelity_class": "target_environment",
       "automation": "real_environment",
       "platform": "macOS Apple Silicon",
-      "command": "python3 scripts/real_environment_smoke.py --build",
-      "artifact_surface": "fresh finalized ClosedRoom .app executed on the user's real Mac with an isolated temporary HOME; macOS Accessibility drives the real WKWebView, real TCC/native microphone+system-audio capture is exercised, loopback persistence is verified and run-owned data is removed with the sandbox",
+      "command": "python3 scripts/real_environment_ui_evidence.py --build",
+      "artifact_surface": "fresh finalized ClosedRoom .app executed on the user's real Mac with an isolated temporary HOME; macOS Accessibility drives the real WKWebView, native TCC microphone+system-audio capture is exercised, loopback persistence is verified, and the UI journey retains window-scoped screenshot checkpoints plus a complete screen recording",
       "target_environment_refs": ["closedroom-macos-apple-silicon"],
       "known_gaps": [
         "VoiceOver spoken-output quality and subjective usability still require human judgement even though accessibility-tree exposure and keyboard/focus behavior are exercised",
@@ -82,6 +83,8 @@
     {
       "id": "recording-persistence",
       "claim": "A recording can be created, receive ordered chunks, finalize, update catalog state and remain discoverable after the owning store is reopened.",
+      "ui_surface": false,
+      "required_media_artifacts": [],
       "target_environment_refs": ["closedroom-macos-apple-silicon"],
       "automated_environment_refs": ["source-contract-suite"],
       "minimum_automated_fidelity": "host_or_fake",
@@ -93,6 +96,8 @@
     {
       "id": "transcription-workflow",
       "claim": "The public transcription workflow coordinates request/job state, transcription service behavior and persistence without losing or falsely completing work.",
+      "ui_surface": false,
+      "required_media_artifacts": [],
       "target_environment_refs": ["closedroom-macos-apple-silicon"],
       "automated_environment_refs": ["source-contract-suite"],
       "minimum_automated_fidelity": "host_or_fake",
@@ -103,6 +108,8 @@
     {
       "id": "native-capture-recovery",
       "claim": "Native capture capability, permission and lifecycle contracts fail safely and restore run-owned state across stop and error paths.",
+      "ui_surface": false,
+      "required_media_artifacts": [],
       "target_environment_refs": ["closedroom-macos-apple-silicon"],
       "automated_environment_refs": ["source-contract-suite"],
       "minimum_automated_fidelity": "host_or_fake",
@@ -114,6 +121,8 @@
     {
       "id": "packaged-app-lifecycle",
       "claim": "A finalized ClosedRoom .app contains a runnable frozen executable and bundled frontend, reaches loopback health/readiness through that executable, then stops gracefully without leaving its listener or observed child processes.",
+      "ui_surface": false,
+      "required_media_artifacts": [],
       "target_environment_refs": ["closedroom-macos-apple-silicon"],
       "automated_environment_refs": ["packaged-macos-arm64-ci"],
       "minimum_automated_fidelity": "representative_virtual",
@@ -124,6 +133,22 @@
         "production signing/notarization and production MLX/Metal performance remain separate evidence"
       ],
       "automation_gap_reason": ""
+    },
+    {
+      "id": "meeting-recording-ui",
+      "claim": "A user can open the packaged ClosedRoom UI, create a new meeting, see the ready state, start recording, observe the active recording state, stop and save, and reach the persisted meeting workspace through the real WKWebView and native capture path.",
+      "ui_surface": true,
+      "required_media_artifacts": ["screenshots", "video"],
+      "target_environment_refs": ["closedroom-macos-apple-silicon"],
+      "automated_environment_refs": [],
+      "minimum_automated_fidelity": "host_or_fake",
+      "real_environment_confirmation": "required",
+      "real_environment_runner": "target-macos-real",
+      "residual_gaps": [
+        "VoiceOver spoken-output quality and subjective usability remain human evidence",
+        "production signing/notarization and production MLX/Metal inference quality remain outside this recording UI journey"
+      ],
+      "automation_gap_reason": "Interactive WKWebView plus TCC-backed microphone/system-audio capture requires the target Mac real-environment runner; hosted CI does not truthfully reproduce this UI/native-permission journey."
     }
   ]
 }
