@@ -130,7 +130,7 @@ def select_profile(paths: list[str]) -> dict[str, object]:
             selected = profile
             strongest_reasons = [f"{path}: {reason}"]
         elif RANK[profile] == RANK[selected]:
-            strongest_reasons.append(f"{path}: {reason}"]
+            strongest_reasons.append(f"{path}: {reason}")
 
     return {
         "profile": selected,
