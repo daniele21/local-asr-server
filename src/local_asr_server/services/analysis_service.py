@@ -29,39 +29,44 @@ class AnalysisService:
     def analyze(self, body: AnalysisRequest) -> dict[str, Any]:
         settings = self.settings_with_request_overrides(load_settings(), body)
         provider_name = settings.get("llm_provider", "mock")
+        local_phase = provider_name in {"nemotron_local", "voxtral_local"}
         api_key = body.gemini_api_key or settings.get("gemini_api_key", "") or get_env_var("GEMINI_API_KEY")
         gemini_model = settings.get("gemini_model") or DEFAULT_GEMINI_MODEL
         local_llm_url = None
         local_llm_model = None
         temperature = self._resolve_temperature(settings)
 
-        if provider_name in {"nemotron_local", "voxtral_local"}:
-            capability = "audio" if provider_name == "voxtral_local" and body.recording_id else "text"
-            try:
-                runtime_options = self.services.runtime.ensure_llm_ready(
-                    capability=capability,
-                    reasoning=settings.get("local_llm_reasoning") or "auto",
-                    overrides=settings,
+        try:
+            if local_phase:
+                capability = "audio" if provider_name == "voxtral_local" and body.recording_id else "text"
+                try:
+                    runtime_options = self.services.runtime.ensure_llm_ready(
+                        capability=capability,
+                        reasoning=settings.get("local_llm_reasoning") or "auto",
+                        overrides=settings,
+                    )
+                    local_llm_url = runtime_options.get("base_url")
+                    local_llm_model = runtime_options.get("model")
+                except LocalLLMSidecarError as exc:
+                    raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": str(exc)}) from exc
+                except RuntimeError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+            effective_model = gemini_model if provider_name == "gemini" else local_llm_model
+            provider = LLMService.get_provider(provider_name, api_key, local_llm_url, local_llm_model, gemini_model)
+
+            if provider_name == "voxtral_local" and body.recording_id:
+                return self._analyze_audio(
+                    body, provider, provider_name=provider_name,
+                    model=local_llm_model, settings=settings,
                 )
-                local_llm_url = runtime_options.get("base_url")
-                local_llm_model = runtime_options.get("model")
-            except LocalLLMSidecarError as exc:
-                raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": str(exc)}) from exc
-            except RuntimeError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-        effective_model = gemini_model if provider_name == "gemini" else local_llm_model
-        provider = LLMService.get_provider(provider_name, api_key, local_llm_url, local_llm_model, gemini_model)
-
-        if provider_name == "voxtral_local" and body.recording_id:
-            return self._analyze_audio(
-                body, provider, provider_name=provider_name,
-                model=local_llm_model, settings=settings,
+            return self._analyze_text(
+                body, provider, provider_name=provider_name, model=effective_model,
+                settings=settings, api_key=api_key, temperature=temperature,
             )
-        return self._analyze_text(
-            body, provider, provider_name=provider_name, model=effective_model,
-            settings=settings, api_key=api_key, temperature=temperature,
-        )
+        finally:
+            if local_phase:
+                self.services.runtime.release_llm_residency(overrides=settings)
 
     @staticmethod
     def request_setting_overrides(body: Any) -> dict[str, Any]:
