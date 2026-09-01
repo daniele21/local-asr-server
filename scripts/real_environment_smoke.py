@@ -152,8 +152,7 @@ def wait(predicate: Callable[[], bool], timeout: float, interval: float = 0.4) -
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            if predicate():
-                return True
+            if predicate(): return True
         except PermissionError:
             raise
         except Exception:
@@ -170,9 +169,7 @@ def run(cmd: list[str], *, cwd: Path | None = None, timeout: float | None = None
 def osascript(source: str, *values: str, timeout: float = UI_ACTION_TIMEOUT_SECONDS) -> str:
     r = subprocess.run(
         ["osascript", "-l", "AppleScript", "-e", source, "--", *values],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
+        capture_output=True, text=True, timeout=timeout,
     )
     if r.returncode:
         raise RuntimeError((r.stderr or r.stdout or "AppleScript failed").strip())
@@ -193,10 +190,8 @@ def ui(pid: int, action: str, labels: Iterable[str] = ()) -> str:
 
 
 def exists(pid: int, labels: Iterable[str]) -> bool:
-    try:
-        return ui(pid, "exists", labels).lower() == "true"
-    except RuntimeError:
-        return False
+    try: return ui(pid, "exists", labels).lower() == "true"
+    except RuntimeError: return False
 
 
 def ui_ready(pid: int, timeout: float) -> bool:
@@ -205,12 +200,10 @@ def ui_ready(pid: int, timeout: float) -> bool:
 
 def focused_value(pid: int, timeout: float = 8.0) -> str:
     value = "unknown"
-
     def probe() -> bool:
         nonlocal value
         value = ui(pid, "focused")
         return value != "unknown"
-
     return value if wait(probe, timeout) else "unknown"
 
 
@@ -221,8 +214,7 @@ def press(pid: int, labels: Iterable[str], timeout: float = 15.0) -> None:
 
 
 def key(pid: int, name: str) -> None:
-    try:
-        osascript(KEY_SCRIPT, str(pid), name)
+    try: osascript(KEY_SCRIPT, str(pid), name)
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"key_automation_timeout:{name}") from exc
     except RuntimeError as exc:
@@ -250,8 +242,7 @@ def latest_app(root: Path) -> tuple[Path, Path | None]:
 
 def bundle_info(app: Path) -> dict[str, str]:
     plist = app / "Contents" / "Info.plist"
-    with plist.open("rb") as f:
-        info = plistlib.load(f)
+    with plist.open("rb") as f: info = plistlib.load(f)
     executable = str(info.get("CFBundleExecutable") or "")
     result = {
         "bundle_id": str(info.get("CFBundleIdentifier") or ""),
@@ -270,10 +261,8 @@ def pids_for(executable: str) -> list[int]:
     for line in output.splitlines():
         parts = line.strip().split(None, 1)
         if len(parts) == 2 and executable in parts[1]:
-            try:
-                found.append(int(parts[0]))
-            except ValueError:
-                pass
+            try: found.append(int(parts[0]))
+            except ValueError: pass
     return found
 
 
@@ -292,36 +281,25 @@ def ports_for_pid(pid: int) -> list[int]:
     for line in out.splitlines()[1:]:
         fields = line.split()
         for field in fields:
-            if "->" in field or ":" not in field:
-                continue
+            if "->" in field or ":" not in field: continue
             tail = field.rsplit(":", 1)[-1]
-            if tail.isdigit():
-                found.add(int(tail))
+            if tail.isdigit(): found.add(int(tail))
     return sorted(found)
 
 
 def discover_server(pid: int, bundle_id: str, version: str, timeout: float) -> tuple[int, dict[str, Any]]:
     answer: tuple[int, dict[str, Any]] | None = None
-
     def probe() -> bool:
         nonlocal answer
         for port in ports_for_pid(pid):
-            try:
-                health = http_json(f"http://127.0.0.1:{port}/health")
-            except Exception:
-                continue
-            if not health.get("ok"):
-                continue
-            if health.get("bundle_identifier") not in (None, bundle_id):
-                continue
-            if version and health.get("app_version") not in (None, version):
-                continue
-            answer = (port, health)
-            return True
+            try: health = http_json(f"http://127.0.0.1:{port}/health")
+            except Exception: continue
+            if not health.get("ok"): continue
+            if health.get("bundle_identifier") not in (None, bundle_id): continue
+            if version and health.get("app_version") not in (None, version): continue
+            answer = (port, health); return True
         return False
-
-    if not wait(probe, timeout):
-        raise RuntimeError("packaged app loopback server not found")
+    if not wait(probe, timeout): raise RuntimeError("packaged app loopback server not found")
     assert answer is not None
     return answer
 
@@ -336,16 +314,12 @@ class Api:
     def json(self, path: str, method: str = "GET", body: dict[str, Any] | None = None, timeout: float = 8) -> Any:
         data, headers = None, {}
         if body is not None:
-            data = json.dumps(body).encode()
-            headers["Content-Type"] = "application/json"
+            data = json.dumps(body).encode(); headers["Content-Type"] = "application/json"
         req = urllib.request.Request(self.base + path, data=data, headers=headers, method=method)
-        with self.opener.open(req, timeout=timeout) as r:
-            raw = r.read()
+        with self.opener.open(req, timeout=timeout) as r: raw = r.read()
         return json.loads(raw) if raw else None
 
-    def health(self) -> dict[str, Any]:
-        return self.json("/health")
-
+    def health(self) -> dict[str, Any]: return self.json("/health")
     def recordings(self) -> list[dict[str, Any]]:
         value = self.json("/v1/recordings")
         return value.get("items", []) if isinstance(value, dict) else []
@@ -381,8 +355,7 @@ def permissions_help(p: dict[str, Any] | None = None, accessibility: bool = Fals
 
 
 def evidence_path(root: Path, explicit: str | None) -> Path:
-    if explicit:
-        path = Path(explicit).expanduser().resolve()
+    if explicit: path = Path(explicit).expanduser().resolve()
     else:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         path = root / "dist" / "evidence" / "real-environment" / stamp / "report.json"
@@ -392,26 +365,19 @@ def evidence_path(root: Path, explicit: str | None) -> Path:
 
 def cleanup_old_evidence(root: Path, keep: int = 5) -> None:
     parent = root / "dist" / "evidence" / "real-environment"
-    if not parent.is_dir():
-        return
+    if not parent.is_dir(): return
     for path in sorted((p for p in parent.iterdir() if p.is_dir()), reverse=True)[keep:]:
         shutil.rmtree(path, ignore_errors=True)
 
 
 def quit_app(pid: int, executable: str, port: int | None) -> dict[str, Any]:
     result = {"cmd_q": False, "sigterm_fallback": False, "process_gone": False, "port_closed": None}
-    try:
-        key(pid, "cmd-q")
-        result["cmd_q"] = True
-    except Exception:
-        pass
+    try: key(pid, "cmd-q"); result["cmd_q"] = True
+    except Exception: pass
     result["process_gone"] = wait(lambda: pid not in pids_for(executable), 15)
     if not result["process_gone"]:
-        try:
-            os.kill(pid, signal.SIGTERM)
-            result["sigterm_fallback"] = True
-        except ProcessLookupError:
-            pass
+        try: os.kill(pid, signal.SIGTERM); result["sigterm_fallback"] = True
+        except ProcessLookupError: pass
         result["process_gone"] = wait(lambda: pid not in pids_for(executable), 8)
     if port is not None:
         result["port_closed"] = wait(lambda: port not in ports_for_pid(pid), 5) if not result["process_gone"] else True
@@ -419,74 +385,49 @@ def quit_app(pid: int, executable: str, port: int | None) -> dict[str, Any]:
 
 
 def main() -> int:
-    a = args()
-    root = Path(a.root).resolve()
-    revision, dirty = git_state(root)
+    a = args(); root = Path(a.root).resolve(); revision, dirty = git_state(root)
     report: dict[str, Any] = {
-        "schema_version": 1,
-        "status": FAIL,
-        "execution_environment": "target-macos-real",
-        "fidelity_class": "target_environment",
-        "started_at": datetime.now(timezone.utc).isoformat(),
-        "source_revision": revision,
-        "source_dirty": dirty,
+        "schema_version": 1, "status": FAIL, "execution_environment": "target-macos-real",
+        "fidelity_class": "target_environment", "started_at": datetime.now(timezone.utc).isoformat(),
+        "source_revision": revision, "source_dirty": dirty,
         "platform": {"system": platform.system(), "machine": platform.machine(), "macos": platform.mac_ver()[0]},
-        "checks": [],
-        "errors": [],
-        "remediation": [],
-        "cleanup": {},
+        "checks": [], "errors": [], "remediation": [], "cleanup": {},
         "residual_gaps": ["VoiceOver spoken-output quality and subjective usability still require human judgement; this run verifies the accessibility tree and keyboard/focus path."],
     }
     output = evidence_path(root, a.evidence)
-    pid = port = None
-    api = None
-    executable = ""
-    app_process = None
+    pid = port = None; api = None; executable = ""; app_process = None
     sandbox_home = Path(tempfile.mkdtemp(prefix="closedroom-real-env-"))
     report["isolated_home"] = str(sandbox_home)
 
     def check(name: str, condition: bool, detail: Any = None) -> None:
         report["checks"].append({"name": name, "status": PASS if condition else FAIL, "detail": detail})
-        if not condition:
-            raise RuntimeError(f"check failed: {name}")
+        if not condition: raise RuntimeError(f"check failed: {name}")
 
     try:
         check("target_platform", platform.system() == "Darwin" and platform.machine() == "arm64", report["platform"])
         check("checkout_clean", not dirty, {"source_revision": revision})
-        if a.build:
-            subprocess.run(["bash", "scripts/build_artifact.sh", "--no-dmg"], cwd=root, check=True)
+        if a.build: subprocess.run(["bash", "scripts/build_artifact.sh", "--no-dmg"], cwd=root, check=True)
         if a.app:
-            app = Path(a.app).expanduser().resolve()
-            manifest_path = app.parent / "build-manifest.json"
-            if not manifest_path.is_file():
-                manifest_path = None
-        else:
-            app, manifest_path = latest_app(root)
-        report["app"] = str(app)
-        report["manifest"] = str(manifest_path) if manifest_path else None
+            app = Path(a.app).expanduser().resolve(); manifest_path = app.parent / "build-manifest.json"
+            if not manifest_path.is_file(): manifest_path = None
+        else: app, manifest_path = latest_app(root)
+        report["app"] = str(app); report["manifest"] = str(manifest_path) if manifest_path else None
         check("finalized_manifest_present", bool(manifest_path and manifest_path.is_file()))
-        info = bundle_info(app)
-        report["bundle"] = info
-        executable = info["executable"]
+        info = bundle_info(app); report["bundle"] = info; executable = info["executable"]
         manifest = json.loads(manifest_path.read_text()) if manifest_path else {}
         artifact_rev = str(manifest.get("source_revision") or "")
-        check(
-            "artifact_matches_checkout",
-            revision == "unknown" or not artifact_rev or artifact_rev.startswith(revision) or revision.startswith(artifact_rev),
-            {"checkout": revision, "artifact": artifact_rev},
-        )
+        check("artifact_matches_checkout", revision == "unknown" or not artifact_rev or artifact_rev.startswith(revision) or revision.startswith(artifact_rev), {"checkout": revision, "artifact": artifact_rev})
         check("artifact_not_already_running", not pids_for(executable))
 
         launch_env = os.environ.copy()
         launch_env["HOME"] = str(sandbox_home)
-        app_process = subprocess.Popen([executable], env=launch_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        pid = app_process.pid
-        report["pid"] = pid
+        app_process = subprocess.Popen(
+            [executable], env=launch_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        pid = app_process.pid; report["pid"] = pid
         check("packaged_process_started", wait(lambda: app_process.poll() is None, 3), {"pid": pid})
         port, health = discover_server(pid, info["bundle_id"], info["version"], a.timeout)
-        report["port"] = port
-        report["health"] = health
-        api = Api(port)
+        report["port"] = port; report["health"] = health; api = Api(port)
         check("loopback_health", bool(health.get("ok")), health)
         settings = api.json("/v1/settings")
         recordings_dir = str(settings.get("recordings_dir") or "") if isinstance(settings, dict) else ""
@@ -494,75 +435,56 @@ def main() -> int:
         check("user_data_isolated", recordings_dir.startswith(str(sandbox_home)), recordings_dir)
 
         check("wkwebview_window_accessible", ui_ready(pid, min(a.timeout, UI_READY_TIMEOUT_SECONDS)))
-        key(pid, "cmd-k")
-        check("keyboard_cmd_k_search", wait(lambda: exists(pid, LABELS["search"]), 12))
-        focused = focused_value(pid, 12)
-        check("search_focus_exposed", focused != "unknown", focused)
-        key(pid, "escape")
-        check("keyboard_escape_search", wait(lambda: not exists(pid, LABELS["search"]), 12))
+        key(pid, "cmd-k"); check("keyboard_cmd_k_search", wait(lambda: exists(pid, LABELS["search"]), 12))
+        focused = focused_value(pid, 12); check("search_focus_exposed", focused != "unknown", focused)
+        key(pid, "escape"); check("keyboard_escape_search", wait(lambda: not exists(pid, LABELS["search"]), 12))
 
-        caps = api.json("/v1/capture/capabilities")
-        perms = api.json("/v1/capture/permissions")
-        report["capture_capabilities"] = caps
-        report["capture_permissions"] = perms
+        caps = api.json("/v1/capture/capabilities"); perms = api.json("/v1/capture/permissions")
+        report["capture_capabilities"] = caps; report["capture_permissions"] = perms
         native = caps.get("native", {}) if isinstance(caps, dict) else {}
         check("native_capture_available", caps.get("default_backend") == "native" and bool(native.get("available")), native)
         mode = perms.get("modes", {}).get("both", {}) if isinstance(perms, dict) else {}
         if not mode.get("ok"):
-            try:
-                api.json("/v1/capture/ensure-permissions", "POST", {"mode": "both"}, 20)
-            except Exception:
-                pass
-            time.sleep(2)
-            perms = api.json("/v1/capture/permissions")
-            report["capture_permissions"] = perms
+            try: api.json("/v1/capture/ensure-permissions", "POST", {"mode": "both"}, 20)
+            except Exception: pass
+            time.sleep(2); perms = api.json("/v1/capture/permissions"); report["capture_permissions"] = perms
             mode = perms.get("modes", {}).get("both", {}) if isinstance(perms, dict) else {}
         if not mode.get("ok"):
-            report["status"] = BLOCKED
-            report["remediation"] = permissions_help(perms)
+            report["status"] = BLOCKED; report["remediation"] = permissions_help(perms)
             raise PermissionError("closedroom_capture_permission_required")
         check("tcc_microphone_and_system_audio", True, perms)
 
-        before = api.recordings()
-        before_ids = {str(x.get("id") or "") for x in before}
+        before = api.recordings(); before_ids = {str(x.get("id") or "") for x in before}
         check("new_meeting_visible", wait(lambda: exists(pid, LABELS["new"]), 15))
         press(pid, LABELS["new"], 20)
         if wait(lambda: exists(pid, LABELS["permission"]), 5):
-            report["status"] = BLOCKED
-            report["remediation"] = permissions_help(perms)
+            report["status"] = BLOCKED; report["remediation"] = permissions_help(perms)
             raise PermissionError("permission_blocker_visible_in_ui")
         check("new_meeting_ready", wait(lambda: exists(pid, LABELS["ready"]), 20))
         press(pid, LABELS["start"], 20)
         check("runtime_recording", wait(lambda: api.health().get("status") == "recording", 20))
         check("stop_visible", wait(lambda: exists(pid, LABELS["stop"]), 12))
+        # Synthetic local system audio; no user content enters the evidence.
         tone = subprocess.Popen(["say", "ClosedRoom test tone"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(max(2, a.record_seconds))
-        try:
-            tone.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            tone.terminate()
+        try: tone.wait(timeout=5)
+        except subprocess.TimeoutExpired: tone.terminate()
         press(pid, LABELS["stop"], 20)
         check("runtime_stopped", wait(lambda: api.health().get("status") != "recording", 30))
 
         created = None
-
         def find_created() -> bool:
             nonlocal created
             created = newest(before_ids, api.recordings())
             return bool(created and created.get("status") not in {"recording", "finalizing"})
-
         check("recording_persisted", wait(find_created, 30), created)
         assert created is not None
         owned_id = str(created.get("id") or "")
         tracks = source_tracks_with_data(created)
         report["created_recording"] = {
-            "id": owned_id,
-            "status": created.get("status"),
-            "capture_backend": created.get("capture_backend"),
-            "capture_mode": created.get("capture_mode"),
-            "bytes_written": created.get("bytes_written"),
-            "nonempty_track_sources": sorted(tracks),
-            "warnings": created.get("warnings") or [],
+            "id": owned_id, "status": created.get("status"), "capture_backend": created.get("capture_backend"),
+            "capture_mode": created.get("capture_mode"), "bytes_written": created.get("bytes_written"),
+            "nonempty_track_sources": sorted(tracks), "warnings": created.get("warnings") or [],
         }
         check("native_backend_persisted", created.get("capture_backend") == "native", report["created_recording"])
         check("both_sources_persisted", created.get("capture_mode") == "both" and {"mic", "system"}.issubset(tracks), report["created_recording"])
@@ -571,34 +493,28 @@ def main() -> int:
 
     except PermissionError as exc:
         if report["status"] != BLOCKED:
-            report["status"] = BLOCKED
-            report["remediation"] = permissions_help(accessibility=True)
+            report["status"] = BLOCKED; report["remediation"] = permissions_help(accessibility=True)
         report["errors"].append(str(exc))
-    except Exception as exc:
-        report["status"] = FAIL
-        report["errors"].append(str(exc))
+    except (Exception,) as exc:
+        report["status"] = FAIL; report["errors"].append(str(exc))
     finally:
         if pid and executable:
             report["cleanup"].update(quit_app(pid, executable, port))
             if report["status"] == PASS and not report["cleanup"].get("process_gone"):
-                report["status"] = FAIL
-                report["errors"].append("ClosedRoom process survived cleanup")
+                report["status"] = FAIL; report["errors"].append("ClosedRoom process survived cleanup")
         if not a.keep_sandbox:
             shutil.rmtree(sandbox_home, ignore_errors=True)
             report["cleanup"]["isolated_home_removed"] = not sandbox_home.exists()
             if report["status"] == PASS and sandbox_home.exists():
-                report["status"] = FAIL
-                report["errors"].append("isolated HOME survived cleanup")
+                report["status"] = FAIL; report["errors"].append("isolated HOME survived cleanup")
         else:
             report["cleanup"]["isolated_home_removed"] = False
         report["finished_at"] = datetime.now(timezone.utc).isoformat()
         output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
         cleanup_old_evidence(root)
 
-    print(json.dumps(report, indent=2, sort_keys=True))
-    print(f"Evidence: {output}")
+    print(json.dumps(report, indent=2, sort_keys=True)); print(f"Evidence: {output}")
     return 0 if report["status"] == PASS else 2 if report["status"] == BLOCKED else 1
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+if __name__ == "__main__": raise SystemExit(main())
