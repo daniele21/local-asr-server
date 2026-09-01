@@ -44,7 +44,11 @@ Still separate from automation: VoiceOver spoken-output/subjective usability, pr
 
 ## Current evidence status
 
-UX implementation, the functional real-environment runner and the screenshot/video wrapper are integrated on `dev`. The current integrated revision has successful Repository Health and selector-chosen **STRONG** remote preflight covering governance, frontend checks, Python suite, finalized macOS arm64 build and packaged `.app` smoke. This is automated readiness only; `target-macos-real` remains pending until the command above passes with complete media.
+UX implementation, the functional real-environment runner and the screenshot/video wrapper are integrated on `dev`. The integrated revision has successful Repository Health and selector-chosen **STRONG** remote preflight covering governance, frontend checks, Python suite, finalized macOS arm64 build and packaged `.app` smoke.
+
+A first target-Mac run on clean `dev@3a3f154a3475` confirmed arm64/package validity, loopback health, isolated user data and zero-residue cleanup, then failed before native-capture interaction because the initial `System Events` WKWebView window probe exceeded its fixed 15-second timeout. That finding is classified as a real-environment automation-readiness defect, not evidence of a ClosedRoom runtime failure. The runner now retries bounded UI readiness, preserves Accessibility permission errors as `blocked_permission`, retries transient UI press failures, and avoids forcing the media window probe frontmost before bounds are available.
+
+`target-macos-real` remains pending until the canonical command passes with complete media.
 
 ## Active workstream
 
@@ -52,8 +56,9 @@ UX implementation, the functional real-environment runner and the screenshot/vid
 
 ## Next highest-value work
 
-1. Run `python3 scripts/real_environment_ui_evidence.py --build` from a clean current `dev` checkout on the target Mac.
-2. If `blocked_permission`, grant only the requested permission and rerun unchanged.
-3. Require functional `status: pass` plus the complete screenshot/video manifest; do not accept `E2E_EVIDENCE_INCOMPLETE`.
-4. Review VoiceOver spoken output/usability separately.
-5. Move reproducible real-Mac failures into the cheapest sufficient automated environment where possible.
+1. Validate the UI-readiness runner fix with selector-required remote preflight and integrate it into `dev`.
+2. Run `python3 scripts/real_environment_ui_evidence.py --build` from a clean current `dev` checkout on the target Mac.
+3. If `blocked_permission`, grant only the requested permission and rerun unchanged.
+4. Require functional `status: pass` plus the complete screenshot/video manifest; do not accept `E2E_EVIDENCE_INCOMPLETE`.
+5. Review VoiceOver spoken output/usability separately.
+6. Move any further reproducible real-Mac failure into the cheapest sufficient automated environment where possible.
