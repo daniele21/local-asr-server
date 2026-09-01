@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "real_environment_smoke.py"
+SCRIPTS_DIR = SCRIPT.parent
 
 
 def load_module():
@@ -13,7 +15,12 @@ def load_module():
     if spec is None or spec.loader is None:
         raise RuntimeError("could not load real_environment_smoke.py")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    old_path = list(sys.path)
+    try:
+        sys.path.insert(0, str(SCRIPTS_DIR))
+        spec.loader.exec_module(module)
+    finally:
+        sys.path[:] = old_path
     return module
 
 
