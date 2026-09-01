@@ -29,6 +29,16 @@ class ValidationProfileSelectorTests(unittest.TestCase):
         result = selector.select_profile([".engineering/e2e.json"])
         self.assertEqual(result["profile"], "strong")
 
+    def test_target_mac_ui_tooling_is_strong(self):
+        for path in (
+            "scripts/macos_ax_helper.swift",
+            "scripts/macos_ui_driver.py",
+            "scripts/real_environment_smoke.py",
+            "scripts/real_environment_ui_evidence.py",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(selector.select_profile([path])["profile"], "strong")
+
     def test_workflow_dot_path_is_full(self):
         result = selector.select_profile([".github/workflows/preflight.yml"])
         self.assertEqual(result["profile"], "full")
