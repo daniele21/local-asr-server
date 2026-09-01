@@ -31,6 +31,8 @@ FULL_PREFIXES = (
 )
 STRONG_EXACT = {
     ".engineering/e2e.json",
+    "scripts/real_environment_smoke.py",
+    "scripts/real_environment_ui_evidence.py",
     "scripts/smoke_packaged_app.py",
     "src/local_asr_server/catalog.py",
     "src/local_asr_server/recordings.py",
