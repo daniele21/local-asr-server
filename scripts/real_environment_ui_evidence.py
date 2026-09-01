@@ -18,7 +18,6 @@ on run argv
   tell application "System Events"
     if UI elements enabled is false then error "accessibility_permission_required"
     set p to first application process whose unix id is targetPID
-    set frontmost of p to true
     if (count windows of p) is 0 then error "closedroom_window_missing"
     set windowPosition to position of window 1 of p
     set windowSize to size of window 1 of p
@@ -81,7 +80,7 @@ def osascript(source: str, *values: str) -> str:
         ["osascript", "-l", "AppleScript", "-e", source, "--", *values],
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=5,
     )
     if result.returncode:
         raise RuntimeError((result.stderr or result.stdout or "AppleScript failed").strip())
@@ -132,7 +131,6 @@ def capture_window(rect: str, destination: Path) -> None:
 
 def start_video(rect: str, destination: Path) -> subprocess.Popen[bytes]:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    # -v records video; -V bounds runaway capture; -R limits evidence to the app window.
     return subprocess.Popen(
         ["screencapture", "-v", "-V", "180", "-R", rect, "-x", str(destination)],
         stdout=subprocess.DEVNULL,
@@ -175,7 +173,18 @@ def main() -> int:
     manifest_path = media_root / "manifest.json"
     media_root.mkdir(parents=True, exist_ok=True)
 
-    command = [sys.executable, str(root / "scripts" / "real_environment_smoke.py"), "--root", str(root), "--evidence", str(report_path), "--record-seconds", str(args.record_seconds), "--timeout", str(args.timeout)]
+    command = [
+        sys.executable,
+        str(root / "scripts" / "real_environment_smoke.py"),
+        "--root",
+        str(root),
+        "--evidence",
+        str(report_path),
+        "--record-seconds",
+        str(args.record_seconds),
+        "--timeout",
+        str(args.timeout),
+    ]
     if args.app:
         command += ["--app", args.app]
     if args.build:
@@ -200,7 +209,9 @@ def main() -> int:
                     rect = window_rect(app_pid)
                     video = start_video(rect, video_path)
                 except Exception as exc:
-                    media_errors.append(f"media_start: {exc}")
+                    message = f"media_start: {exc}"
+                    if message not in media_errors:
+                        media_errors.append(message)
                     rect = None
             if app_pid is not None and rect is not None:
                 for name, labels in CHECKPOINTS:
@@ -210,7 +221,9 @@ def main() -> int:
                         capture_window(rect, screenshot_root / f"{name}.png")
                         captured.add(name)
                     except Exception as exc:
-                        media_errors.append(f"{name}: {exc}")
+                        message = f"{name}: {exc}"
+                        if message not in media_errors:
+                            media_errors.append(message)
             time.sleep(0.4)
 
         if smoke.poll() is None:
