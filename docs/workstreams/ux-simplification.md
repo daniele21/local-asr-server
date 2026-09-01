@@ -1,145 +1,132 @@
 # UX simplification and critical journey hardening
 
-Status: active — implementation complete; final target-environment evidence pending
+Status: active — implementation and deterministic automation complete; final target-environment evidence pending
 Owner: frontend product experience
-Read when: implementing or validating the ClosedRoom primary meeting journey and supporting accessibility work
+Read when: implementing or validating the ClosedRoom primary meeting journey
 
 ## Goal
 
-Make the normal ClosedRoom journey feel simple and task-led from meeting capture through transcript and insights, while preserving expert diagnostics behind progressive disclosure and keeping recovery clear when permissions, capture, transcription or analysis fail.
+Make the normal ClosedRoom journey simple and task-led from capture through transcript and insights, while preserving expert diagnostics behind progressive disclosure and clear recovery for permission, capture, transcription and analysis failures.
 
 ## Non-goals
 
-- Rebrand ClosedRoom or replace the existing semantic design system.
-- Remove expert/runtime capabilities that are useful for diagnostics.
-- Change recording, transcription or analysis backend contracts unless required to preserve the user-facing journey.
-- Treat screenshot polish as evidence of interaction quality.
+- Rebrand ClosedRoom or replace the semantic design system.
+- Remove useful expert/runtime diagnostics.
+- Change recording/transcription/analysis backend contracts unless required by the user journey.
+- Treat screenshots as a substitute for functional interaction evidence.
 
 ## Invariants
 
-- The canonical journey is `Home -> New Meeting -> Record -> Stop -> Transcribe -> Analyze -> Review`.
-- Normal use must not require understanding backend, helper, process, port, model-path or routing concepts.
-- Each critical surface has one dominant next action; destructive actions remain visually distinct.
-- Complexity is disclosed as `essential -> contextual -> advanced -> diagnostics`.
-- Permission, capture, processing and provider failures remain recoverable without losing the meeting.
-- Existing semantic UI components/tokens remain the design-system owner.
-- Keyboard/focus/assistive semantics and reduced-motion behavior are part of completion, not post-polish cleanup.
+- Canonical journey: `Home -> New Meeting -> Record -> Stop -> Transcribe -> Analyze -> Review`.
+- Normal use must not require backend/helper/process/port/model-path/routing concepts.
+- Each critical surface has one dominant next action.
+- Complexity follows `essential -> contextual -> advanced -> diagnostics`.
+- Failures remain recoverable without losing the meeting.
+- Accessibility and reduced-motion behavior are completion criteria.
+- UI E2E retains screenshot/video artifacts required by `.engineering/e2e.json` without capturing unrelated desktop content.
 
 ## Work graph
 
-| ID | Work | Owns/writes | Depends on | Parallel | State |
-| --- | --- | --- | --- | --- | --- |
-| UX-1 | Codify golden path, hierarchy and disclosure contract | `design/ux-contract.json`, this workstream | — | no | DONE |
-| UX-2 | Simplify new-meeting/recording default path and permission recovery | `frontend/src/pages/NewRecordingPage.tsx`, `frontend/src/App.tsx` | UX-1 | yes | DONE |
-| UX-3 | Make meeting detail the guided transcript-to-insights workspace; hide runtime diagnostics | `frontend/src/pages/MeetingDetailPage.tsx` | UX-1 | yes | DONE |
-| UX-4 | Simplify analysis setup with strong defaults and advanced disclosure | `frontend/src/components/ui/AnalysisSetupModal.tsx` | UX-1 | yes | DONE |
-| UX-5 | Separate user preferences from runtime diagnostics; remove runtime action from global header | `frontend/src/pages/SettingsPage.tsx`, `frontend/src/App.tsx` | UX-1 | yes | DONE |
-| UX-6 | Refine dashboard around attention and next action without redesign | `frontend/src/pages/DashboardPage.tsx` | UX-1 | yes | DONE |
-| UX-7 | Harden shared accessibility semantics for tooltip/menu/search/tabs and icon actions | `frontend/src/components/ui`, `frontend/src/App.tsx`, affected semantic consumers | UX-1 | yes | DONE |
-| UX-8 | Reduce decorative motion and normalize icon/microcopy treatment on the primary journey | affected presentation call sites | UX-2, UX-3, UX-4, UX-5, UX-6, UX-7 | no | DONE |
-| UX-9 | Critical-journey automated evidence plus declared macOS REAL_ENVIRONMENT confirmation | `scripts/real_environment_smoke.py`, `.engineering/e2e.json`, tests/docs | UX-2, UX-3, UX-4, UX-5, UX-6, UX-7, UX-8 | no | ACTIVE |
-
-Allowed states: `READY`, `ACTIVE`, `BLOCKED`, `DONE`.
+| ID | Work | Owns/writes | State |
+| --- | --- | --- | --- |
+| UX-1 | Golden path, hierarchy and disclosure contract | `design/ux-contract.json`, this workstream | DONE |
+| UX-2 | Simplified new-meeting/recording path | `NewRecordingPage.tsx`, `App.tsx` | DONE |
+| UX-3 | Guided meeting transcript-to-insights workspace | `MeetingDetailPage.tsx` | DONE |
+| UX-4 | Analysis defaults + advanced disclosure | `AnalysisSetupModal.tsx` | DONE |
+| UX-5 | Preferences vs runtime diagnostics | `SettingsPage.tsx`, `App.tsx` | DONE |
+| UX-6 | Dashboard attention/next-action refinement | `DashboardPage.tsx` | DONE |
+| UX-7 | Shared accessibility semantics | shared UI/App consumers | DONE |
+| UX-8 | Motion/icon/microcopy polish | primary journey call sites | DONE |
+| UX-9 | Automated critical-journey evidence + macOS REAL_ENVIRONMENT confirmation | real-environment scripts, E2E contract, docs/tests | ACTIVE |
 
 ## Implemented experience
 
-### New Meeting / recording
+### New Meeting
 
-- The ordinary `New Meeting` route now uses `NewRecordingPage`; the historical recording detail remains owned by `RecordingPage` when a recording ID is present.
-- A configured user sees title, project, readiness and the dominant Start/Stop action without opening technical configuration.
-- Storage and permission blockers are summarized in user language with an immediate recovery action.
-- Source mode, diarization and visual intelligence are progressively disclosed as meeting options.
-- Capture backend, helper/permission internals and audio routing remain available under Diagnostics rather than the default path.
-- The existing `useRecorder` capture lifecycle remains the runtime owner; no parallel capture implementation was introduced.
-- After successful finalization the saved recording ID opens the meeting workspace directly.
+- `NewRecordingPage` owns fresh meetings; historical recording detail remains in `RecordingPage`.
+- Default surface shows title/project, readiness and dominant Start/Stop action.
+- Permission/storage blockers use user language plus recovery actions.
+- Source mode, diarization and visual intelligence are progressively disclosed.
+- Capture/helper/audio-routing internals stay under Diagnostics.
+- Successful finalization opens the meeting workspace by saved recording ID.
 
 ### Meeting workspace
 
-- Missing transcription makes Transcribe the dominant next action.
-- A transcript without analysis makes Analyze the dominant next action.
-- Runtime/backend/model/log and visual-debug details are absent from the normal processing surface and live under Details/Diagnostics.
-- Transcript, Analysis and Speakers use a semantic tablist with roving focus and `ArrowLeft` / `ArrowRight` / `Home` / `End` navigation.
-- The analysis action menu supports composite-menu keyboard navigation and restores focus on Escape.
+- Missing transcript makes Transcribe dominant; transcript without analysis makes Analyze dominant.
+- Runtime/model/log/visual-debug details live under Details/Diagnostics.
+- Transcript, Analysis and Speakers use semantic tabs with roving focus and Arrow/Home/End navigation.
+- Analysis menus support composite keyboard navigation and Escape focus restoration.
 
-### Analysis setup
+### Analysis / Settings / Dashboard / accessibility
 
-- Normal setup exposes provider/runtime trust choice plus model and quality where applicable.
-- Temperature, reasoning, token limits, JSON mode, model path and runtime status are under Advanced.
-- Existing provider payload contracts remain unchanged.
+- Analysis exposes provider/model/quality first; temperature, reasoning, token limits, JSON mode, model path and runtime state are Advanced.
+- Global shell keeps user navigation, `New Meeting`, health and settings; Local LLM runtime actions are not primary navigation.
+- Settings separate user defaults from service lifecycle/endpoints/model paths/logs.
+- Dashboard search uses shared Radix Dialog; period selection exposes menu/radio semantics and keyboard navigation.
+- Tooltip, icon actions, menus and touched composites expose names/state/focus semantics; decorative motion was reduced on the primary path.
 
-### Settings and global shell
+## UX-9 acceptance
 
-- The global header keeps navigation, `New Meeting`, service health and user-level settings; Local LLM runtime UI is no longer a peer primary action.
-- Stable online health is informational rather than continuously animated.
-- The Settings menu exposes `expanded`/menu semantics and supports ArrowUp/ArrowDown/Home/End/Escape with focus restoration.
-- User-facing storage, transcription, analysis and meeting defaults are separated from service lifecycle, endpoint, model-path, expert parameters and logs under Advanced & diagnostics.
+- Repository/product-experience/docs checks and selector-required deterministic validation pass on the integrated head.
+- `.engineering/e2e.json` declares `target-macos-real`, contract `0.1.1`, and screenshot + video requirements for UI journeys.
+- Canonical target-Mac command:
 
-### Dashboard
+```bash
+python3 scripts/real_environment_ui_evidence.py --build
+```
 
-- Home continues to answer what happened, what needs attention and what to open next without increasing default information density.
-- Search uses the shared Radix Dialog, inheriting focus trap, Escape close and focus return.
-- Period selection exposes menu/radio state and ArrowUp/ArrowDown/Home/End/Escape keyboard behavior.
-- Icon-only search/technical controls have explicit accessible names.
-- Decorative page-entry/lift motion was removed from the touched dashboard path; state/progress motion remains available where meaningful.
-
-### Shared accessibility
-
-- Tooltip content is reachable on focus and exposed through `role="tooltip"` / `aria-describedby`.
-- Shared Dialog close labeling follows the active application language.
-- Touched composite controls expose names, selected/expanded state and keyboard focus behavior without introducing a second global interaction owner.
-
-## Current executable slice
-
-`UX-9`
-
-Acceptance:
-
-- Repository product-experience verification, docs verification, frontend lint/typecheck and the selector-required deterministic suite pass on the exact runner HEAD.
-- `.engineering/e2e.json` declares `target-macos-real` and points to the canonical real-environment command.
-- A clean real Apple Silicon checkout can run `python3 scripts/real_environment_smoke.py --build` against a freshly finalized exact-checkout `.app`.
-- The runner verifies an accessible packaged WKWebView, `Cmd+K`/Escape focus behavior, real native capture/TCC readiness, Start/Stop, persisted native `both` audio with non-empty mic + system tracks, and Stop -> meeting navigation.
-- The runner launches the packaged executable with an isolated temporary `HOME`; normal ClosedRoom settings/catalog/recordings are untouched and the sandbox is removed on every non-debug exit.
-- Missing macOS grants produce `blocked_permission` plus concrete remediation rather than a false product failure.
-- Evidence is privacy-safe JSON under `dist/evidence/real-environment/`; no screenshots, audio or transcript content are copied into the evidence artifact.
-- VoiceOver spoken-output quality and subjective usability remain an explicit human-judgement residual after the deterministic accessibility-tree/keyboard checks pass.
+- `real_environment_ui_evidence.py` wraps `real_environment_smoke.py`; it does not duplicate functional ownership.
+- Functional smoke verifies packaged WKWebView accessibility/focus, `Cmd+K`/Escape, native TCC readiness, mic + system capture, Start/Stop, persisted dual-source audio and Stop -> meeting navigation.
+- UI wrapper retains screenshots for Ready, active recording, and persisted meeting/Transcribe plus a complete app-window journey video.
+- Packaged execution uses an isolated temporary `HOME`; normal settings/catalog/recordings remain untouched.
+- Media is restricted to the ClosedRoom window and synthetic/local test content.
+- Missing grants return `blocked_permission`; a passing smoke with missing media returns `E2E_EVIDENCE_INCOMPLETE` and is not completion.
+- VoiceOver spoken-output quality and subjective usability remain separate human judgement.
 
 Validation routing:
 
-- This runner change is `STRONG`: `.engineering/e2e.json` is an explicit runtime/native/E2E validation boundary, while the new script/test are contained execution tooling.
-- Repository-owned PR preflight is the `REMOTE_AUTOMATED` executor for deterministic repository/source/package checks.
-- `target-macos-real` is `REAL_ENVIRONMENT`; it must run on the user's actual Apple Silicon Mac and is not replaced by GitHub-hosted macOS.
-- `.engineering/e2e.json` remains authoritative for target-environment fidelity and residual gaps.
+- Integrated UI-media evidence boundary is **STRONG** because `.engineering/e2e.json` is a runtime/native/E2E boundary.
+- Current integrated `dev` has successful Repository Health and selector-chosen STRONG remote preflight covering governance, frontend checks, Python suite, finalized macOS arm64 build and packaged `.app` smoke.
+- Repository preflight is `REMOTE_AUTOMATED`; `target-macos-real` remains `REAL_ENVIRONMENT` on the user's Apple Silicon Mac.
+- `.engineering/e2e.json` is authoritative for target fidelity, required media and residual gaps.
 
-## Real-environment runner
+## Real-environment result classes
 
-Canonical command from a clean `dev` checkout:
+- `PASS` / exit `0`: functional target-Mac smoke passed and all required media exists.
+- `blocked_permission` / exit `2`: grant only the requested Accessibility/Automation/Microphone/Screen & System Audio Recording permission, then rerun unchanged.
+- `E2E_EVIDENCE_INCOMPLETE` / exit `1`: functional smoke passed but screenshot/video evidence is incomplete; fix the media evidence path rather than accepting the run.
+- other `fail` / exit `1`: product/test/environment invariant failed and must be diagnosed.
 
-```bash
-python3 scripts/real_environment_smoke.py --build
+Expected media beside `report.json`:
+
+```text
+ui-media/meeting-recording-ui/
+  manifest.json
+  screenshots/
+    01-ready-to-record.png
+    02-recording.png
+    03-meeting-persisted.png
+  video/
+    journey.mov
 ```
 
-Result classes:
-
-- `pass` / exit `0`: all automated target-macOS assertions and zero-residue cleanup passed.
-- `blocked_permission` / exit `2`: macOS requires Accessibility, Automation, Microphone or Screen & System Audio Recording permission; grant only the requested item and rerun the same command.
-- `fail` / exit `1`: product/test/environment invariant failed and should be diagnosed rather than bypassed.
-
-The runner emits a short local test phrase through macOS `say` while native capture is active so the system-audio path is exercised without using user content. The recording lives only inside the temporary HOME.
+The underlying smoke emits a short local phrase via macOS `say` while recording so system audio is exercised without user content.
 
 ## Evidence history
 
-- UX implementation exact-head SCOPED remote preflight passed before integration to `dev`; those runs prove the UI/source changes but do not count as target-environment evidence.
-- The real-environment runner itself requires a new exact-head STRONG preflight because it changes the adopted E2E contract and execution tooling.
-- Target-environment completion is recorded only after the real-Mac command above produces `status: pass`; `blocked_permission` is a rerunnable environment-preparation state, not completion.
+- UX implementation passed exact-head SCOPED remote preflight before integration.
+- Functional real-environment smoke was later integrated after deterministic validation.
+- UI-media evidence then adopted E2E contract `0.1.1`; the integrated `dev` revision passed selector-chosen STRONG remote preflight and Repository Health.
+- Target completion exists only after the canonical UI-evidence command produces functional `status: pass` plus a complete media manifest on the real Mac. `blocked_permission` is preparation, not completion.
 
-## Durable documentation destinations
+## Durable owners
 
-- `design/ux-contract.json`: canonical journey, hierarchy/disclosure and validation expectations.
-- `design/brand-kit.json`: unchanged because the adopted visual/motion principles did not change; implementation was brought closer to the existing contract.
-- `.engineering/e2e.json`: canonical execution-environment fidelity and real-environment runner declaration.
-- `scripts/real_environment_smoke.py`: executable target-Mac evidence owner.
-- `test/test_real_environment_smoke.py`: deterministic helper/cleanup/evidence safety checks.
+- `design/ux-contract.json`: journey/hierarchy/disclosure.
+- `.engineering/e2e.json`: environment fidelity, UI media requirements and canonical target runner.
+- `scripts/real_environment_smoke.py`: functional target-Mac evidence.
+- `scripts/real_environment_ui_evidence.py`: UI screenshot/video evidence and canonical target-Mac entrypoint.
+- `test/test_real_environment_smoke.py`: functional runner helper/cleanup safety checks.
 
 ## Completion
 
-UX-9 can move to `DONE` after the runner is integrated with green exact-head deterministic preflight and `python3 scripts/real_environment_smoke.py --build` produces `status: pass` on the real target Mac. VoiceOver spoken-output quality remains a separately stated human-judgement observation and does not get silently converted into CI evidence.
+UX-9 becomes `DONE` after `python3 scripts/real_environment_ui_evidence.py --build` produces a passing functional report and complete screenshot/video manifest on the real target Mac. VoiceOver spoken-output quality remains separately observed human evidence.

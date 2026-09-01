@@ -2,62 +2,58 @@
 
 ## Engineering baseline
 
-ClosedRoom follows `daniele21/repo-template-sw` **0.8.0** with target maturity **L2** and profiles `python`, `typescript`, `macos`, `local-ai`, `product-ui`.
+ClosedRoom follows `daniele21/repo-template-sw` **0.8.0** at maturity **L2** with `python`, `typescript`, `macos`, `local-ai`, `product-ui`. Feature/fix/test work integrates through `dev` before promotion.
 
-The repository uses `dev` as the integration target for feature/fix/test work before promotion to the default branch.
+## Strong evidence to preserve
 
-## Strong existing evidence to preserve
-
-- Detailed current architecture and a broad Python unit/integration suite.
-- Explicit runtime/service/job/port ownership.
-- Native macOS capture, diarization and visual-intelligence boundaries with focused tests.
-- Existing visual + diarization smoke tooling and representative datasets.
-- Version-aware macOS app packaging and native-helper validation.
-- Code-first semantic UI tokens/components in the React frontend.
+- Broad Python unit/integration coverage plus explicit runtime/service/job/port ownership.
+- Focused native capture, diarization and visual-intelligence tests.
+- Version-aware macOS packaging and native-helper validation.
+- Semantic React UI tokens/components.
 
 ## Baseline gaps now implemented
 
-- Blast radius is machine-selected by `scripts/select_validation_profile.py` into LEAN / SCOPED / STRONG / FULL; unknown paths fail safe to FULL.
-- `.github/workflows/preflight.yml` provides exact-head, read-only remote preflight and routes source/package validation by selected profile.
-- Canonical builds use `scripts/build_artifact.sh`; successful artifacts receive unique identity and immutable lineage directories under `dist/artifacts/`.
-- `scripts/finalize_build_artifact.py` creates `build-manifest.json`, aggregate SHA-256 evidence, `SHA256SUMS`, `BUILD_CHANGELOG.md` against the previous successful comparable build and bounded local retention.
-- `scripts/clean_build_state.py` removes transient build state without deleting finalized successful artifacts by default.
-- `scripts/smoke_packaged_app.py` exercises the finalized `.app` frozen executable, bundled FastAPI/static frontend, readiness, graceful stop, listener cleanup and observed child cleanup.
-- `scripts/real_environment_smoke.py` drives a freshly finalized `.app` on a real Apple Silicon Mac through macOS Accessibility, WKWebView keyboard/focus behavior, real TCC/native microphone+system-audio capture and persisted recording evidence. It runs ClosedRoom with an isolated temporary `HOME`, so the test catalog/settings/recording never enter the user's normal data, and writes privacy-safe evidence under `dist/evidence/real-environment/`.
-- Packaging no longer requires a developer-machine absolute `local-llm-server` wheel path; the current integration points to its published release artifact and digest.
-- Packaging precompiles the Core Audio helper without invoking user-facing `setup-audio`, so CI build does not install BlackHole or mutate audio routing merely to produce an artifact.
+- `scripts/select_validation_profile.py` selects LEAN / SCOPED / STRONG / FULL; unknown paths fail safe to FULL.
+- `.github/workflows/preflight.yml` provides exact-head remote preflight.
+- `scripts/build_artifact.sh` creates immutable, uniquely identified finalized artifacts; finalization records manifest, SHA-256 evidence and build delta.
+- `scripts/smoke_packaged_app.py` verifies the finalized `.app`, bundled FastAPI/static frontend, readiness and cleanup.
+- `scripts/real_environment_smoke.py` owns functional target-Mac evidence: packaged WKWebView/accessibility behavior, TCC/native mic + system-audio capture, persisted dual-source recording, Stop -> meeting navigation and isolated-HOME cleanup.
+- `scripts/real_environment_ui_evidence.py` is the canonical target-Mac UI entrypoint. It wraps the functional smoke and retains required app-window screenshots plus a journey video under `dist/evidence/real-environment/.../ui-media/meeting-recording-ui/`.
+- `.engineering/e2e.json` uses E2E contract **0.1.1** and requires screenshot + video artifacts for UI journeys.
+- Packaging uses the published `local-llm-server` artifact and precompiles Core Audio without mutating user audio routing.
 
 ## Residual target-environment evidence
 
-Automated packaged-app CI smoke remains deliberately classified as `representative_virtual`, not complete target evidence. For material UI/native-capture claims the real-Mac runner is:
+Hosted packaged-app smoke is `representative_virtual`, not target evidence. For the meeting-recording UI/native-capture claim, run on the real Apple Silicon Mac:
 
 ```bash
-python3 scripts/real_environment_smoke.py --build
+python3 scripts/real_environment_ui_evidence.py --build
 ```
 
-That command can automate interactive WKWebView/accessibility-tree checks, `Cmd+K`/Escape focus behavior, real TCC status, native microphone + system-audio capture, Stop -> meeting navigation, persisted dual-source audio and zero-residue cleanup. macOS does not allow the runner to grant TCC/Accessibility permissions itself: a missing grant is reported as `blocked_permission` with remediation and the same command can then be rerun.
+Required media:
 
-Evidence that remains genuinely separate:
+- ready-to-record screenshot;
+- active-recording screenshot;
+- persisted-meeting / Transcribe screenshot;
+- complete ClosedRoom app-window video;
+- `manifest.json` tied to the journey/source revision.
 
-- VoiceOver spoken-output quality and subjective usability judgement;
-- production signing/notarization identity;
-- production MLX/Metal model compatibility, memory, latency, throughput and quality when those claims are material.
+Capture is restricted to the ClosedRoom window and uses synthetic/local test content inside a temporary `HOME`. A passing functional smoke with missing media returns `E2E_EVIDENCE_INCOMPLETE`, not success. Missing TCC/Accessibility grants return `blocked_permission`; grant only the requested permission and rerun unchanged.
 
-Source-contract tests do not upgrade these claims.
+Still separate from automation: VoiceOver spoken-output/subjective usability, production signing/notarization, and material production MLX/Metal compatibility/performance/quality claims.
 
 ## Current evidence status
 
-The engineering baseline, exact-head remote preflight and UX simplification changes are integrated on `dev`. The real-environment runner is implemented on `test/real-environment-smoke`; it still requires its selected deterministic preflight before integration, and its target-environment evidence exists only after the command above is executed on a real Apple Silicon Mac.
-
-Historical planning documents are not treated as current operational truth when they conflict with live branch/PR/CI state.
+UX implementation, the functional real-environment runner and the screenshot/video wrapper are integrated on `dev`. The current integrated revision has successful Repository Health and selector-chosen **STRONG** remote preflight covering governance, frontend checks, Python suite, finalized macOS arm64 build and packaged `.app` smoke. This is automated readiness only; `target-macos-real` remains pending until the command above passes with complete media.
 
 ## Active workstream
 
-- [`docs/workstreams/ux-simplification.md`](workstreams/ux-simplification.md): implementation is complete; UX-9 remains active until the declared target-macOS evidence is executed and classified.
+- [`docs/workstreams/ux-simplification.md`](workstreams/ux-simplification.md): implementation and deterministic automation complete; UX-9 waits only for target-Mac evidence.
 
 ## Next highest-value work
 
-1. Obtain green exact-head remote preflight for `test/real-environment-smoke` using the selector-chosen profile and merge the runner into `dev` only after deterministic evidence is green.
-2. Run `python3 scripts/real_environment_smoke.py --build` from a clean `dev` checkout on the real Apple Silicon Mac; grant only the TCC/Accessibility permissions that macOS requests and rerun unchanged if the result is `blocked_permission`.
-3. Treat `pass`, `blocked_permission` and product/test failures as different outcomes; do not weaken the target-environment checks to bypass a real failure.
-4. Move reproducible failures found on the real Mac into the cheapest sufficient automated environment while preserving genuinely physical/TCC/subjective evidence separately.
+1. Run `python3 scripts/real_environment_ui_evidence.py --build` from a clean current `dev` checkout on the target Mac.
+2. If `blocked_permission`, grant only the requested permission and rerun unchanged.
+3. Require functional `status: pass` plus the complete screenshot/video manifest; do not accept `E2E_EVIDENCE_INCOMPLETE`.
+4. Review VoiceOver spoken output/usability separately.
+5. Move reproducible real-Mac failures into the cheapest sufficient automated environment where possible.
