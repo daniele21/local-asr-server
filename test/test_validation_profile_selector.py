@@ -29,6 +29,11 @@ class ValidationProfileSelectorTests(unittest.TestCase):
         result = selector.select_profile([".engineering/e2e.json"])
         self.assertEqual(result["profile"], "strong")
 
+    def test_real_environment_runners_are_strong(self):
+        for path in ("scripts/real_environment_smoke.py", "scripts/real_environment_ui_evidence.py"):
+            with self.subTest(path=path):
+                self.assertEqual(selector.select_profile([path])["profile"], "strong")
+
     def test_workflow_dot_path_is_full(self):
         result = selector.select_profile([".github/workflows/preflight.yml"])
         self.assertEqual(result["profile"], "full")
