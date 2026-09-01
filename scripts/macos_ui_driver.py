@@ -52,7 +52,7 @@ class MacOSUIDriver:
             self._tmp = None
             self._binary = None
 
-    def _compiler(self) -> str:
+    def _xcrun(self) -> str:
         if platform.system() != "Darwin":
             raise UIAutomationUnavailable("macos_accessibility_driver_requires_darwin")
         if not self.source.is_file():
@@ -62,7 +62,7 @@ class MacOSUIDriver:
             raise UIAutomationUnavailable("xcrun_missing_for_macos_ax_helper")
         try:
             result = subprocess.run(
-                [xcrun, "--find", "swiftc"],
+                [xcrun, "--sdk", "macosx", "--find", "swiftc"],
                 check=True,
                 capture_output=True,
                 text=True,
@@ -72,19 +72,21 @@ class MacOSUIDriver:
             raise UIAutomationTimeout("swiftc_discovery_timeout") from exc
         except subprocess.CalledProcessError as exc:
             raise UIAutomationUnavailable((exc.stderr or exc.stdout or "swiftc_not_found").strip()) from exc
-        compiler = result.stdout.strip()
-        if not compiler:
+        if not result.stdout.strip():
             raise UIAutomationUnavailable("swiftc_not_found")
-        return compiler
+        return xcrun
 
     def _ensure_binary(self) -> Path:
         if self._binary is not None and self._binary.is_file():
             return self._binary
-        compiler = self._compiler()
+        xcrun = self._xcrun()
         self._tmp = tempfile.TemporaryDirectory(prefix="closedroom-ax-helper-")
         binary = Path(self._tmp.name) / "closedroom-ax-helper"
         command = [
-            compiler,
+            xcrun,
+            "--sdk",
+            "macosx",
+            "swiftc",
             str(self.source),
             "-O",
             "-framework",
