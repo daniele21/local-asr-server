@@ -81,12 +81,13 @@ python3 scripts/real_environment_ui_evidence.py --build
 - Packaged execution uses an isolated temporary `HOME`; normal settings/catalog/recordings remain untouched.
 - Media is restricted to the ClosedRoom window and synthetic/local test content.
 - Missing grants return `blocked_permission`; a passing smoke with missing media returns `E2E_EVIDENCE_INCOMPLETE` and is not completion.
+- Transient WKWebView/System Events startup delays are bounded readiness conditions: UI window discovery and actionable AX presses are retried; Accessibility permission denial must still propagate as `blocked_permission` rather than being swallowed as a retry.
 - VoiceOver spoken-output quality and subjective usability remain separate human judgement.
 
 Validation routing:
 
-- Integrated UI-media evidence boundary is **STRONG** because `.engineering/e2e.json` is a runtime/native/E2E boundary.
-- Current integrated `dev` has successful Repository Health and selector-chosen STRONG remote preflight covering governance, frontend checks, Python suite, finalized macOS arm64 build and packaged `.app` smoke.
+- Integrated UI-media evidence boundary is **STRONG** because the functional runner is a runtime/native/E2E validation boundary.
+- Current integrated `dev` before the readiness fix has successful Repository Health and selector-chosen STRONG remote preflight covering governance, frontend checks, Python suite, finalized macOS arm64 build and packaged `.app` smoke.
 - Repository preflight is `REMOTE_AUTOMATED`; `target-macos-real` remains `REAL_ENVIRONMENT` on the user's Apple Silicon Mac.
 - `.engineering/e2e.json` is authoritative for target fidelity, required media and residual gaps.
 
@@ -117,6 +118,7 @@ The underlying smoke emits a short local phrase via macOS `say` while recording 
 - UX implementation passed exact-head SCOPED remote preflight before integration.
 - Functional real-environment smoke was later integrated after deterministic validation.
 - UI-media evidence then adopted E2E contract `0.1.1`; the integrated `dev` revision passed selector-chosen STRONG remote preflight and Repository Health.
+- First clean target-Mac execution on `dev@3a3f154a3475` passed package/platform/loopback/isolation/cleanup checks but timed out on the initial one-shot System Events window probe before native capture. The failure was classified as a runner readiness defect, not a product-runtime regression, and moved into deterministic retry/permission regression coverage.
 - Target completion exists only after the canonical UI-evidence command produces functional `status: pass` plus a complete media manifest on the real Mac. `blocked_permission` is preparation, not completion.
 
 ## Durable owners
@@ -125,7 +127,7 @@ The underlying smoke emits a short local phrase via macOS `say` while recording 
 - `.engineering/e2e.json`: environment fidelity, UI media requirements and canonical target runner.
 - `scripts/real_environment_smoke.py`: functional target-Mac evidence.
 - `scripts/real_environment_ui_evidence.py`: UI screenshot/video evidence and canonical target-Mac entrypoint.
-- `test/test_real_environment_smoke.py`: functional runner helper/cleanup safety checks.
+- `test/test_real_environment_smoke.py`: functional runner helper/cleanup/retry safety checks.
 
 ## Completion
 
