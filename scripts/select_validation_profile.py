@@ -84,7 +84,7 @@ def gates_for(profile: str, risks: list[str], stage: str) -> list[str]:
     return gates
 
 
-def select_profile(paths: list[str], stage: str) -> dict[str, object]:
+def select_profile(paths: list[str], stage: str = "integration") -> dict[str, object]:
     unique_paths = sorted(set(paths))
     classifications: list[dict[str, str]] = []
     selected = "lean"
