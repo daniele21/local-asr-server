@@ -1,159 +1,44 @@
 #!/usr/bin/env python3
-"""Zero-dependency structural checks for an adopted repository."""
-
+"""Zero-dependency structural checks for ClosedRoom."""
 from __future__ import annotations
-
-import argparse
-import json
+import argparse, json, sys
 from pathlib import Path
-import sys
 
-CORE_SKILLS = (
-    "plan-workstream",
-    "structured-change",
-    "design-product-experience",
-    "validate-change",
-    "preflight-change",
-    "remote-preflight",
-    "finalize-workstream",
-    "review-reference-quality",
-)
+CORE_SKILLS=("plan-workstream","structured-change","design-product-experience","validate-change","preflight-change","remote-preflight","finalize-workstream","review-reference-quality")
+REQUIRED=("README.md","AGENTS.md","CONTRIBUTING.md","SECURITY.md",".editorconfig",".gitignore",".engineering/baseline.json",".engineering/documentation-policy.json",".engineering/commands.json",".engineering/e2e.json",".github/pull_request_template.md",".github/workflows/repository-health.yml",".github/workflows/preflight.yml","docs/README.md","docs/architecture.md","docs/current-state.md","docs/features/README.md","docs/adr/README.md","docs/workstreams/README.md","scripts/build_artifact.sh","scripts/clean_build_state.py","scripts/finalize_build_artifact.py","scripts/select_validation_profile.py","scripts/smoke_packaged_app.py","scripts/verify_operations.py","scripts/verify_e2e.py","scripts/verify_product_experience.py")
+MARKERS=("<PROJECT_NAME>","<REPLACE_WITH_","<DESCRIBE_","<LIST_")
 
-REQUIRED = (
-    "README.md",
-    "AGENTS.md",
-    "CONTRIBUTING.md",
-    "SECURITY.md",
-    ".editorconfig",
-    ".gitignore",
-    ".engineering/baseline.json",
-    ".engineering/documentation-policy.json",
-    ".engineering/commands.json",
-    ".engineering/e2e.json",
-    ".github/pull_request_template.md",
-    ".github/workflows/repository-health.yml",
-    ".github/workflows/preflight.yml",
-    "docs/README.md",
-    "docs/architecture.md",
-    "docs/current-state.md",
-    "docs/features/README.md",
-    "docs/adr/README.md",
-    "docs/workstreams/README.md",
-    "scripts/build_artifact.sh",
-    "scripts/clean_build_state.py",
-    "scripts/finalize_build_artifact.py",
-    "scripts/select_validation_profile.py",
-    "scripts/smoke_packaged_app.py",
-    "scripts/verify_operations.py",
-    "scripts/verify_e2e.py",
-    "scripts/verify_product_experience.py",
-)
-
-PLACEHOLDER_MARKERS = (
-    "<PROJECT_NAME>",
-    "<REPLACE_WITH_",
-    "<DESCRIBE_",
-    "<LIST_",
-)
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--root", default=".")
-    parser.add_argument(
-        "--template-mode",
-        action="store_true",
-        help="Allow adopter placeholders while validating the source template.",
-    )
-    return parser.parse_args()
-
-
-def main() -> int:
-    args = parse_args()
-    root = Path(args.root).resolve()
-    errors: list[str] = []
-    warnings: list[str] = []
-
+def main()->int:
+    p=argparse.ArgumentParser(); p.add_argument("--root",default="."); p.add_argument("--template-mode",action="store_true"); a=p.parse_args(); root=Path(a.root).resolve(); errors=[]; warnings=[]
     for rel in REQUIRED:
-        if not (root / rel).is_file():
-            errors.append(f"missing required file: {rel}")
-
+        if not (root/rel).is_file(): errors.append(f"missing required file: {rel}")
     for name in CORE_SKILLS:
-        rel = Path("skills") / name / "SKILL.md"
-        if not (root / rel).is_file():
-            errors.append(f"missing core skill: {rel.as_posix()}")
-
-    baseline_path = root / ".engineering/baseline.json"
-    if baseline_path.is_file():
-        try:
-            baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError) as exc:
-            errors.append(f"invalid baseline.json: {exc}")
-        else:
-            if baseline.get("schema_version") != 1:
-                errors.append("baseline schema_version must be 1")
-            standard = baseline.get("standard", {})
-            if standard.get("source") != "daniele21/repo-template-sw":
-                errors.append("baseline standard.source must identify daniele21/repo-template-sw")
-            if standard.get("version") != "0.8.0":
-                errors.append("baseline standard.version must be 0.8.0")
-            if baseline.get("target_level") not in {"L0", "L1", "L2"}:
-                errors.append("target_level must be L0, L1 or L2")
-            profiles = baseline.get("profiles")
-            if not isinstance(profiles, list):
-                errors.append("profiles must be a list")
-            skills = baseline.get("skills", {})
-            for name in CORE_SKILLS:
-                entry = skills.get(name)
-                if not isinstance(entry, dict):
-                    errors.append(f"baseline missing skill metadata: {name}")
-                    continue
-                if not entry.get("source_version"):
-                    errors.append(f"skill {name} missing source_version")
-                if not isinstance(entry.get("customized"), bool):
-                    errors.append(f"skill {name} customized must be boolean")
-
-    candidate_files = [
-        root / "README.md",
-        root / "AGENTS.md",
-        root / "docs/architecture.md",
-        root / "SECURITY.md",
-    ]
-    if not args.template_mode:
-        for path in candidate_files:
-            if not path.is_file():
-                continue
-            text = path.read_text(encoding="utf-8")
-            for marker in PLACEHOLDER_MARKERS:
-                if marker in text:
-                    errors.append(f"unresolved adopter placeholder {marker} in {path.relative_to(root)}")
-
-    pyproject = root / "pyproject.toml"
-    if pyproject.is_file():
-        text = pyproject.read_text(encoding="utf-8")
-        if "file:///Users/" in text or "file:///home/" in text:
-            errors.append("pyproject.toml contains a developer-machine absolute file dependency")
-
-    common_generated = ("node_modules", ".venv", "build", "dist", "__pycache__")
-    present = [name for name in common_generated if (root / name).exists()]
-    if present:
-        warnings.append("generated/local directories present in worktree: " + ", ".join(present))
-
-    if not any((root / name).is_file() for name in ("LICENSE", "LICENSE.md", "LICENSE.txt")):
-        warnings.append("no project license file detected; select an explicit license before public distribution")
-
+        if not (root/"skills"/name/"SKILL.md").is_file(): errors.append(f"missing core skill: skills/{name}/SKILL.md")
+    try: baseline=json.loads((root/".engineering/baseline.json").read_text())
+    except Exception as exc: errors.append(f"invalid baseline.json: {exc}"); baseline={}
+    standard=baseline.get("standard",{})
+    if baseline.get("schema_version")!=1: errors.append("baseline schema_version must be 1")
+    if standard.get("source")!="daniele21/repo-template-sw": errors.append("baseline source invalid")
+    if standard.get("version")!="0.9.1": errors.append("baseline standard.version must be 0.9.1")
+    if standard.get("revision")!="3c6f7aaf48c47595596d1aa4854af8727e9273a7": errors.append("baseline standard.revision must match canonical 0.9.1 main")
+    if baseline.get("target_level") not in {"L0","L1","L2"}: errors.append("target_level invalid")
+    for name in CORE_SKILLS:
+        entry=baseline.get("skills",{}).get(name)
+        if not isinstance(entry,dict) or not entry.get("source_version") or not isinstance(entry.get("customized"),bool): errors.append(f"baseline skill metadata invalid: {name}")
+    if not a.template_mode:
+        for rel in ("README.md","AGENTS.md","docs/architecture.md","SECURITY.md"):
+            path=root/rel
+            if path.is_file():
+                text=path.read_text()
+                for marker in MARKERS:
+                    if marker in text: errors.append(f"unresolved adopter placeholder {marker} in {rel}")
+    pyproject=root/"pyproject.toml"
+    if pyproject.is_file() and ("file:///Users/" in pyproject.read_text() or "file:///home/" in pyproject.read_text()): errors.append("pyproject.toml contains developer-machine absolute dependency")
+    present=[x for x in ("node_modules",".venv","build","dist","__pycache__") if (root/x).exists()]
+    if present: warnings.append("generated/local directories present: "+", ".join(present))
     print("Repository baseline check")
-    print(f"root: {root}")
-    for warning in warnings:
-        print(f"WARN: {warning}")
-    for error in errors:
-        print(f"FAIL: {error}")
-    if errors:
-        print(f"RESULT: FAIL ({len(errors)} error(s), {len(warnings)} warning(s))")
-        return 1
-    print(f"RESULT: PASS ({len(warnings)} warning(s))")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+    for warning in warnings: print("WARN:",warning)
+    for error in errors: print("FAIL:",error)
+    print("RESULT:","FAIL" if errors else "PASS")
+    return 1 if errors else 0
+if __name__=="__main__": sys.exit(main())
