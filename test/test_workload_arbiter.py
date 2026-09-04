@@ -4,7 +4,12 @@ import threading
 import time
 import unittest
 
-from local_asr_server.runtime.workload_arbiter import HeavyWorkloadArbiter, WorkloadQueueFull
+from local_asr_server.runtime.resource_policy import ResourcePolicyBlocked
+from local_asr_server.runtime.workload_arbiter import (
+    HeavyWorkloadArbiter,
+    WorkloadAdmissionRejected,
+    WorkloadQueueFull,
+)
 from local_asr_server.transcription_jobs import TranscriptionJobManager
 
 
@@ -98,6 +103,68 @@ class HeavyWorkloadArbiterTests(unittest.TestCase):
             release_first.set()
             arbiter.shutdown()
 
+    def test_resource_policy_rejects_submission_while_capture_is_active(self) -> None:
+        capture_active = True
+
+        def guard(_workload_type: str) -> None:
+            if capture_active:
+                raise ResourcePolicyBlocked("capture_active")
+
+        arbiter = HeavyWorkloadArbiter(
+            max_concurrent=1,
+            queue_capacity=2,
+            admission_guard=guard,
+        )
+        try:
+            with self.assertRaises(WorkloadAdmissionRejected) as ctx:
+                arbiter.submit(task_id="blocked", workload_type="analysis", run=lambda: None)
+            self.assertEqual(str(ctx.exception), "capture_active")
+            self.assertEqual(arbiter.snapshot()["rejected"], 1)
+            self.assertEqual(arbiter.snapshot()["queue_depth"], 0)
+        finally:
+            arbiter.shutdown()
+
+    def test_capture_start_rejects_work_that_was_already_queued(self) -> None:
+        capture_active = False
+        first_started = threading.Event()
+        release_first = threading.Event()
+        rejected = threading.Event()
+        second_ran = threading.Event()
+        rejection_reason: list[str] = []
+
+        def guard(_workload_type: str) -> None:
+            if capture_active:
+                raise ResourcePolicyBlocked("capture_active")
+
+        def first() -> None:
+            first_started.set()
+            release_first.wait(timeout=2.0)
+
+        arbiter = HeavyWorkloadArbiter(
+            max_concurrent=1,
+            queue_capacity=2,
+            admission_guard=guard,
+        )
+        try:
+            arbiter.submit(task_id="one", workload_type="analysis", run=first)
+            self.assertTrue(first_started.wait(timeout=1.0))
+            arbiter.submit(
+                task_id="two",
+                workload_type="transcription",
+                run=second_ran.set,
+                on_reject=lambda reason: (rejection_reason.append(reason), rejected.set()),
+            )
+            capture_active = True
+            release_first.set()
+
+            self.assertTrue(rejected.wait(timeout=1.0))
+            self.assertFalse(second_ran.is_set())
+            self.assertEqual(rejection_reason, ["capture_active"])
+            self.assertEqual(arbiter.snapshot()["rejected"], 1)
+        finally:
+            release_first.set()
+            arbiter.shutdown()
+
     def test_transcription_manager_uses_shared_arbiter(self) -> None:
         arbiter = HeavyWorkloadArbiter(max_concurrent=1, queue_capacity=2)
         manager = TranscriptionJobManager(arbiter=arbiter)
@@ -133,6 +200,28 @@ class HeavyWorkloadArbiterTests(unittest.TestCase):
             self.assertEqual(manager.get(second["id"])["status"], "completed")
         finally:
             release_first.set()
+            arbiter.shutdown()
+
+    def test_transcription_manager_reports_policy_rejection_as_resource_admission_failure(self) -> None:
+        def guard(_workload_type: str) -> None:
+            raise ResourcePolicyBlocked("capture_active")
+
+        arbiter = HeavyWorkloadArbiter(
+            max_concurrent=1,
+            queue_capacity=2,
+            admission_guard=guard,
+        )
+        manager = TranscriptionJobManager(arbiter=arbiter)
+        try:
+            job = manager.create(
+                "rec-1",
+                lambda _job: {"outcome_status": "completed", "diagnostics": []},
+            )
+            stored = manager.get(job["id"])
+            self.assertEqual(stored["status"], "failed")
+            self.assertEqual(stored["current_step"], "resource_admission")
+            self.assertEqual(stored["error"], "capture_active")
+        finally:
             arbiter.shutdown()
 
 
