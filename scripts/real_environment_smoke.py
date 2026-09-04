@@ -99,14 +99,14 @@ def key(pid: int, name: str) -> None:
     UI_DRIVER.key(pid, name)
 
 
-def git_state(root: Path) -> tuple[str, bool]:
+def git_state(root: Path) -> tuple[str, list[str]]:
     try:
-        return (
-            run(["git", "rev-parse", "--short=12", "HEAD"], cwd=root),
-            bool(run(["git", "status", "--porcelain"], cwd=root)),
-        )
+        revision = run(["git", "rev-parse", "--short=12", "HEAD"], cwd=root)
+        status = run(["git", "status", "--porcelain"], cwd=root)
+        entries = [line for line in status.splitlines() if line.strip()]
+        return revision, entries
     except Exception:
-        return "unknown", True
+        return "unknown", ["git_state_unavailable"]
 
 
 def latest_app(root: Path) -> tuple[Path, Path | None]:
@@ -291,7 +291,8 @@ def quit_app(pid: int, executable: str, port: int | None) -> dict[str, Any]:
 def main() -> int:
     a = args()
     root = Path(a.root).resolve()
-    revision, dirty = git_state(root)
+    revision, dirty_entries = git_state(root)
+    dirty = bool(dirty_entries)
     report: dict[str, Any] = {
         "schema_version": 1,
         "status": FAIL,
@@ -301,6 +302,7 @@ def main() -> int:
         "started_at": datetime.now(timezone.utc).isoformat(),
         "source_revision": revision,
         "source_dirty": dirty,
+        "source_dirty_entries": dirty_entries,
         "platform": {"system": platform.system(), "machine": platform.machine(), "macos": platform.mac_ver()[0]},
         "checks": [],
         "errors": [],
@@ -325,7 +327,11 @@ def main() -> int:
 
     try:
         check("target_platform", platform.system() == "Darwin" and platform.machine() == "arm64", report["platform"])
-        check("checkout_clean", not dirty, {"source_revision": revision})
+        check(
+            "checkout_clean",
+            not dirty,
+            {"source_revision": revision, "dirty_entries": dirty_entries},
+        )
         if a.build:
             subprocess.run(["bash", "scripts/build_artifact.sh", "--no-dmg"], cwd=root, check=True)
         if a.app:
