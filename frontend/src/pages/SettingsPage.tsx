@@ -71,7 +71,8 @@ export default function SettingsPage() {
   const [localLlmReasoning, setLocalLlmReasoning] = useState<LocalLlmReasoning>(DEFAULTS.localLlmReasoning as LocalLlmReasoning);
   const [localLlmMaxOutputTokens, setLocalLlmMaxOutputTokens] = useState('');
   const [localLlmJsonMode, setLocalLlmJsonMode] = useState(DEFAULTS.localLlmJsonMode);
-  const [showAdvancedLlm, setShowAdvancedLlm] = useState(false);
+  const [showAdvancedProcessing, setShowAdvancedProcessing] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [llmService, setLlmService] = useState<any>(null);
   const [llmAction, setLlmAction] = useState('');
   const [llmLogs, setLlmLogs] = useState('');
@@ -235,7 +236,7 @@ export default function SettingsPage() {
           reasoning: localLlmReasoning,
           maxOutputTokens: localLlmMaxOutputTokens,
           jsonMode: localLlmJsonMode,
-        }, showAdvancedLlm),
+        }, showDiagnostics),
         meeting_auto_analysis: meetingAutoAnalysis,
         meeting_default_pipeline: meetingDefaultPipeline,
         speaker_diarization_enabled: speakerDiarizationEnabled,
@@ -264,16 +265,23 @@ export default function SettingsPage() {
   }
 
   const localProvider = isLocalLlmProvider(llmProvider);
+  const asrLocation = asrProvider === 'local'
+    ? (lang === 'it' ? 'Sul Mac' : 'On this Mac')
+    : 'Speechmatics cloud';
+  const analysisLocation = localProvider
+    ? (lang === 'it' ? 'Sul Mac' : 'On this Mac')
+    : llmProvider === 'gemini'
+      ? 'Gemini cloud'
+      : (lang === 'it' ? 'Configurazione personalizzata' : 'Custom configuration');
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
       <header className="border-b border-border-subtle pb-3">
-        <span className="text-xs font-bold uppercase tracking-widest text-accent">{t('settings.title')}</span>
-        <h2 className="mt-1 text-2xl font-bold text-text-primary">{t('settings.title')}</h2>
+        <h2 className="text-2xl font-bold text-text-primary">{t('settings.title')}</h2>
         <p className="mt-1 text-sm text-text-secondary">
           {lang === 'it'
-            ? 'Configura le preferenze di ClosedRoom. I controlli tecnici restano disponibili in Avanzate e diagnostica.'
-            : 'Configure ClosedRoom preferences. Technical controls remain available under Advanced & diagnostics.'}
+            ? 'Qui imposti preferenze comprensibili. Provider, modelli e runtime restano disponibili solo quando vuoi controllarli esplicitamente.'
+            : 'Set understandable preferences here. Providers, models and runtimes stay available only when you explicitly want to control them.'}
         </p>
       </header>
 
@@ -305,173 +313,244 @@ export default function SettingsPage() {
 
         <Card className="flex flex-col gap-4">
           <div>
-            <h3 className="text-sm font-semibold text-text-primary">{t('settings.transcriptionDefaultsTitle')}</h3>
-            <p className="mt-1 text-xs text-text-muted">{t('settings.transcriptionDefaultsDesc')}</p>
-          </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Select label="Provider ASR" value={asrProvider} onChange={(event) => setAsrProvider(event.target.value)}>
-              {ASR_PROVIDERS.map((provider) => <option key={provider.value} value={provider.value}>{provider.label}</option>)}
-            </Select>
-            {asrProvider === 'local' && (
-              <Select label={t('transcription.modelLabel')} value={defaultModel} onChange={(event) => setDefaultModel(event.target.value)}>
-                {MODELS.map((model) => <option key={model.value} value={model.value}>{model.label}</option>)}
-              </Select>
-            )}
-            <Select label={t('transcription.languageLabel')} value={defaultLanguage} onChange={(event) => setDefaultLanguage(event.target.value)}>
-              {LANGUAGES.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}
-            </Select>
-            {asrProvider === 'local' && (
-              <>
-                <Select label={t('transcription.taskLabel')} value={defaultTask} onChange={(event) => setDefaultTask(event.target.value)}>
-                  {TASKS.map((task) => <option key={task.value} value={task.value}>{task.label}</option>)}
-                </Select>
-                <Input
-                  label={t('transcription.temperatureLabel')}
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="1"
-                  placeholder="Auto"
-                  value={defaultTemperature}
-                  onChange={(event) => setDefaultTemperature(event.target.value)}
-                />
-              </>
-            )}
-          </div>
-
-          {asrProvider === 'speechmatics' && (
-            <div className="grid grid-cols-1 gap-4 rounded-xl border border-border-subtle bg-bg-surface/30 p-4 md:grid-cols-2">
-              <Select label="Speechmatics region" value={speechmaticsRegion} onChange={(event) => setSpeechmaticsRegion(event.target.value)}>
-                {SPEECHMATICS_REGIONS.map((region) => <option key={region.value} value={region.value}>{region.label}</option>)}
-              </Select>
-              <Select label="Speechmatics model" value={speechmaticsModel} onChange={(event) => setSpeechmaticsModel(event.target.value)}>
-                {SPEECHMATICS_MODELS.map((model) => <option key={model.value} value={model.value}>{model.label}</option>)}
-              </Select>
-              <Select label="Diarization" value={speechmaticsDiarization} onChange={(event) => setSpeechmaticsDiarization(event.target.value)}>
-                {SPEECHMATICS_DIARIZATION.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}
-              </Select>
-              <Input
-                label={`API key${speechmaticsKeyConfigured ? (lang === 'it' ? ' configurata' : ' configured') : ''}`}
-                type="password"
-                value={speechmaticsApiKey}
-                onChange={(event) => setSpeechmaticsApiKey(event.target.value)}
-                placeholder={speechmaticsKeyConfigured
-                  ? (lang === 'it' ? 'Lascia vuoto per mantenere la chiave salvata' : 'Leave blank to keep the saved key')
-                  : 'Speechmatics API key'}
-              />
-            </div>
-          )}
-
-          {asrProvider === 'local' && (
-            <div className="flex flex-col gap-3 border-t border-border-subtle pt-4">
-              <Checkbox variant="toggle" label={t('transcription.wordTimestampsLabel')} checked={wordTimestamps} onChange={(event) => setWordTimestamps(event.target.checked)} />
-              <Checkbox variant="toggle" label={t('transcription.conditionLabel')} checked={conditionOnPrevious} onChange={(event) => setConditionOnPrevious(event.target.checked)} />
-            </div>
-          )}
-        </Card>
-
-        <Card className="flex flex-col gap-4">
-          <div>
-            <h3 className="text-sm font-semibold text-text-primary">{t('settings.aiAnalysisTitle')}</h3>
+            <h3 className="text-sm font-semibold text-text-primary">
+              {lang === 'it' ? 'Meeting' : 'Meetings'}
+            </h3>
             <p className="mt-1 text-xs text-text-muted">
               {lang === 'it'
-                ? 'Scegli dove viene eseguita l’analisi e il livello qualitativo predefinito.'
-                : 'Choose where analysis runs and the default quality level.'}
+                ? 'Preferenze che cambiano il risultato, non il motore che ClosedRoom usa per ottenerlo.'
+                : 'Preferences that change the outcome, not the engine ClosedRoom uses to produce it.'}
             </p>
           </div>
-
-          <Select
-            label={t('settings.providerLabel')}
-            value={llmProvider}
-            onChange={(event) => {
-              const provider = event.target.value;
-              setLlmProvider(provider);
-              if (provider === 'nemotron_local') setLocalLlmModel(DEFAULTS.localLlmModel);
-              if (provider === 'voxtral_local') setLocalLlmModel('voxtral-mini-3b');
-            }}
-          >
-            {LLM_PROVIDERS.map((provider) => <option key={provider.value} value={provider.value}>{t(provider.settingsLabelKey)}</option>)}
+          <Select label={t('transcription.languageLabel')} value={defaultLanguage} onChange={(event) => setDefaultLanguage(event.target.value)}>
+            {LANGUAGES.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}
           </Select>
-
-          {llmProvider === 'gemini' && (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Select label={lang === 'it' ? 'Modello Gemini' : 'Gemini model'} value={geminiModel} onChange={(event) => setGeminiModel(event.target.value)}>
-                {GEMINI_MODELS.map((model) => <option key={model.value} value={model.value}>{model.label}</option>)}
-              </Select>
-              <Input
-                label={t('settings.apiKeyLabel')}
-                type="password"
-                value={geminiApiKey}
-                onChange={(event) => setGeminiApiKey(event.target.value)}
-                placeholder={lang === 'it' ? 'Lascia vuoto per usare la chiave salvata' : 'Leave blank to use the saved key'}
-              />
-              {geminiModel === 'custom' && (
-                <Input label="Gemini model ID" value={customGeminiModel} onChange={(event) => setCustomGeminiModel(event.target.value)} placeholder="gemini-..." className="md:col-span-2" />
-              )}
-            </div>
-          )}
-
-          {localProvider && (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Select label={t('settings.localLlmActiveModel')} value={localLlmModel} onChange={(event) => setLocalLlmModel(event.target.value)}>
-                {LOCAL_LLM_MODELS.map((model) => <option key={model.value} value={model.value}>{model.label}</option>)}
-              </Select>
-              <Select label={t('settings.localLlmQuality')} value={localLlmQualityPreset} onChange={(event) => setLocalLlmQualityPreset(event.target.value as LocalLlmQualityPreset)}>
-                {LOCAL_LLM_QUALITY_PRESETS.map((preset) => <option key={preset.value} value={preset.value}>{t(preset.labelKey)}</option>)}
-              </Select>
-            </div>
-          )}
+          <Checkbox
+            variant="toggle"
+            label={t('settings.meetingAutoAnalysis')}
+            checked={meetingAutoAnalysis}
+            onChange={(event) => setMeetingAutoAnalysis(event.target.checked)}
+          />
         </Card>
 
         <Card className="flex flex-col gap-4">
           <div>
-            <h3 className="text-sm font-semibold text-text-primary">{t('settings.meetingWorkflowTitle')}</h3>
-            <p className="mt-1 text-xs text-text-muted">{t('settings.meetingWorkflowDesc')}</p>
+            <h3 className="text-sm font-semibold text-text-primary">
+              {lang === 'it' ? 'Privacy e processing' : 'Privacy & processing'}
+            </h3>
+            <p className="mt-1 text-xs text-text-muted">
+              {lang === 'it'
+                ? 'ClosedRoom usa le scelte correnti automaticamente. Apri Avanzate solo se vuoi cambiare provider o modello.'
+                : 'ClosedRoom uses the current choices automatically. Open Advanced only if you want to change a provider or model.'}
+            </p>
           </div>
-          <div className="flex flex-col gap-4">
-            <Checkbox variant="toggle" label={t('settings.meetingAutoAnalysis')} checked={meetingAutoAnalysis} onChange={(event) => setMeetingAutoAnalysis(event.target.checked)} />
-            <Checkbox variant="toggle" label={t('settings.speakerDiarization')} checked={speakerDiarizationEnabled} onChange={(event) => setSpeakerDiarizationEnabled(event.target.checked)} />
-            <p className="text-xs text-text-muted">{t('settings.speakerDiarizationDesc')}</p>
-            <Checkbox variant="toggle" label={t('settings.visualIntelligence')} checked={visualIntelligenceEnabled} onChange={(event) => setVisualIntelligenceEnabled(event.target.checked)} />
-            <p className="text-xs text-text-muted">{t('settings.visualIntelligenceDesc')}</p>
-            <Select label={t('settings.meetingDefaultPipeline')} value={meetingDefaultPipeline} onChange={(event) => setMeetingDefaultPipeline(event.target.value)}>
-              <option value="meeting_default">{t('settings.meetingPipelineDefault')}</option>
-              <option value="meeting_deep">{t('settings.meetingPipelineDeep')}</option>
-            </Select>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-border-subtle bg-bg-surface/30 p-4">
+              <span className="block text-xs text-text-muted">{lang === 'it' ? 'Trascrizione' : 'Transcription'}</span>
+              <strong className="mt-1 block text-sm text-text-primary">{asrLocation}</strong>
+            </div>
+            <div className="rounded-xl border border-border-subtle bg-bg-surface/30 p-4">
+              <span className="block text-xs text-text-muted">{lang === 'it' ? 'Note e analisi' : 'Notes & analysis'}</span>
+              <strong className="mt-1 block text-sm text-text-primary">{analysisLocation}</strong>
+            </div>
           </div>
         </Card>
 
         <Card className="overflow-hidden p-0">
           <button
             type="button"
-            onClick={() => setShowAdvancedLlm((open) => !open)}
-            aria-expanded={showAdvancedLlm}
-            aria-controls="settings-advanced-diagnostics"
+            onClick={() => setShowAdvancedProcessing((open) => !open)}
+            aria-expanded={showAdvancedProcessing}
+            aria-controls="settings-advanced-processing"
             className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus"
           >
             <span className="flex items-start gap-3">
               <SlidersHorizontal className="mt-0.5 h-4 w-4 shrink-0 text-text-muted" aria-hidden="true" />
               <span>
                 <span className="block text-sm font-semibold text-text-primary">
-                  {lang === 'it' ? 'Avanzate e diagnostica' : 'Advanced & diagnostics'}
+                  {lang === 'it' ? 'Processing avanzato' : 'Advanced processing'}
                 </span>
                 <span className="mt-0.5 block text-xs font-normal text-text-muted">
                   {lang === 'it'
-                    ? 'Runtime, endpoint, parametri esperti e log. Non servono nell’uso normale.'
-                    : 'Runtime, endpoints, expert parameters and logs. Normal use does not require these.'}
+                    ? 'Provider, modelli e override di qualità. Non servono nell’uso normale.'
+                    : 'Providers, models and quality overrides. Normal use does not require these.'}
                 </span>
               </span>
             </span>
-            <ChevronDown className={`h-4 w-4 shrink-0 text-text-muted transition-transform ${showAdvancedLlm ? 'rotate-180' : ''}`} aria-hidden="true" />
+            <ChevronDown className={`h-4 w-4 shrink-0 text-text-muted transition-transform ${showAdvancedProcessing ? 'rotate-180' : ''}`} aria-hidden="true" />
           </button>
 
-          {showAdvancedLlm && (
-            <div id="settings-advanced-diagnostics" className="flex flex-col gap-5 border-t border-border-subtle p-5">
+          {showAdvancedProcessing && (
+            <div id="settings-advanced-processing" className="flex flex-col gap-6 border-t border-border-subtle p-5">
+              <section className="flex flex-col gap-4">
+                <div>
+                  <h4 className="text-sm font-semibold text-text-primary">{t('settings.transcriptionDefaultsTitle')}</h4>
+                  <p className="mt-1 text-xs text-text-muted">{t('settings.transcriptionDefaultsDesc')}</p>
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <Select label="Provider ASR" value={asrProvider} onChange={(event) => setAsrProvider(event.target.value)}>
+                    {ASR_PROVIDERS.map((provider) => <option key={provider.value} value={provider.value}>{provider.label}</option>)}
+                  </Select>
+                  {asrProvider === 'local' && (
+                    <Select label={t('transcription.modelLabel')} value={defaultModel} onChange={(event) => setDefaultModel(event.target.value)}>
+                      {MODELS.map((model) => <option key={model.value} value={model.value}>{model.label}</option>)}
+                    </Select>
+                  )}
+                  {asrProvider === 'local' && (
+                    <Select label={t('transcription.taskLabel')} value={defaultTask} onChange={(event) => setDefaultTask(event.target.value)}>
+                      {TASKS.map((task) => <option key={task.value} value={task.value}>{task.label}</option>)}
+                    </Select>
+                  )}
+                  {asrProvider === 'local' && (
+                    <Input
+                      label={t('transcription.temperatureLabel')}
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="1"
+                      placeholder="Auto"
+                      value={defaultTemperature}
+                      onChange={(event) => setDefaultTemperature(event.target.value)}
+                    />
+                  )}
+                </div>
+
+                {asrProvider === 'speechmatics' && (
+                  <div className="grid grid-cols-1 gap-4 rounded-xl border border-border-subtle bg-bg-surface/30 p-4 md:grid-cols-2">
+                    <Select label="Speechmatics region" value={speechmaticsRegion} onChange={(event) => setSpeechmaticsRegion(event.target.value)}>
+                      {SPEECHMATICS_REGIONS.map((region) => <option key={region.value} value={region.value}>{region.label}</option>)}
+                    </Select>
+                    <Select label="Speechmatics model" value={speechmaticsModel} onChange={(event) => setSpeechmaticsModel(event.target.value)}>
+                      {SPEECHMATICS_MODELS.map((model) => <option key={model.value} value={model.value}>{model.label}</option>)}
+                    </Select>
+                    <Select label="Diarization" value={speechmaticsDiarization} onChange={(event) => setSpeechmaticsDiarization(event.target.value)}>
+                      {SPEECHMATICS_DIARIZATION.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}
+                    </Select>
+                    <Input
+                      label={`API key${speechmaticsKeyConfigured ? (lang === 'it' ? ' configurata' : ' configured') : ''}`}
+                      type="password"
+                      value={speechmaticsApiKey}
+                      onChange={(event) => setSpeechmaticsApiKey(event.target.value)}
+                      placeholder={speechmaticsKeyConfigured
+                        ? (lang === 'it' ? 'Lascia vuoto per mantenere la chiave salvata' : 'Leave blank to keep the saved key')
+                        : 'Speechmatics API key'}
+                    />
+                  </div>
+                )}
+
+                {asrProvider === 'local' && (
+                  <div className="flex flex-col gap-3 border-t border-border-subtle pt-4">
+                    <Checkbox variant="toggle" label={t('transcription.wordTimestampsLabel')} checked={wordTimestamps} onChange={(event) => setWordTimestamps(event.target.checked)} />
+                    <Checkbox variant="toggle" label={t('transcription.conditionLabel')} checked={conditionOnPrevious} onChange={(event) => setConditionOnPrevious(event.target.checked)} />
+                  </div>
+                )}
+              </section>
+
+              <section className="flex flex-col gap-4 border-t border-border-subtle pt-5">
+                <div>
+                  <h4 className="text-sm font-semibold text-text-primary">{t('settings.aiAnalysisTitle')}</h4>
+                  <p className="mt-1 text-xs text-text-muted">
+                    {lang === 'it'
+                      ? 'Override espliciti per note e analisi.'
+                      : 'Explicit overrides for notes and analysis.'}
+                  </p>
+                </div>
+                <Select
+                  label={t('settings.providerLabel')}
+                  value={llmProvider}
+                  onChange={(event) => {
+                    const provider = event.target.value;
+                    setLlmProvider(provider);
+                    if (provider === 'nemotron_local') setLocalLlmModel(DEFAULTS.localLlmModel);
+                    if (provider === 'voxtral_local') setLocalLlmModel('voxtral-mini-3b');
+                  }}
+                >
+                  {LLM_PROVIDERS.map((provider) => <option key={provider.value} value={provider.value}>{t(provider.settingsLabelKey)}</option>)}
+                </Select>
+
+                {llmProvider === 'gemini' && (
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <Select label={lang === 'it' ? 'Modello Gemini' : 'Gemini model'} value={geminiModel} onChange={(event) => setGeminiModel(event.target.value)}>
+                      {GEMINI_MODELS.map((model) => <option key={model.value} value={model.value}>{model.label}</option>)}
+                    </Select>
+                    <Input
+                      label={t('settings.apiKeyLabel')}
+                      type="password"
+                      value={geminiApiKey}
+                      onChange={(event) => setGeminiApiKey(event.target.value)}
+                      placeholder={lang === 'it' ? 'Lascia vuoto per usare la chiave salvata' : 'Leave blank to use the saved key'}
+                    />
+                    {geminiModel === 'custom' && (
+                      <Input label="Gemini model ID" value={customGeminiModel} onChange={(event) => setCustomGeminiModel(event.target.value)} placeholder="gemini-..." className="md:col-span-2" />
+                    )}
+                  </div>
+                )}
+
+                {localProvider && (
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <Select label={t('settings.localLlmActiveModel')} value={localLlmModel} onChange={(event) => setLocalLlmModel(event.target.value)}>
+                      {LOCAL_LLM_MODELS.map((model) => <option key={model.value} value={model.value}>{model.label}</option>)}
+                    </Select>
+                    <Select label={t('settings.localLlmQuality')} value={localLlmQualityPreset} onChange={(event) => setLocalLlmQualityPreset(event.target.value as LocalLlmQualityPreset)}>
+                      {LOCAL_LLM_QUALITY_PRESETS.map((preset) => <option key={preset.value} value={preset.value}>{t(preset.labelKey)}</option>)}
+                    </Select>
+                  </div>
+                )}
+              </section>
+
+              <section className="flex flex-col gap-4 border-t border-border-subtle pt-5">
+                <div>
+                  <h4 className="text-sm font-semibold text-text-primary">
+                    {lang === 'it' ? 'Override workflow' : 'Workflow overrides'}
+                  </h4>
+                  <p className="mt-1 text-xs text-text-muted">
+                    {lang === 'it'
+                      ? 'Compatibilità e controlli esperti. ClosedRoom li renderà progressivamente automatici o on-demand.'
+                      : 'Compatibility and expert controls. ClosedRoom will progressively make these automatic or on-demand.'}
+                  </p>
+                </div>
+                <Checkbox variant="toggle" label={t('settings.speakerDiarization')} checked={speakerDiarizationEnabled} onChange={(event) => setSpeakerDiarizationEnabled(event.target.checked)} />
+                <Checkbox variant="toggle" label={t('settings.visualIntelligence')} checked={visualIntelligenceEnabled} onChange={(event) => setVisualIntelligenceEnabled(event.target.checked)} />
+                <Select label={t('settings.meetingDefaultPipeline')} value={meetingDefaultPipeline} onChange={(event) => setMeetingDefaultPipeline(event.target.value)}>
+                  <option value="meeting_default">{t('settings.meetingPipelineDefault')}</option>
+                  <option value="meeting_deep">{t('settings.meetingPipelineDeep')}</option>
+                </Select>
+              </section>
+            </div>
+          )}
+        </Card>
+
+        <Card className="overflow-hidden p-0">
+          <button
+            type="button"
+            onClick={() => setShowDiagnostics((open) => !open)}
+            aria-expanded={showDiagnostics}
+            aria-controls="settings-developer-diagnostics"
+            className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus"
+          >
+            <span className="flex items-start gap-3">
+              <Bug className="mt-0.5 h-4 w-4 shrink-0 text-text-muted" aria-hidden="true" />
+              <span>
+                <span className="block text-sm font-semibold text-text-primary">
+                  {lang === 'it' ? 'Sviluppatore e diagnostica' : 'Developer & diagnostics'}
+                </span>
+                <span className="mt-0.5 block text-xs font-normal text-text-muted">
+                  {lang === 'it'
+                    ? 'Runtime, endpoint, path modello, parametri interni e log.'
+                    : 'Runtime, endpoints, model paths, internal parameters and logs.'}
+                </span>
+              </span>
+            </span>
+            <ChevronDown className={`h-4 w-4 shrink-0 text-text-muted transition-transform ${showDiagnostics ? 'rotate-180' : ''}`} aria-hidden="true" />
+          </button>
+
+          {showDiagnostics && (
+            <div id="settings-developer-diagnostics" className="flex flex-col gap-5 border-t border-border-subtle p-5">
               {localProvider && (
                 <section className="flex flex-col gap-4">
                   <h4 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-text-secondary">
                     <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
-                    {lang === 'it' ? 'Configurazione locale avanzata' : 'Advanced local configuration'}
+                    {lang === 'it' ? 'Runtime locale' : 'Local runtime'}
                   </h4>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <Select label={t('settings.localLlmMode')} value={localLlmMode} onChange={(event) => setLocalLlmMode(event.target.value as LocalLlmMode)}>
