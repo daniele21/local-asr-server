@@ -100,12 +100,30 @@ def create_app(
     app.state.app_log_file = configure_application_logging(fallback_dir=catalog_path.parent)
 
     catalog_store = CatalogStore(catalog_path)
-    resource_policy = ResourcePolicy.from_catalog(catalog_store)
+    app.state.prompts_file = catalog_path.parent / "prompts.json" if temp_root in catalog_path.resolve().parents else None
+    job_store = JobStore(catalog_path)
+    interrupted_jobs = job_store.interrupt_incomplete()
+    catalog_store.interrupt_analysis_runs_for_jobs(
+        [job["id"] for job in interrupted_jobs if job["type"] == "analysis"],
+        reason="Interrupted by server restart",
+    )
+    recording_store = RecordingStore(
+        recordings_dir or Path("~/Recordings/local-asr"),
+        use_settings_dir=recordings_dir is None,
+        catalog=catalog_store,
+    )
+
+    # RecordingStore is the existing canonical capture-state owner. ResourcePolicy
+    # reads it lazily and HeavyWorkloadArbiter remains the only heavy-work scheduler.
+    resource_policy = ResourcePolicy(
+        capture_active=lambda: recording_store.active_recording() is not None,
+    )
     heavy_workloads = HeavyWorkloadArbiter.from_env(
         admission_guard=resource_policy.assert_heavy_work_admissible,
     )
     app.state.resource_policy = resource_policy
     app.state.heavy_workload_arbiter = heavy_workloads
+    transcription_jobs = TranscriptionJobManager(job_store, arbiter=heavy_workloads)
     
     import logging
     logger = logging.getLogger("uvicorn.error")
@@ -138,19 +156,6 @@ def create_app(
             print("Local LLM: disabled")
             logger.info("Local LLM: disabled")
 
-    app.state.prompts_file = catalog_path.parent / "prompts.json" if temp_root in catalog_path.resolve().parents else None
-    job_store = JobStore(catalog_path)
-    interrupted_jobs = job_store.interrupt_incomplete()
-    catalog_store.interrupt_analysis_runs_for_jobs(
-        [job["id"] for job in interrupted_jobs if job["type"] == "analysis"],
-        reason="Interrupted by server restart",
-    )
-    transcription_jobs = TranscriptionJobManager(job_store, arbiter=heavy_workloads)
-    recording_store = RecordingStore(
-        recordings_dir or Path("~/Recordings/local-asr"),
-        use_settings_dir=recordings_dir is None,
-        catalog=catalog_store,
-    )
     from local_asr_server.transcriptions import TranscriptionStore
     transcription_store = TranscriptionStore(catalog=catalog_store)
     from local_asr_server.transcription_diarization import TranscriptionDiarizationService
