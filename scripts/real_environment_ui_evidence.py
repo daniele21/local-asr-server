@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import signal
 import subprocess
 import sys
@@ -12,51 +11,9 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-WINDOW_SCRIPT = r'''
-on run argv
-  set targetPID to (item 1 of argv) as integer
-  tell application "System Events"
-    if UI elements enabled is false then error "accessibility_permission_required"
-    set p to first application process whose unix id is targetPID
-    set frontmost of p to true
-    if (count windows of p) is 0 then error "closedroom_window_missing"
-    set windowPosition to position of window 1 of p
-    set windowSize to size of window 1 of p
-    return ((item 1 of windowPosition) as text) & "," & ((item 2 of windowPosition) as text) & "," & ((item 1 of windowSize) as text) & "," & ((item 2 of windowSize) as text)
-  end tell
-end run
-'''
+from macos_ui_driver import UIAutomationError, default_driver
 
-EXISTS_SCRIPT = r'''
-on run argv
-  set targetPID to (item 1 of argv) as integer
-  set oldDelims to AppleScript's text item delimiters
-  set AppleScript's text item delimiters to "\n"
-  set wantedLabels to text items of (item 2 of argv)
-  set AppleScript's text item delimiters to oldDelims
-  tell application "System Events"
-    if UI elements enabled is false then error "accessibility_permission_required"
-    set p to first application process whose unix id is targetPID
-    if (count windows of p) is 0 then return "false"
-    set allItems to entire contents of window 1 of p
-    repeat with e in allItems
-      repeat with wanted in wantedLabels
-        try
-          if (name of e as text) is (wanted as text) then return "true"
-        end try
-        try
-          if (description of e as text) is (wanted as text) then return "true"
-        end try
-        try
-          if (value of e as text) is (wanted as text) then return "true"
-        end try
-      end repeat
-    end repeat
-  end tell
-  return "false"
-end run
-'''
-
+UI_DRIVER = default_driver()
 CHECKPOINTS = [
     ("01-ready-to-record", ("Ready to record", "Pronto per registrare")),
     ("02-recording", ("Stop and Save", "Termina e salva")),
@@ -76,18 +33,6 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def osascript(source: str, *values: str) -> str:
-    result = subprocess.run(
-        ["osascript", "-l", "AppleScript", "-e", source, "--", *values],
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    if result.returncode:
-        raise RuntimeError((result.stderr or result.stdout or "AppleScript failed").strip())
-    return result.stdout.strip()
-
-
 def process_snapshot() -> list[tuple[int, str]]:
     result = subprocess.run(["ps", "-axo", "pid=,command="], check=True, capture_output=True, text=True)
     found: list[tuple[int, str]] = []
@@ -104,25 +49,19 @@ def process_snapshot() -> list[tuple[int, str]]:
 
 def find_closedroom_pid() -> int | None:
     candidates = [
-        pid for pid, command in process_snapshot()
+        pid
+        for pid, command in process_snapshot()
         if "/Contents/MacOS/" in command and "ClosedRoom" in command
     ]
     return max(candidates) if candidates else None
 
 
 def window_rect(pid: int) -> str:
-    raw = osascript(WINDOW_SCRIPT, str(pid))
-    parts = [int(float(value.strip())) for value in raw.split(",")]
-    if len(parts) != 4 or parts[2] <= 0 or parts[3] <= 0:
-        raise RuntimeError(f"invalid ClosedRoom window bounds: {raw}")
-    return ",".join(str(value) for value in parts)
+    return UI_DRIVER.window_rect(pid)
 
 
 def has_label(pid: int, labels: tuple[str, ...]) -> bool:
-    try:
-        return osascript(EXISTS_SCRIPT, str(pid), "\n".join(labels)).lower() == "true"
-    except Exception:
-        return False
+    return UI_DRIVER.exists(pid, labels)
 
 
 def capture_window(rect: str, destination: Path) -> None:
@@ -132,7 +71,6 @@ def capture_window(rect: str, destination: Path) -> None:
 
 def start_video(rect: str, destination: Path) -> subprocess.Popen[bytes]:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    # -v records video; -V bounds runaway capture; -R limits evidence to the app window.
     return subprocess.Popen(
         ["screencapture", "-v", "-V", "180", "-R", rect, "-x", str(destination)],
         stdout=subprocess.DEVNULL,
@@ -175,7 +113,18 @@ def main() -> int:
     manifest_path = media_root / "manifest.json"
     media_root.mkdir(parents=True, exist_ok=True)
 
-    command = [sys.executable, str(root / "scripts" / "real_environment_smoke.py"), "--root", str(root), "--evidence", str(report_path), "--record-seconds", str(args.record_seconds), "--timeout", str(args.timeout)]
+    command = [
+        sys.executable,
+        str(root / "scripts" / "real_environment_smoke.py"),
+        "--root",
+        str(root),
+        "--evidence",
+        str(report_path),
+        "--record-seconds",
+        str(args.record_seconds),
+        "--timeout",
+        str(args.timeout),
+    ]
     if args.app:
         command += ["--app", args.app]
     if args.build:
@@ -191,6 +140,10 @@ def main() -> int:
     media_errors: list[str] = []
     deadline = time.monotonic() + max(args.timeout + args.record_seconds + 90, 180)
 
+    def media_error(message: str) -> None:
+        if message not in media_errors:
+            media_errors.append(message)
+
     try:
         while smoke.poll() is None and time.monotonic() < deadline:
             if app_pid is None:
@@ -199,18 +152,28 @@ def main() -> int:
                 try:
                     rect = window_rect(app_pid)
                     video = start_video(rect, video_path)
+                except UIAutomationError as exc:
+                    media_error(f"media_start_ui: {exc}")
+                    rect = None
                 except Exception as exc:
-                    media_errors.append(f"media_start: {exc}")
+                    media_error(f"media_start: {exc}")
                     rect = None
             if app_pid is not None and rect is not None:
                 for name, labels in CHECKPOINTS:
-                    if name in captured or not has_label(app_pid, labels):
+                    if name in captured:
+                        continue
+                    try:
+                        visible = has_label(app_pid, labels)
+                    except UIAutomationError as exc:
+                        media_error(f"{name}_ui: {exc}")
+                        continue
+                    if not visible:
                         continue
                     try:
                         capture_window(rect, screenshot_root / f"{name}.png")
                         captured.add(name)
                     except Exception as exc:
-                        media_errors.append(f"{name}: {exc}")
+                        media_error(f"{name}: {exc}")
             time.sleep(0.4)
 
         if smoke.poll() is None:
@@ -220,7 +183,7 @@ def main() -> int:
             except subprocess.TimeoutExpired:
                 smoke.kill()
                 smoke.wait(timeout=5)
-            media_errors.append("real_environment_smoke exceeded UI evidence wrapper deadline")
+            media_error("real_environment_smoke exceeded UI evidence wrapper deadline")
     finally:
         finish_video(video)
 
@@ -230,7 +193,7 @@ def main() -> int:
         try:
             report = json.loads(report_path.read_text(encoding="utf-8"))
         except Exception as exc:
-            media_errors.append(f"report_parse: {exc}")
+            media_error(f"report_parse: {exc}")
 
     screenshot_paths = [screenshot_root / f"{name}.png" for name, _ in CHECKPOINTS]
     screenshots_ok = all(path.is_file() and path.stat().st_size > 0 for path in screenshot_paths)
@@ -243,8 +206,13 @@ def main() -> int:
         "journey_id": "meeting-recording-ui",
         "execution_environment": "target-macos-real",
         "fidelity_class": "target_environment",
+        "ui_driver": report.get("ui_driver", "AXUIElement/CGEvent via bounded Swift helper"),
         "source_revision": report.get("source_revision"),
-        "result": "PASS" if successful_smoke and media_complete else "E2E_EVIDENCE_INCOMPLETE" if successful_smoke else report.get("status", "fail"),
+        "result": "PASS"
+        if successful_smoke and media_complete
+        else "E2E_EVIDENCE_INCOMPLETE"
+        if successful_smoke
+        else report.get("status", "fail"),
         "screenshots": [str(path.relative_to(report_path.parent)) for path in screenshot_paths if path.is_file()],
         "video": str(video_path.relative_to(report_path.parent)) if video_path.is_file() else None,
         "media_errors": media_errors,
@@ -253,7 +221,10 @@ def main() -> int:
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     if successful_smoke and not media_complete:
-        print("E2E_EVIDENCE_INCOMPLETE: ClosedRoom target UI smoke passed but screenshot/video evidence is incomplete", file=sys.stderr)
+        print(
+            "E2E_EVIDENCE_INCOMPLETE: ClosedRoom target UI smoke passed but screenshot/video evidence is incomplete",
+            file=sys.stderr,
+        )
         print(json.dumps(manifest, indent=2, sort_keys=True))
         return 1
 

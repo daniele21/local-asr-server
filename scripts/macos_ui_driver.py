@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""Bounded macOS Accessibility driver used by ClosedRoom target-Mac evidence.
+
+The driver compiles a tiny Swift helper once per process, then talks directly to
+AXUIElement/CGEvent. It intentionally avoids System Events tree enumeration,
+which can block indefinitely on large WKWebView accessibility trees.
+"""
+from __future__ import annotations
+
+import atexit
+import platform
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+from typing import Iterable
+
+
+class UIAutomationError(RuntimeError):
+    """Base error for target-Mac UI automation infrastructure."""
+
+
+class AccessibilityPermissionRequired(UIAutomationError):
+    """The invoking terminal/process lacks macOS Accessibility permission."""
+
+
+class UIAutomationTimeout(UIAutomationError):
+    """A bounded Accessibility action exceeded its allowed duration."""
+
+
+class UIAutomationUnavailable(UIAutomationError):
+    """Required target-Mac UI automation tooling is unavailable."""
+
+
+class MacOSUIDriver:
+    def __init__(
+        self,
+        source: Path | None = None,
+        *,
+        action_timeout: float = 5.0,
+        compile_timeout: float = 30.0,
+    ) -> None:
+        self.source = source or Path(__file__).with_name("macos_ax_helper.swift")
+        self.action_timeout = action_timeout
+        self.compile_timeout = compile_timeout
+        self._tmp: tempfile.TemporaryDirectory[str] | None = None
+        self._binary: Path | None = None
+
+    def close(self) -> None:
+        if self._tmp is not None:
+            self._tmp.cleanup()
+            self._tmp = None
+            self._binary = None
+
+    def _xcrun(self) -> str:
+        if platform.system() != "Darwin":
+            raise UIAutomationUnavailable("macos_accessibility_driver_requires_darwin")
+        if not self.source.is_file():
+            raise UIAutomationUnavailable(f"macos_ax_helper_missing:{self.source}")
+        xcrun = shutil.which("xcrun")
+        if not xcrun:
+            raise UIAutomationUnavailable("xcrun_missing_for_macos_ax_helper")
+        try:
+            result = subprocess.run(
+                [xcrun, "--sdk", "macosx", "--find", "swiftc"],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise UIAutomationTimeout("swiftc_discovery_timeout") from exc
+        except subprocess.CalledProcessError as exc:
+            raise UIAutomationUnavailable((exc.stderr or exc.stdout or "swiftc_not_found").strip()) from exc
+        if not result.stdout.strip():
+            raise UIAutomationUnavailable("swiftc_not_found")
+        return xcrun
+
+    def _ensure_binary(self) -> Path:
+        if self._binary is not None and self._binary.is_file():
+            return self._binary
+        xcrun = self._xcrun()
+        self._tmp = tempfile.TemporaryDirectory(prefix="closedroom-ax-helper-")
+        binary = Path(self._tmp.name) / "closedroom-ax-helper"
+        command = [
+            xcrun,
+            "--sdk",
+            "macosx",
+            "swiftc",
+            str(self.source),
+            "-O",
+            "-framework",
+            "AppKit",
+            "-framework",
+            "ApplicationServices",
+            "-o",
+            str(binary),
+        ]
+        try:
+            subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=self.compile_timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            self.close()
+            raise UIAutomationTimeout("macos_ax_helper_compile_timeout") from exc
+        except subprocess.CalledProcessError as exc:
+            message = (exc.stderr or exc.stdout or "macos_ax_helper_compile_failed").strip()
+            self.close()
+            raise UIAutomationUnavailable(message) from exc
+        self._binary = binary
+        return binary
+
+    def _invoke(self, pid: int, action: str, labels: Iterable[str] = ()) -> str:
+        binary = self._ensure_binary()
+        command = [str(binary), str(pid), action, *[str(label) for label in labels]]
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=self.action_timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise UIAutomationTimeout(f"ui_automation_timeout:{action}:{self.action_timeout:g}s") from exc
+
+        output = (result.stdout or "").strip()
+        error = (result.stderr or "").strip()
+        if result.returncode == 77 or "accessibility_permission_required" in error.lower():
+            raise AccessibilityPermissionRequired("terminal_accessibility_permission_required")
+        if result.returncode:
+            raise UIAutomationError(error or output or f"ui_automation_failed:{action}:{result.returncode}")
+        return output
+
+    def window_accessible(self, pid: int) -> bool:
+        return self._invoke(pid, "window").lower() == "true"
+
+    def window_rect(self, pid: int) -> str:
+        raw = self._invoke(pid, "rect")
+        parts = [int(float(item.strip())) for item in raw.split(",")]
+        if len(parts) != 4 or parts[2] <= 0 or parts[3] <= 0:
+            raise UIAutomationError(f"invalid_closedroom_window_bounds:{raw}")
+        return ",".join(str(item) for item in parts)
+
+    def exists(self, pid: int, labels: Iterable[str]) -> bool:
+        return self._invoke(pid, "exists", labels).lower() == "true"
+
+    def press(self, pid: int, labels: Iterable[str]) -> None:
+        if self._invoke(pid, "press", labels).lower() != "pressed":
+            raise UIAutomationError("ax_press_did_not_complete")
+
+    def focused(self, pid: int) -> str:
+        return self._invoke(pid, "focused") or "unknown"
+
+    def key(self, pid: int, name: str) -> None:
+        if name not in {"cmd-k", "escape", "cmd-q"}:
+            raise ValueError(f"unsupported key action: {name}")
+        self._invoke(pid, name)
+
+
+_DEFAULT_DRIVER = MacOSUIDriver()
+atexit.register(_DEFAULT_DRIVER.close)
+
+
+def default_driver() -> MacOSUIDriver:
+    return _DEFAULT_DRIVER
