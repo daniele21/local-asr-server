@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from macos_ui_driver import UIAutomationError, default_driver
+from real_environment_artifact import git_state, prepare_exact_app
 
 UI_DRIVER = default_driver()
 CHECKPOINTS = [
@@ -25,7 +26,11 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="ClosedRoom target-environment UI media evidence")
     p.add_argument("--root", default=".")
     p.add_argument("--app")
-    p.add_argument("--build", action="store_true")
+    p.add_argument(
+        "--build",
+        action="store_true",
+        help="Ensure an exact-checkout finalized app exists; reuse it across reruns instead of rebuilding TCC identity",
+    )
     p.add_argument("--record-seconds", type=float, default=8.0)
     p.add_argument("--timeout", type=float, default=90.0)
     p.add_argument("--keep-sandbox", action="store_true")
@@ -113,6 +118,21 @@ def main() -> int:
     manifest_path = media_root / "manifest.json"
     media_root.mkdir(parents=True, exist_ok=True)
 
+    selected_app: Path | None = Path(args.app).expanduser().resolve() if args.app else None
+    artifact_selection = "explicit" if selected_app is not None else "smoke_default"
+    selected_manifest: Path | None = None
+
+    if args.build and selected_app is None:
+        revision, dirty_entries = git_state(root)
+        if dirty_entries:
+            # Let the functional smoke own/report checkout_clean rather than
+            # rebuilding or silently discarding local source changes.
+            artifact_selection = "checkout_dirty"
+        else:
+            selected_app, selected_manifest, artifact_selection = prepare_exact_app(root, revision)
+            verb = "Reusing" if artifact_selection == "reused_exact" else "Built"
+            print(f"{verb} exact target-Mac artifact: {selected_app}")
+
     command = [
         sys.executable,
         str(root / "scripts" / "real_environment_smoke.py"),
@@ -125,10 +145,8 @@ def main() -> int:
         "--timeout",
         str(args.timeout),
     ]
-    if args.app:
-        command += ["--app", args.app]
-    if args.build:
-        command.append("--build")
+    if selected_app is not None:
+        command += ["--app", str(selected_app)]
     if args.keep_sandbox:
         command.append("--keep-sandbox")
 
@@ -208,6 +226,9 @@ def main() -> int:
         "fidelity_class": "target_environment",
         "ui_driver": report.get("ui_driver", "AXUIElement/CGEvent via bounded Swift helper"),
         "source_revision": report.get("source_revision"),
+        "artifact_selection": artifact_selection,
+        "app": str(selected_app) if selected_app is not None else report.get("app"),
+        "build_manifest": str(selected_manifest) if selected_manifest is not None else report.get("manifest"),
         "result": "PASS"
         if successful_smoke and media_complete
         else "E2E_EVIDENCE_INCOMPLETE"
