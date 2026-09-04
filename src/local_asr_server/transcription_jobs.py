@@ -11,6 +11,7 @@ from local_asr_server.jobs import JobStore
 from local_asr_server.jobs.models import TERMINAL_JOB_STATUSES
 from local_asr_server.runtime.workload_arbiter import (
     HeavyWorkloadArbiter,
+    WorkloadAdmissionRejected,
     WorkloadArbiterClosed,
     WorkloadQueueFull,
 )
@@ -110,17 +111,10 @@ class TranscriptionJobManager:
                 workload_type=job.job_type,
                 run=lambda: self._run(job, runner),
                 on_cancel=lambda reason: self._cancel_before_start(job, reason),
+                on_reject=lambda reason: self._reject_before_start(job, reason),
             )
-        except (WorkloadQueueFull, WorkloadArbiterClosed) as exc:
-            job.error = str(exc)[:2000]
-            self._emit(
-                job,
-                "failed",
-                job.progress,
-                "resource_admission",
-                message="heavy_workload_not_admitted",
-                event_payload={"reason": job.error},
-            )
+        except (WorkloadQueueFull, WorkloadArbiterClosed, WorkloadAdmissionRejected) as exc:
+            self._reject_before_start(job, str(exc))
         return job.public()
 
     def get(self, job_id: str) -> dict[str, Any] | None:
@@ -228,6 +222,19 @@ class TranscriptionJobManager:
             "cancelled",
             message=reason,
             event_payload={"reason": reason},
+        )
+
+    def _reject_before_start(self, job: TranscriptionJob, reason: str) -> None:
+        if job.status in TERMINAL_JOB_STATUSES:
+            return
+        job.error = reason[:2000]
+        self._emit(
+            job,
+            "failed",
+            job.progress,
+            "resource_admission",
+            message="heavy_workload_not_admitted",
+            event_payload={"reason": job.error},
         )
 
     def _run(self, job: TranscriptionJob, runner: Callable[[TranscriptionJob], dict[str, Any]]) -> None:
