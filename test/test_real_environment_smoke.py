@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "real_environment_smoke.py"
+SCRIPTS_DIR = SCRIPT.parent
 
 
 def load_module():
@@ -13,7 +16,12 @@ def load_module():
     if spec is None or spec.loader is None:
         raise RuntimeError("could not load real_environment_smoke.py")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    old_path = list(sys.path)
+    try:
+        sys.path.insert(0, str(SCRIPTS_DIR))
+        spec.loader.exec_module(module)
+    finally:
+        sys.path[:] = old_path
     return module
 
 
@@ -59,6 +67,13 @@ class RealEnvironmentSmokeHelpersTest(unittest.TestCase):
         self.assertIn("Microphone", text)
         self.assertIn("Screen & System Audio Recording", text)
         self.assertIn("Re-run", text)
+
+    def test_git_state_reports_dirty_entries_without_hiding_paths(self) -> None:
+        responses = iter(["30c3147b891b", " M scripts/local.py\n?? scratch.txt\n"])
+        with mock.patch.object(self.smoke, "run", side_effect=lambda *_args, **_kwargs: next(responses)):
+            revision, entries = self.smoke.git_state(Path("/tmp/repo"))
+        self.assertEqual(revision, "30c3147b891b")
+        self.assertEqual(entries, [" M scripts/local.py", "?? scratch.txt"])
 
 
 if __name__ == "__main__":

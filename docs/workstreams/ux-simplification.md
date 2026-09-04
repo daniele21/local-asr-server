@@ -68,7 +68,7 @@ Make the normal ClosedRoom journey simple and task-led from capture through tran
 ## UX-9 acceptance
 
 - Repository/product-experience/docs checks and selector-required deterministic validation pass on the integrated head.
-- `.engineering/e2e.json` declares `target-macos-real`, contract `0.1.1`, and screenshot + video requirements for UI journeys.
+- `.engineering/e2e.json` declares `target-macos-real` and keeps the meeting-recording journey at `FULL_MEDIA` because timing/lifecycle/native capture sequence is part of the claim.
 - Canonical target-Mac command:
 
 ```bash
@@ -77,6 +77,8 @@ python3 scripts/real_environment_ui_evidence.py --build
 
 - `real_environment_ui_evidence.py` wraps `real_environment_smoke.py`; it does not duplicate functional ownership.
 - Functional smoke verifies packaged WKWebView accessibility/focus, `Cmd+K`/Escape, native TCC readiness, mic + system capture, Start/Stop, persisted dual-source audio and Stop -> meeting navigation.
+- UI interaction is driven by a bounded direct `AXUIElement`/`CGEvent` helper instead of AppleScript/System Events tree enumeration; action timeout and traversal limits make automation failure explicit and bounded.
+- A dirty checkout remains a hard preflight failure so evidence is attributable to one source revision; the report includes the offending `git status --porcelain` entries.
 - UI wrapper retains screenshots for Ready, active recording, and persisted meeting/Transcribe plus a complete app-window journey video.
 - Packaged execution uses an isolated temporary `HOME`; normal settings/catalog/recordings remain untouched.
 - Media is restricted to the ClosedRoom window and synthetic/local test content.
@@ -85,16 +87,16 @@ python3 scripts/real_environment_ui_evidence.py --build
 
 Validation routing:
 
-- Integrated UI-media evidence boundary is **STRONG** because `.engineering/e2e.json` is a runtime/native/E2E boundary.
-- Current integrated `dev` has successful Repository Health and selector-chosen STRONG remote preflight covering governance, frontend checks, Python suite, finalized macOS arm64 build and packaged `.app` smoke.
-- Repository preflight is `REMOTE_AUTOMATED`; `target-macos-real` remains `REAL_ENVIRONMENT` on the user's Apple Silicon Mac.
+- Target-Mac runner/driver changes are **STRONG** under the 0.9.1 risk selector (`runtime_native_persistence_e2e`).
+- Integration requires governance, source tests and packaged-app evidence; the real target-Mac run remains `REAL_ENVIRONMENT` and cannot be replaced by hosted macOS.
 - `.engineering/e2e.json` is authoritative for target fidelity, required media and residual gaps.
 
 ## Real-environment result classes
 
 - `PASS` / exit `0`: functional target-Mac smoke passed and all required media exists.
-- `blocked_permission` / exit `2`: grant only the requested Accessibility/Automation/Microphone/Screen & System Audio Recording permission, then rerun unchanged.
+- `blocked_permission` / exit `2`: grant only the requested Accessibility/Microphone/Screen & System Audio Recording permission, then rerun unchanged.
 - `E2E_EVIDENCE_INCOMPLETE` / exit `1`: functional smoke passed but screenshot/video evidence is incomplete; fix the media evidence path rather than accepting the run.
+- `checkout_clean` fail / exit `1`: preserve local edits, resolve the reported dirty entries, then rerun from the same clean revision.
 - other `fail` / exit `1`: product/test/environment invariant failed and must be diagnosed.
 
 Expected media beside `report.json`:
@@ -115,17 +117,19 @@ The underlying smoke emits a short local phrase via macOS `say` while recording 
 ## Evidence history
 
 - UX implementation passed exact-head SCOPED remote preflight before integration.
-- Functional real-environment smoke was later integrated after deterministic validation.
-- UI-media evidence then adopted E2E contract `0.1.1`; the integrated `dev` revision passed selector-chosen STRONG remote preflight and Repository Health.
-- Target completion exists only after the canonical UI-evidence command produces functional `status: pass` plus a complete media manifest on the real Mac. `blocked_permission` is preparation, not completion.
+- Functional real-environment smoke and UI-media wrapper were integrated after deterministic validation.
+- A real-Mac run exposed unbounded System Events accessibility traversal as runner infrastructure rather than a product regression; the automation owner was hardened with direct bounded AX APIs and deterministic macOS compile tests.
+- Target completion exists only after the canonical UI-evidence command produces functional `status: pass` plus a complete media manifest on the real Mac. `blocked_permission` and dirty-checkout failures are preparation/attribution states, not completion.
 
 ## Durable owners
 
 - `design/ux-contract.json`: journey/hierarchy/disclosure.
 - `.engineering/e2e.json`: environment fidelity, UI media requirements and canonical target runner.
+- `scripts/macos_ax_helper.swift` + `scripts/macos_ui_driver.py`: bounded target-Mac Accessibility/keyboard automation.
 - `scripts/real_environment_smoke.py`: functional target-Mac evidence.
 - `scripts/real_environment_ui_evidence.py`: UI screenshot/video evidence and canonical target-Mac entrypoint.
-- `test/test_real_environment_smoke.py`: functional runner helper/cleanup safety checks.
+- `test/test_macos_ui_driver.py`: driver timeout/permission/bounds/Swift-compile coverage.
+- `test/test_real_environment_smoke.py`: functional runner helper/cleanup/source-attribution safety checks.
 
 ## Completion
 
