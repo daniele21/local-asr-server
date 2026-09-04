@@ -140,6 +140,28 @@ class RealEnvironmentUIEvidenceTest(unittest.TestCase):
             ["git", "clean", "-fd", "--", "src/local_asr_server/static"],
         )
 
+    def test_find_closedroom_pid_prefers_exact_new_smoke_process(self) -> None:
+        expected = "/tmp/build/ClosedRoom.app/Contents/MacOS/ClosedRoom"
+        snapshot = [
+            (100, "/old/ClosedRoom.app/Contents/MacOS/ClosedRoom"),
+            (200, f"{expected}"),
+            (300, "/other/ClosedRoom.app/Contents/MacOS/ClosedRoom"),
+        ]
+        with mock.patch.object(self.runner, "process_snapshot", return_value=snapshot):
+            self.assertEqual(
+                self.runner.find_closedroom_pid(expected_executable=expected, excluded={100}),
+                200,
+            )
+
+    def test_find_closedroom_pid_excludes_processes_present_before_smoke(self) -> None:
+        snapshot = [
+            (100, "/old/ClosedRoom.app/Contents/MacOS/ClosedRoom"),
+            (250, "/new/ClosedRoom.app/Contents/MacOS/ClosedRoom"),
+        ]
+        with mock.patch.object(self.runner, "process_snapshot", return_value=snapshot):
+            self.assertEqual(self.runner.find_closedroom_pid(excluded={100}), 250)
+            self.assertIsNone(self.runner.find_closedroom_pid(excluded={100, 250}))
+
 
 if __name__ == "__main__":
     unittest.main()
