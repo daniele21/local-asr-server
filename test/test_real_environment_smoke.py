@@ -75,6 +75,25 @@ class RealEnvironmentSmokeHelpersTest(unittest.TestCase):
         self.assertEqual(revision, "30c3147b891b")
         self.assertEqual(entries, [" M scripts/local.py", "?? scratch.txt"])
 
+    def test_manifest_revision_uses_canonical_nested_source(self) -> None:
+        manifest = {
+            "source": {"revision": "9940e83912b2", "dirty": False},
+            "source_revision": "stale-top-level",
+        }
+        self.assertEqual(self.smoke.manifest_source_revision(manifest), "9940e83912b2")
+
+    def test_revision_matching_never_accepts_missing_identity(self) -> None:
+        self.assertTrue(self.smoke.revisions_match("9940e83912b2", "9940e83912b256cd"))
+        self.assertFalse(self.smoke.revisions_match("9940e83912b2", ""))
+        self.assertFalse(self.smoke.revisions_match("", "9940e83912b2"))
+        self.assertFalse(self.smoke.revisions_match("9940e83912b2", "7b95d718a35e"))
+
+    def test_search_focus_accepts_text_and_search_fields_only(self) -> None:
+        self.assertTrue(self.smoke.search_focus_exposed("AXTextField | Search meeting"))
+        self.assertTrue(self.smoke.search_focus_exposed("AXSearchField | Search meeting"))
+        self.assertFalse(self.smoke.search_focus_exposed("AXButton | Search meeting"))
+        self.assertFalse(self.smoke.search_focus_exposed("unknown"))
+
 
 if __name__ == "__main__":
     unittest.main()

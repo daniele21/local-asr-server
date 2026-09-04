@@ -37,11 +37,13 @@ from macos_ui_driver import (
 PASS, FAIL, BLOCKED = "pass", "fail", "blocked_permission"
 LABELS = {
     "new": ("New meeting", "Nuovo meeting"),
+    "home": ("Today", "Oggi"),
     "ready": ("Ready to record", "Pronto per registrare"),
     "start": ("Start Recording", "Avvia Registrazione"),
     "stop": ("Stop and Save", "Termina e salva"),
     "transcribe": ("Transcribe", "Trascrivi"),
     "search": ("Search meeting, project or text", "Cerca meeting, progetto o testo"),
+    "close": ("Close", "Chiudi"),
     "permission": ("ClosedRoom needs a permission", "ClosedRoom ha bisogno di un permesso"),
 }
 UI_DRIVER = default_driver()
@@ -107,6 +109,23 @@ def git_state(root: Path) -> tuple[str, list[str]]:
         return revision, entries
     except Exception:
         return "unknown", ["git_state_unavailable"]
+
+
+def manifest_source_revision(data: dict[str, Any]) -> str:
+    source = data.get("source")
+    if isinstance(source, dict):
+        value = source.get("revision")
+        if value:
+            return str(value)
+    return str(data.get("source_revision") or "")
+
+
+def revisions_match(left: str, right: str) -> bool:
+    return bool(left and right and (left.startswith(right) or right.startswith(left)))
+
+
+def search_focus_exposed(description: str) -> bool:
+    return description.startswith("AXTextField") or description.startswith("AXSearchField")
 
 
 def latest_app(root: Path) -> tuple[Path, Path | None]:
@@ -348,10 +367,10 @@ def main() -> int:
         report["bundle"] = info
         executable = info["executable"]
         manifest = json.loads(manifest_path.read_text()) if manifest_path else {}
-        artifact_rev = str(manifest.get("source_revision") or "")
+        artifact_rev = manifest_source_revision(manifest)
         check(
             "artifact_matches_checkout",
-            revision == "unknown" or not artifact_rev or artifact_rev.startswith(revision) or revision.startswith(artifact_rev),
+            revisions_match(revision, artifact_rev),
             {"checkout": revision, "artifact": artifact_rev},
         )
         check("artifact_not_already_running", not pids_for(executable))
@@ -373,12 +392,6 @@ def main() -> int:
         check("user_data_isolated", recordings_dir.startswith(str(sandbox_home)), recordings_dir)
 
         check("wkwebview_window_accessible", UI_DRIVER.window_accessible(pid))
-        key(pid, "cmd-k")
-        check("keyboard_cmd_k_search", wait(lambda: exists(pid, LABELS["search"]), 8))
-        focused = ui(pid, "focused")
-        check("search_focus_exposed", focused != "unknown", focused)
-        key(pid, "escape")
-        check("keyboard_escape_search", wait(lambda: not exists(pid, LABELS["search"]), 8))
 
         caps = api.json("/v1/capture/capabilities")
         perms = api.json("/v1/capture/permissions")
@@ -450,6 +463,16 @@ def main() -> int:
             report["created_recording"],
         )
         check("meeting_workspace_after_stop", wait(lambda: exists(pid, LABELS["transcribe"]), 15))
+
+        ui(pid, "press", LABELS["home"])
+        check("home_search_available", wait(lambda: exists(pid, LABELS["search"]), 15))
+        key(pid, "cmd-k")
+        check("keyboard_cmd_k_search", wait(lambda: exists(pid, LABELS["close"]), 8))
+        focused = ui(pid, "focused")
+        check("search_focus_exposed", search_focus_exposed(focused), focused)
+        key(pid, "escape")
+        check("keyboard_escape_search", wait(lambda: not exists(pid, LABELS["close"]), 8))
+
         report["status"] = PASS
 
     except AccessibilityPermissionRequired as exc:
