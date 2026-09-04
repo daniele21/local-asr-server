@@ -1,293 +1,124 @@
 # Product and runtime simplification
 
-Status: active — Wave 1 implementation checkpoint ready for validation; representative baseline evidence pending
+Status: active — Wave 1 implementation complete; integration validation pending
 Owner: product experience + local runtime
-Read when: changing the primary meeting journey, user-facing configuration, capture efficiency or AI resource policy
+Read when: changing meeting UX, configuration, recording efficiency or AI resource policy
 
 ## Goal
 
-Make ClosedRoom feel like one focused meeting product while reducing the CPU, memory and lifecycle cost required to complete the normal meeting journey.
+Make ClosedRoom one focused meeting product while reducing normal-path CPU, memory and lifecycle cost. Expose outcomes, not implementation choices.
 
-The product should expose outcomes, not implementation choices. Recording, transcription, analysis, diarization, visual intelligence and local runtimes may remain technically capable without becoming independent decisions in normal use.
+## Invariants
 
-## Non-goals
-
-- Remove local-first or privacy boundaries.
-- Remove expert diagnostics needed for recovery and development.
-- Rewrite persistence contracts or replace canonical recording/transcription/analysis owners without a concrete need.
-- Optimize model quality or audio architecture without representative evidence.
-- Run one large waterfall rewrite or publish stacked sync-only PR chains.
-
-## Product invariants
-
-- `Meeting` is the primary user object. Recording, transcription, analysis, jobs, providers and runtimes are implementation concepts unless recovery requires surfacing them.
+- `Meeting` is the primary user object; jobs/providers/models/runtimes are hidden unless advanced use or recovery requires them.
 - Golden path: `Today -> New Meeting -> Record -> Stop -> Meeting -> Transcribe -> Notes/Review`.
-- A configured user starts a normal meeting with at most one required decision and zero provider/model/runtime decisions.
-- Normal meeting recording defaults to microphone + computer audio when available; source/device/backend choices appear only for recovery or explicit advanced use.
-- Diarization is an automatic enrichment policy, not a normal per-meeting toggle.
-- Visual intelligence is explicit on-demand enrichment and must not run implicitly during recording.
-- A normal Transcribe or Generate Notes action is one user action; provider/model/quality overrides remain advanced.
-- Technical capability does not imply a user-facing setting.
-- Diagnostics remain recoverable and available without occupying the normal hierarchy.
-
-## Runtime invariants
-
-- Recording has priority over heavy AI work. No heavy ASR/LLM/VLM phase starts while capture is active.
-- ClosedRoom keeps one canonical heavy-workload admission owner; `HeavyWorkloadArbiter` remains that owner unless an explicit migration is adopted.
-- AI model residency is phase-scoped and reclaimed after work. External runtimes remain caller-owned.
-- Managed local AI remains cold at application startup and starts on demand for the first local AI phase.
-- Resource telemetry contains no meeting/transcript/screenshot content.
-- Background UI/activity is bounded: no display-rate React state updates or avoidable polling loops for stable state.
-- Every new buffer, queue, worker, model residency or cache has an explicit bound and cleanup owner.
+- Configured users start a meeting with <=1 required decision and zero provider/model/runtime choices.
+- Normal capture defaults to mic + computer audio; source/device/backend controls are recovery-only.
+- Diarization is automatic policy; visual intelligence is explicit on-demand enrichment.
+- Transcribe and Generate Notes are one-action normal workflows.
+- Recording has priority: heavy ASR/LLM/VLM must not start while capture is active.
+- `RecordingStore` owns capture state; `HeavyWorkloadArbiter` remains the only heavy-work scheduler.
+- Runtime/service owners retain model residency and cleanup; external runtimes remain caller-owned.
+- Stable UI state must not require display-rate React updates or avoidable polling.
+- No resource telemetry contains meeting/transcript/screenshot content.
 
 ## Capability placement
 
-| Capability | Product placement |
+| Placement | Capabilities |
 | --- | --- |
-| Mic + computer recording | CORE |
-| Transcript | CORE |
-| Summary / decisions / actions | CORE |
-| Speaker attribution/naming | CORE, automatic |
-| Search meetings | CORE |
-| Projects | CONTEXTUAL organization/filtering |
-| File import | SECONDARY |
-| Visual intelligence | ON_DEMAND |
-| Custom analysis / Ask | ON_DEMAND |
-| Cloud ASR / cloud LLM | ADVANCED trust/runtime choice |
-| Provider/model/quality overrides | ADVANCED |
-| Custom model paths/endpoints/backends | DEVELOPER |
-| Runtime start/stop/restart/logs/ports | DIAGNOSTICS |
-| Merge/split/raw transcript tools | POWER_TOOL |
-| Demo/mock controls | DEV/DEMO |
+| CORE | recording, transcript, notes/actions, speakers, search |
+| CONTEXTUAL | projects |
+| SECONDARY | file import |
+| ON_DEMAND | visual intelligence, custom Ask/analysis |
+| ADVANCED | cloud/local trust choice, provider/model/quality overrides |
+| DEVELOPER/DIAGNOSTICS | model paths/endpoints, backend/runtime lifecycle/logs/ports |
+| POWER_TOOL | merge/split/raw transcript tools |
 
 ## Dependency DAG
 
 ```text
-PRS-0 Product contract + performance baseline
-         |
-         +-----------+------------+-------------+
-         v           v            v             v
-PRS-1 Meeting   PRS-2 Lean   PRS-3 Resource  PRS-4 Simple
-first UX        recording     policy           settings
-         |           |            |
-         +-----+     |       +----+----+
-         v     v     |       v         v
-      PRS-5  PRS-6   |    PRS-7      PRS-8
-      Simple  Visual |    Cold AI    Event
-      process on-demand   lifecycle  progress
-         |     |     |       |         |
-         +-----+-----+-------+---------+
-                       |
-                    PRS-9
-              Audio evidence/decision
-                       |
-                    PRS-10
-              Convergence + evidence
+PRS-0 Contract + baseline
+  ├─ PRS-1 Meeting-first ─┬─ PRS-5 Simple processing
+  │                       └─ PRS-6 Visual on-demand ┐
+  ├─ PRS-2 Lean recording                          │
+  ├─ PRS-3 ResourcePolicy ─┬─ PRS-6                ├─ PRS-10 Evidence
+  │                        └─ PRS-7 Cold AI         │
+  ├─ PRS-4 Simple Settings                         │
+  ├─ PRS-8 Event progress ─────────────────────────┤
+  └─ PRS-9 Audio benchmark/decision ───────────────┘
 ```
 
 ## Work graph
 
-| ID | Observable outcome | Primary owners | Depends on | State | Convergence |
-| --- | --- | --- | --- | --- | --- |
-| PRS-0 | Product choices and baseline metrics are explicit before implementation | `design/ux-contract.json`, this workstream, resource evidence contract | — | ACTIVE | Contract DONE; representative baseline pending |
-| PRS-1 | New Meeting and Meeting expose only outcome-level normal actions | `NewRecordingPage.tsx`, `MeetingDetailPage.tsx`, `App.tsx` | PRS-0 contract | ACTIVE | New Meeting implementation complete; validation pending |
-| PRS-2 | Recording UI/state updates are bounded and materially cheaper | `useRecorder.ts`, audio visualizer, overlay consumers | PRS-0 contract | ACTIVE | Implementation complete; validation pending |
-| PRS-3 | One ResourcePolicy protects capture from heavy-AI starts and prevents speculative preload | `runtime/resource_policy.py`, workload arbiter/job consumers, `server.py` | PRS-0 contract | ACTIVE | Implementation complete; validation pending |
-| PRS-4 | Normal Settings expose preferences; technical controls move to advanced/developer/diagnostics | `SettingsPage.tsx`, config presentation | PRS-0 contract | ACTIVE | Implementation complete; validation pending |
-| PRS-5 | Meeting Transcribe / Generate Notes are one-action workflows with automatic defaults | meeting/transcription/analysis UI + service consumers | PRS-1 | READY | Wave 2 |
-| PRS-6 | Visual intelligence becomes on-demand with explicit workload/frame budget | visual UI/service + resource policy consumer | PRS-1, PRS-3 | READY | Wave 2 |
-| PRS-7 | Managed local AI becomes cold after phases and stops after bounded idle policy | `llm_sidecar.py`, `service_manager.py`, ResourcePolicy | PRS-3 | READY | Wave 2 |
-| PRS-8 | Processing progress is event-driven; polling is reconnect/fallback only | job event owner + frontend job consumers | PRS-0 | READY | Wave 2 after PRS-5 frontend convergence |
-| PRS-9 | Audio compute strategy changes only if benchmark preserves useful quality | capture/transcription benchmark + direct consumers | PRS-0 measurement prep | READY | Wave 3 |
-| PRS-10 | Integrated product proves simpler decisions and lower resource cost on representative paths | contracts, E2E, resource evidence, current state | PRS-1..9 applicable | BLOCKED | Integration/release |
+| ID | Outcome | Primary owners | Depends on | State |
+| --- | --- | --- | --- | --- |
+| PRS-0 | Product contract + comparable resource baseline | UX contract, evidence | — | ACTIVE: contract done; baseline pending |
+| PRS-1 | Outcome-first New Meeting/Meeting | NewRecording, MeetingDetail, App | PRS-0 | ACTIVE: implementation done; validation pending |
+| PRS-2 | Bounded recording UI work | useRecorder, visualizer/overlay | PRS-0 | ACTIVE: implementation done; validation pending |
+| PRS-3 | Capture-priority ResourcePolicy | resource policy, arbiter/job consumers | PRS-0 | ACTIVE: implementation done; validation pending |
+| PRS-4 | Preferences separated from expert runtime controls | Settings | PRS-0 | ACTIVE: implementation done; validation pending |
+| PRS-5 | One-action Transcribe/Generate Notes | meeting/transcription/analysis | PRS-1 | READY |
+| PRS-6 | Visual intelligence on-demand with budget | visual service/UI, policy | PRS-1,3 | READY |
+| PRS-7 | Bounded idle shutdown after phase-scoped residency | LLM runtime owners | PRS-3 | READY |
+| PRS-8 | Event-driven progress; polling fallback only | job events + frontend | PRS-0 | READY |
+| PRS-9 | Simplify audio compute only if benchmark supports it | capture/transcription | PRS-0 | READY |
+| PRS-10 | Product/runtime/evidence convergence | contracts/E2E/evidence | applicable slices | BLOCKED |
 
-## Wave 1 implementation checkpoint
+## Wave 1 checkpoint
 
-The first converged implementation currently contains:
+Implemented on `feature/product-runtime-simplification`:
 
-- UX contract `0.7.0`: Meeting is the primary product object; normal decision budgets and capability placement are explicit.
-- New Meeting: title/project remain optional; mic + computer audio is the normal default; visual/diarization controls are removed; source/device controls exist only as audio recovery when native automatic capture is unavailable.
-- Recording efficiency: canvas work is bounded to about 12.5 Hz while visible, React meter text to 4 Hz, timer to 1 Hz and overlay status to 2 Hz; hidden documents skip meter work.
-- ResourcePolicy: `RecordingStore.active_recording()` remains the canonical capture-state owner; the shared `HeavyWorkloadArbiter` checks policy both on submission and immediately before execution so queued work cannot begin after capture starts.
-- Managed local LLM: application startup no longer starts the sidecar speculatively; `ensure_llm_ready()` remains the on-demand start owner.
-- Settings: normal surfaces are storage, meeting preferences and privacy/processing summary; provider/model/quality controls are under Advanced processing; runtime/path/lifecycle/log controls are under Developer & diagnostics.
+- UX contract `0.7.0`: Meeting-first object model, decision budgets and capability placement.
+- New Meeting: optional title/project; automatic `both` capture; no visual/diarization controls; source/device UI only in Audio recovery.
+- Recording: canvas ~12.5 Hz while visible, React meter 4 Hz, timer 1 Hz, overlay 2 Hz; hidden document skips meter work.
+- ResourcePolicy: reads `RecordingStore.active_recording()` lazily; the shared arbiter checks admission at submit and again before execution, covering queued-work/capture races.
+- Managed local LLM stays cold at app startup and starts through existing `ensure_llm_ready()` when local AI is first required.
+- Settings: normal storage/meeting/privacy surfaces; provider/model/quality under Advanced; runtime/path/lifecycle/logs under Developer & diagnostics.
 
-The checkpoint is not considered integrated until selector-required deterministic validation passes on exact HEAD. Resource/performance improvement percentages remain unclaimed until representative before/after evidence exists.
+No CPU/RSS percentage improvement is claimed until representative before/after evidence exists.
 
-## Parallel execution rules
+## Parallel execution
 
-### Wave 1
+**Wave 1:** PRS-1/2/3/4 plus PRS-9 benchmark preparation may run independently, then converge on:
+`Open -> New Meeting -> Start -> Record -> Stop -> Meeting`.
 
-After PRS-0, run in parallel where write ownership does not conflict:
+**Wave 2 after Wave 1 integration:** PRS-5/6/7 in parallel. PRS-8 backend may run concurrently; its Transcription UI integration waits for PRS-5 convergence.
 
-- PRS-1 Meeting-first product
-- PRS-2 Lean recording
-- PRS-3 ResourcePolicy foundation
-- PRS-4 Simple Settings
-- PRS-9 benchmark preparation only
+**Wave 3:** finish PRS-9 evidence-led decision, then PRS-10 acceptance.
 
-Converge early and validate the vertical outcome:
+Parallel branches are implementation lanes only; converge early and avoid sync-only stacked PRs.
 
-`Open -> New Meeting -> Start without technical configuration -> Record with bounded UI work -> Stop -> Meeting`.
+## Baseline / acceptance evidence
 
-### Wave 2
+Compare before/after for: app idle RSS/CPU; New Meeting idle; active recording RSS/CPU/update cadence; stop peak/time; ASR duration/memory; LLM duration/sidecar RSS/residency; visual duration/RSS/frame budget; post-job idle/residency.
 
-After Wave 1 convergence:
+Product targets:
+- start meeting <=1 required decision;
+- golden-path technical concepts = 0;
+- provider/model choices before recording/transcription/notes = 0;
+- Transcribe = 1 primary action;
+- Generate Notes = 1 primary action.
 
-- PRS-5 Simple processing
-- PRS-6 Visual on-demand
-- PRS-7 Cold AI lifecycle
-- PRS-8 event backend may proceed in parallel; its `TranscriptionPage` integration waits until PRS-5 converges
+Set performance targets only after baseline measurement.
 
-Converge on:
+## Slice constraints
 
-`Meeting -> Transcribe -> Generate Notes -> optional Visual`, with resource policy owning heavy-work admission and model reclamation.
+- PRS-1 preserves recovery/diagnostics and saved Meeting destination.
+- PRS-2 changes UI cadence only, not capture/finalization semantics.
+- PRS-3 is policy, not a scheduler; no duplicate queue/mutex owner.
+- PRS-4 preserves backend settings compatibility.
+- PRS-5 moves normal meeting processing away from the standalone technical wizard; Advanced overrides remain reachable.
+- PRS-6 uses candidate detection -> dedupe -> hard frame/work budget -> VLM and never starts VLM during recording.
+- PRS-7 releases managed residency after phases and adds bounded owned-sidecar idle shutdown; never mutates external endpoints.
+- PRS-8 keeps event history bounded/privacy-safe and polling only for reconnect/recovery.
+- PRS-9 preserves dual-track audio unless evidence supports a simpler owner.
 
-### Wave 3
+## Integration
 
-- Finish PRS-9 benchmark and change the audio pipeline only if evidence justifies it.
-- PRS-10 repeats baseline scenarios and closes the workstream only when product, runtime, tests and evidence agree.
+During ITERATION use focused checks. Before INTEGRATION: refresh base/head, review full diff, update affected durable docs, run selector with `stage=integration`, execute available local gates, and use repository-owned remote automation for deterministic gates unavailable locally. Do not delegate automatable gates to the user. REAL_ENVIRONMENT remains only for genuine target-Mac/human evidence.
 
-Parallel branches are temporary implementation lanes, not publication chains. Related work converges onto this feature branch before integration to `dev`; do not create sync-only stacked PRs.
-
-## PRS-0 baseline evidence
-
-Measure the same scenarios before and after material runtime work. Store only aggregate machine/runtime metrics, never user content.
-
-| Scenario | Minimum evidence |
-| --- | --- |
-| App idle | app RSS, app CPU, sidecar state/RSS |
-| New Meeting idle | app RSS/CPU, background activity count where measurable |
-| Active recording | app CPU/RSS, capture backend, UI update rates |
-| Stop/finalization | peak app RSS, completion time |
-| ASR | duration, peak/current memory where measurable, workload state |
-| LLM analysis | duration, sidecar RSS, residency before/after |
-| Visual processing | duration, sidecar/RSS, processed frame count/budget |
-| Post-job idle | app RSS, sidecar process/residency after bounded idle |
-
-Initial product targets:
-
-- start meeting: <= 1 required decision;
-- technical concepts in golden path: 0;
-- normal provider/model decisions before recording/transcription/notes: 0;
-- Transcribe meeting: 1 primary action;
-- Generate Notes: 1 primary action.
-
-Performance targets are set after baseline measurement; do not invent percentage improvements without representative evidence.
-
-## Slice details
-
-### PRS-1 Meeting-first
-
-- Remove source/diarization/visual/device choices from normal New Meeting hierarchy.
-- Default to mic + computer audio when ready.
-- Expose source/device/backend choices only for recovery/advanced cases.
-- Stop per-meeting enrichment controls from mutating ambiguous global preferences.
-- Keep saved meeting as the canonical destination after Stop.
-
-Iteration checks: frontend lint/typecheck plus focused journey/contract tests.
-
-### PRS-2 Lean recording
-
-Target behavior:
-
-- audio samples stay latest-state in refs;
-- canvas redraw <= 10–15 Hz while visible;
-- React text meter updates <= 4–5 Hz;
-- timer updates at 1 Hz;
-- overlay status <= 2–4 Hz;
-- visual meter pauses or strongly throttles when the relevant document/window is not visible;
-- capture correctness and finalization semantics remain unchanged.
-
-Iteration checks: focused frontend tests/contracts; capture lifecycle tests if touched.
-
-### PRS-3 ResourcePolicy
-
-`ResourcePolicy` is a decision layer, not a scheduler. `RecordingStore` owns capture state and `HeavyWorkloadArbiter` owns queue/concurrency.
-
-First version enforces:
-
-- capture active => heavy work is rejected before start;
-- queued work is checked again before execution, so capture starting while it waits still wins;
-- one bounded heavy workload remains owned by the existing arbiter;
-- no speculative managed LLM startup;
-- phase completion continues to trigger residency reclamation through canonical runtime owners.
-
-Future adaptive hardware/memory budgets extend this owner; they must not create another scheduler.
-
-Iteration checks: policy unit tests, arbiter/direct consumer tests. Integration risk expected STRONG.
-
-### PRS-4 Simple Settings
-
-Normal sections: Storage, Meeting preferences, Privacy/Processing summary.
-
-Advanced processing: cloud/local trust boundary, provider/model/quality and compatibility workflow overrides.
-
-Developer/Diagnostics: model paths, URLs, reasoning/tokens/JSON, runtime lifecycle and logs.
-
-Backend configuration compatibility remains intact in this slice.
-
-### PRS-5 Simple processing
-
-- Meeting `Transcribe` resolves defaults automatically.
-- Meeting `Generate Notes` resolves defaults automatically.
-- Standalone `TranscriptionPage` becomes import/power-tool/history surface rather than the normal meeting path.
-- Advanced overrides remain reachable without occupying the primary action.
-
-### PRS-6 Visual on-demand
-
-- Remove visual capture from normal meeting setup.
-- User explicitly requests screen/shared-content analysis.
-- Candidate detection -> deduplication -> hard frame/work budget -> VLM.
-- Never start VLM while recording.
-
-### PRS-7 Cold AI lifecycle
-
-- Release managed model residency at phase completion.
-- Add bounded idle shutdown policy for the owned sidecar.
-- External endpoints are never mutated.
-- Memory pressure may shorten residency/idle policy but must not create unsafe force-kill semantics.
-
-### PRS-8 Event-driven progress
-
-- Canonical job owner emits progress events.
-- UI subscribes through bounded SSE/event stream.
-- Polling remains only for reconnect/fallback/recovery.
-- Event history is bounded and privacy-safe.
-
-### PRS-9 Audio evidence
-
-Benchmark at least:
-
-1. mic ASR + system ASR;
-2. mixed ASR;
-3. mixed ASR + lightweight source/speaker alignment if feasible.
-
-Compare compute, transcript usefulness and speaker/source attribution. Preserve dual-track architecture unless evidence supports a simpler owner.
-
-## Integration and validation
-
-Development stage defaults to ITERATION. Use focused owner-local checks while slices are changing. Move a vertical wave to INTEGRATION only when its implementation, consumers, failure/resource behavior and focused tests agree.
-
-At INTEGRATION:
-
-- refresh target/base and review the complete diff;
-- update durable feature/architecture/current-state docs affected by the integrated behavior;
-- run `scripts/select_validation_profile.py --base <base> --head <head> --stage integration`;
-- execute all required AGENT_LOCAL gates and use repository-owned REMOTE_AUTOMATED preflight for deterministic gates unavailable locally;
-- do not delegate ordinary build/lint/test/package gates to the user;
-- retain REAL_ENVIRONMENT only for evidence that genuinely requires the target Mac/user judgement.
-
-Expected risk shorthand is guidance only: PRS-0 LEAN; PRS-1/4 SCOPED; PRS-2 SCOPED or STRONG depending on capture ownership touched; PRS-3/6/7 STRONG; PRS-5/8 SCOPED or STRONG by shared runtime/API impact; PRS-9 STRONG only if runtime behavior changes; release/promotion may require FULL. The selector is authoritative.
+Expected shorthand is guidance only: PRS-1/4 SCOPED; PRS-2 SCOPED/STRONG; PRS-3/6/7 STRONG; PRS-5/8 SCOPED/STRONG; selector is authoritative.
 
 ## Completion
 
-PRS-10 is DONE only when:
-
-- normal meeting path meets the product targets above;
-- technical settings are absent from the golden path but recovery remains available;
-- recording and AI workloads obey the resource/lifecycle invariants;
-- baseline scenarios have comparable after-evidence;
-- applicable deterministic gates pass on exact integrated HEAD;
-- target-Mac evidence is updated only for claims materially affected by these changes;
-- durable behavior has moved to canonical contracts/docs and this workstream can be deleted.
+PRS-10 becomes DONE only when normal-path product targets, resource/lifecycle invariants, comparable evidence, exact-head deterministic gates and materially affected target-Mac evidence agree. Move durable truth to canonical docs, then delete this workstream.
