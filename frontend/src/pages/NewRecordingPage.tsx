@@ -13,23 +13,19 @@ import {
   Square,
   TriangleAlert,
 } from 'lucide-react';
-import { ApiClient, CaptureWindow, Recording } from '../api/apiClient';
+import { ApiClient, Recording } from '../api/apiClient';
 import { NEW_RECORDING_PROJECT_STORAGE_KEY } from '../api/config';
 import { useTranslation } from '../i18n/i18n';
 import { useToast } from '../context/ToastContext';
 import { openBrowserPopup, useRecorder } from '../hooks/useRecorder';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { Checkbox } from '../components/ui/Checkbox';
 import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 
 interface NewRecordingPageProps {
   navigateTo: (page: string, detail?: string | null) => void;
 }
-
-const captureWindowLabel = (source: CaptureWindow) =>
-  [source.application_name, source.title].filter(Boolean).join(' — ');
 
 export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) {
   const { t, lang } = useTranslation();
@@ -41,17 +37,9 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
   const [recordingsDir, setRecordingsDir] = useState('');
   const [storageConfigured, setStorageConfigured] = useState(false);
   const [projectsList, setProjectsList] = useState<string[]>([]);
-  const [visualIntelligenceEnabled, setVisualIntelligenceEnabled] = useState(false);
-  const [speakerDiarizationEnabled, setSpeakerDiarizationEnabled] = useState(false);
-  const [visualModel, setVisualModel] = useState('');
-  const [captureWindows, setCaptureWindows] = useState<CaptureWindow[]>([]);
-  const [selectedVisualWindowId, setSelectedVisualWindowId] = useState('');
-  const [captureWindowsLoading, setCaptureWindowsLoading] = useState(false);
-  const [captureWindowsError, setCaptureWindowsError] = useState('');
-  const [enrichmentSaving, setEnrichmentSaving] = useState<'diarization' | 'visual' | null>(null);
   const [permissionLoading, setPermissionLoading] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
-  const [showOptions, setShowOptions] = useState(false);
+  const [showAudioRecovery, setShowAudioRecovery] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [storageSaving, setStorageSaving] = useState(false);
 
@@ -77,15 +65,12 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
     return nativeCaptureUnavailableReason || t('recording.nativeCaptureUnavailableUnknown');
   })();
 
-  const visualCaptureSelected = visualIntelligenceEnabled && selectedVisualWindowId !== '';
-  const selectedVisualWindow = captureWindows.find((window) => String(window.id) === selectedVisualWindowId);
-  const visualCaptureLabel = selectedVisualWindow ? captureWindowLabel(selectedVisualWindow) : '';
   const needsComputerAudio = sourceMode !== 'mic_only';
   const micReady = nativeCaptureReady
     ? (sourceMode === 'pc_only' || recorder.capturePermissions?.microphone === 'authorized')
     : (sourceMode === 'pc_only' || recorder.microphones.length > 0 || recorder.selectedMicrophone === '');
   const computerReady = nativeCaptureReady
-    ? ((sourceMode === 'mic_only' && !visualCaptureSelected) || recorder.capturePermissions?.screen_capture === 'granted')
+    ? (sourceMode === 'mic_only' || recorder.capturePermissions?.screen_capture === 'granted')
     : (!needsComputerAudio || Boolean(recorder.audioRouteStatus?.ready_to_record) || recorder.systemDevices.length > 0);
   const storageReady = storageConfigured && recordingsDir.trim().length > 0;
   const readyToRecord = micReady && computerReady && storageReady;
@@ -116,9 +101,6 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
         const configuredDir = settings.recordings_dir || '';
         setRecordingsDir(configuredDir);
         setStorageConfigured(Boolean(configuredDir.trim()));
-        setSpeakerDiarizationEnabled(Boolean(settings.speaker_diarization_enabled));
-        setVisualIntelligenceEnabled(Boolean(settings.visual_intelligence_enabled));
-        setVisualModel(settings.visual_llm_model || '');
         const projects = await ApiClient.listProjects();
         setProjectsList((projects.items || []).filter((project) => !project.is_unassigned).map((project) => project.name));
       } catch {
@@ -128,57 +110,11 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
     void loadSettings();
   }, []);
 
-  const refreshCaptureWindows = async () => {
-    setCaptureWindowsLoading(true);
-    setCaptureWindowsError('');
-    try {
-      const result = await ApiClient.captureWindows();
-      setCaptureWindows(result.windows || []);
-    } catch (err) {
-      setCaptureWindows([]);
-      setCaptureWindowsError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setCaptureWindowsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!nativeCaptureReady || !visualIntelligenceEnabled) {
-      setCaptureWindows([]);
-      setSelectedVisualWindowId('');
-      return;
-    }
-    void refreshCaptureWindows();
-  }, [nativeCaptureReady, visualIntelligenceEnabled]);
-
-  const updateEnrichmentSetting = async (
-    setting: 'speaker_diarization_enabled' | 'visual_intelligence_enabled',
-    enabled: boolean,
-  ) => {
-    const previous = setting === 'speaker_diarization_enabled'
-      ? speakerDiarizationEnabled
-      : visualIntelligenceEnabled;
-    const savingKey = setting === 'speaker_diarization_enabled' ? 'diarization' : 'visual';
-    if (setting === 'speaker_diarization_enabled') setSpeakerDiarizationEnabled(enabled);
-    else setVisualIntelligenceEnabled(enabled);
-    setEnrichmentSaving(savingKey);
-    try {
-      await ApiClient.updateSettings({ [setting]: enabled });
-    } catch (err) {
-      if (setting === 'speaker_diarization_enabled') setSpeakerDiarizationEnabled(previous);
-      else setVisualIntelligenceEnabled(previous);
-      showToast(err instanceof Error ? err.message : String(err), 'error');
-    } finally {
-      setEnrichmentSaving(null);
-    }
-  };
-
   const handleAuthorizeCapture = async () => {
     setPermissionLoading(true);
     setPermissionError(null);
     try {
-      const permissionMode = visualCaptureSelected && sourceMode === 'mic_only' ? 'both' : sourceMode;
-      const result = await ApiClient.ensureCapturePermissions(permissionMode);
+      const result = await ApiClient.ensureCapturePermissions(sourceMode);
       await recorder.refreshCapturePermissions();
       if (!result.ok) {
         const message = result.diagnostics?.code_signature && result.diagnostics.code_signature !== 'signed'
@@ -266,19 +202,12 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
       tone: 'blocked',
       title: lang === 'it' ? 'Configurazione audio da completare' : 'Audio setup needs attention',
       detail: lang === 'it'
-        ? 'Apri le opzioni audio e verifica il dispositivo da usare.'
-        : 'Open audio options and verify the device to use.',
+        ? 'ClosedRoom non riesce a usare automaticamente l’audio. Apri Recupero audio per scegliere una sorgente.'
+        : 'ClosedRoom could not configure audio automatically. Open Audio recovery to choose a source.',
     };
   })();
 
-  const start = () => recorder.startRecording(
-    title,
-    projectName,
-    '',
-    sourceMode,
-    visualCaptureSelected ? Number(selectedVisualWindowId) : undefined,
-    visualCaptureSelected ? visualCaptureLabel : '',
-  );
+  const start = () => recorder.startRecording(title, projectName, '', sourceMode);
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
@@ -287,8 +216,8 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
         <h2 className="mt-1 text-2xl font-bold tracking-tight text-text-primary">{t('recording.title')}</h2>
         <p className="mt-1 max-w-2xl text-sm text-text-secondary">
           {lang === 'it'
-            ? 'Aggiungi solo il contesto che ti serve. ClosedRoom verifica automaticamente il resto.'
-            : 'Add only the context you need. ClosedRoom checks the rest automatically.'}
+            ? 'Titolo e progetto sono opzionali. ClosedRoom registra microfono e audio del computer automaticamente quando sono disponibili.'
+            : 'Title and project are optional. ClosedRoom records microphone and computer audio automatically when available.'}
         </p>
       </header>
 
@@ -360,9 +289,9 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
               </Button>
             )}
             {!recorder.isRecording && !nativeCaptureReady && nativeCaptureChecked && !readyToRecord && storageReady && (
-              <Button type="button" size="sm" variant="secondary" onClick={() => setShowOptions(true)} className="shrink-0">
+              <Button type="button" size="sm" variant="secondary" onClick={() => setShowAudioRecovery(true)} className="shrink-0">
                 <SlidersHorizontal className="h-4 w-4" />
-                {lang === 'it' ? 'Configura audio' : 'Configure audio'}
+                {lang === 'it' ? 'Recupero audio' : 'Audio recovery'}
               </Button>
             )}
           </div>
@@ -449,99 +378,43 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
           )}
         </div>
 
-        <section className="rounded-xl border border-border-subtle bg-bg-surface/20">
-          <button
-            type="button"
-            onClick={() => setShowOptions((open) => !open)}
-            aria-expanded={showOptions}
-            aria-controls="new-meeting-options"
-            className="flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left text-xs font-semibold text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus"
-          >
-            <span className="inline-flex items-center gap-2">
-              <SlidersHorizontal className="h-4 w-4 text-text-muted" aria-hidden="true" />
-              {lang === 'it' ? 'Opzioni meeting' : 'Meeting options'}
-            </span>
-            <ChevronDown className={`h-4 w-4 text-text-muted transition-transform ${showOptions ? 'rotate-180' : ''}`} aria-hidden="true" />
-          </button>
+        {!nativeCaptureReady && nativeCaptureChecked && (
+          <section className="rounded-xl border border-border-subtle bg-bg-surface/20">
+            <button
+              type="button"
+              onClick={() => setShowAudioRecovery((open) => !open)}
+              aria-expanded={showAudioRecovery}
+              aria-controls="new-meeting-audio-recovery"
+              className="flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left text-xs font-semibold text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus"
+            >
+              <span className="inline-flex items-center gap-2">
+                <SlidersHorizontal className="h-4 w-4 text-text-muted" aria-hidden="true" />
+                {lang === 'it' ? 'Recupero audio' : 'Audio recovery'}
+              </span>
+              <ChevronDown className={`h-4 w-4 text-text-muted transition-transform ${showAudioRecovery ? 'rotate-180' : ''}`} aria-hidden="true" />
+            </button>
 
-          {showOptions && (
-            <div id="new-meeting-options" className="flex flex-col gap-5 border-t border-border-subtle p-4">
-              <Select
-                label={lang === 'it' ? 'Audio da registrare' : 'Audio to record'}
-                value={sourceMode}
-                onChange={(event) => {
-                  setSourceMode(event.target.value as 'both' | 'mic_only' | 'pc_only');
-                  setPermissionError(null);
-                }}
-                disabled={recorder.isRecording}
-              >
-                {captureModeOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </Select>
+            {showAudioRecovery && (
+              <div id="new-meeting-audio-recovery" className="flex flex-col gap-5 border-t border-border-subtle p-4">
+                <p className="text-xs leading-relaxed text-text-muted">
+                  {lang === 'it'
+                    ? 'Queste opzioni servono solo quando ClosedRoom non riesce a configurare automaticamente microfono e audio del computer.'
+                    : 'Use these options only when ClosedRoom cannot configure microphone and computer audio automatically.'}
+                </p>
+                <Select
+                  label={lang === 'it' ? 'Audio da registrare' : 'Audio to record'}
+                  value={sourceMode}
+                  onChange={(event) => {
+                    setSourceMode(event.target.value as 'both' | 'mic_only' | 'pc_only');
+                    setPermissionError(null);
+                  }}
+                  disabled={recorder.isRecording}
+                >
+                  {captureModeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </Select>
 
-              <div className="flex flex-col gap-2">
-                <Checkbox
-                  variant="toggle"
-                  label={t('settings.speakerDiarization')}
-                  checked={speakerDiarizationEnabled}
-                  disabled={Boolean(enrichmentSaving) || recorder.isRecording}
-                  onChange={(event) => updateEnrichmentSetting('speaker_diarization_enabled', event.target.checked)}
-                />
-                <p className="pl-[52px] text-xs text-text-muted">{t('recording.diarizationInlineDesc')}</p>
-              </div>
-
-              <div className="flex flex-col gap-3 border-t border-border-subtle pt-4">
-                <Checkbox
-                  variant="toggle"
-                  label={t('settings.visualIntelligence')}
-                  checked={visualIntelligenceEnabled}
-                  disabled={Boolean(enrichmentSaving) || recorder.isRecording}
-                  onChange={(event) => updateEnrichmentSetting('visual_intelligence_enabled', event.target.checked)}
-                />
-
-                {visualIntelligenceEnabled && nativeCaptureReady && (
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                    <div className="min-w-0 flex-1">
-                      <Select
-                        label={t('recording.visualWindowLabel')}
-                        value={selectedVisualWindowId}
-                        onChange={(event) => {
-                          setSelectedVisualWindowId(event.target.value);
-                          setPermissionError(null);
-                        }}
-                        disabled={captureWindowsLoading || recorder.isRecording}
-                      >
-                        <option value="">
-                          {captureWindowsLoading ? t('recording.visualWindowsLoading') : t('recording.visualWindowDisabled')}
-                        </option>
-                        {captureWindows.map((window) => (
-                          <option key={window.id} value={window.id}>{captureWindowLabel(window)}</option>
-                        ))}
-                      </Select>
-                    </div>
-                    <Button type="button" size="sm" variant="secondary" onClick={refreshCaptureWindows} disabled={captureWindowsLoading || recorder.isRecording}>
-                      <RefreshCw className="h-4 w-4" />
-                      {t('recording.visualWindowsRefresh')}
-                    </Button>
-                  </div>
-                )}
-                {visualIntelligenceEnabled && !nativeCaptureReady && (
-                  <p className="text-xs text-warning">{t('recording.visualUnavailableDesc')}</p>
-                )}
-                {captureWindowsError && <p className="text-xs text-danger">{captureWindowsError}</p>}
-                {visualIntelligenceEnabled && nativeCaptureReady && !captureWindowsLoading && !captureWindowsError && captureWindows.length === 0 && (
-                  <p className="text-xs text-warning">{t('recording.visualWindowsEmpty')}</p>
-                )}
-                {visualIntelligenceEnabled && (
-                  <p className="text-xs text-text-muted">{t('recording.visualModelDesc', { model: visualModel || t('common.notAvailable') })}</p>
-                )}
-                {visualIntelligenceEnabled && !speakerDiarizationEnabled && (
-                  <p className="text-xs text-warning">{t('recording.visualNeedsDiarization')}</p>
-                )}
-              </div>
-
-              {!nativeCaptureReady && nativeCaptureChecked && (
                 <div className="grid grid-cols-1 gap-4 border-t border-border-subtle pt-4 sm:grid-cols-2">
                   {sourceMode !== 'pc_only' && (
                     <Select
@@ -570,10 +443,10 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
                     </Select>
                   )}
                 </div>
-              )}
-            </div>
-          )}
-        </section>
+              </div>
+            )}
+          </section>
+        )}
 
         <section className="rounded-xl border border-border-subtle bg-bg-surface/20">
           <button
