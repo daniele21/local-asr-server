@@ -1,6 +1,6 @@
 # Product and runtime simplification
 
-Status: active — PRS-0 contract in progress; Wave 1 ready
+Status: active — Wave 1 implementation checkpoint ready for validation; representative baseline evidence pending
 Owner: product experience + local runtime
 Read when: changing the primary meeting journey, user-facing configuration, capture efficiency or AI resource policy
 
@@ -35,6 +35,7 @@ The product should expose outcomes, not implementation choices. Recording, trans
 - Recording has priority over heavy AI work. No heavy ASR/LLM/VLM phase starts while capture is active.
 - ClosedRoom keeps one canonical heavy-workload admission owner; `HeavyWorkloadArbiter` remains that owner unless an explicit migration is adopted.
 - AI model residency is phase-scoped and reclaimed after work. External runtimes remain caller-owned.
+- Managed local AI remains cold at application startup and starts on demand for the first local AI phase.
 - Resource telemetry contains no meeting/transcript/screenshot content.
 - Background UI/activity is bounded: no display-rate React state updates or avoidable polling loops for stable state.
 - Every new buffer, queue, worker, model residency or cache has an explicit bound and cleanup owner.
@@ -88,17 +89,30 @@ first UX        recording     policy           settings
 
 | ID | Observable outcome | Primary owners | Depends on | State | Convergence |
 | --- | --- | --- | --- | --- | --- |
-| PRS-0 | Product choices and baseline metrics are explicit before implementation | `design/ux-contract.json`, this workstream, resource evidence contract | — | ACTIVE | Wave 1 branch |
-| PRS-1 | New Meeting and Meeting expose only outcome-level normal actions | `NewRecordingPage.tsx`, `MeetingDetailPage.tsx`, `App.tsx` | PRS-0 | READY | Wave 1 |
-| PRS-2 | Recording UI/state updates are bounded and materially cheaper | `useRecorder.ts`, audio visualizer, overlay consumers | PRS-0 | READY | Wave 1 |
-| PRS-3 | One ResourcePolicy decides capture-vs-heavy-AI admission and execution budget | `runtime/`, resource metrics, workload arbiter consumers | PRS-0 | READY | Wave 1 |
-| PRS-4 | Normal Settings expose preferences; technical controls move to advanced/developer/diagnostics | `SettingsPage.tsx`, config presentation | PRS-0 | READY | Wave 1 |
+| PRS-0 | Product choices and baseline metrics are explicit before implementation | `design/ux-contract.json`, this workstream, resource evidence contract | — | ACTIVE | Contract DONE; representative baseline pending |
+| PRS-1 | New Meeting and Meeting expose only outcome-level normal actions | `NewRecordingPage.tsx`, `MeetingDetailPage.tsx`, `App.tsx` | PRS-0 contract | ACTIVE | New Meeting implementation complete; validation pending |
+| PRS-2 | Recording UI/state updates are bounded and materially cheaper | `useRecorder.ts`, audio visualizer, overlay consumers | PRS-0 contract | ACTIVE | Implementation complete; validation pending |
+| PRS-3 | One ResourcePolicy protects capture from heavy-AI starts and prevents speculative preload | `runtime/resource_policy.py`, workload arbiter/job consumers, `server.py` | PRS-0 contract | ACTIVE | Implementation complete; validation pending |
+| PRS-4 | Normal Settings expose preferences; technical controls move to advanced/developer/diagnostics | `SettingsPage.tsx`, config presentation | PRS-0 contract | ACTIVE | Implementation complete; validation pending |
 | PRS-5 | Meeting Transcribe / Generate Notes are one-action workflows with automatic defaults | meeting/transcription/analysis UI + service consumers | PRS-1 | READY | Wave 2 |
 | PRS-6 | Visual intelligence becomes on-demand with explicit workload/frame budget | visual UI/service + resource policy consumer | PRS-1, PRS-3 | READY | Wave 2 |
 | PRS-7 | Managed local AI becomes cold after phases and stops after bounded idle policy | `llm_sidecar.py`, `service_manager.py`, ResourcePolicy | PRS-3 | READY | Wave 2 |
 | PRS-8 | Processing progress is event-driven; polling is reconnect/fallback only | job event owner + frontend job consumers | PRS-0 | READY | Wave 2 after PRS-5 frontend convergence |
 | PRS-9 | Audio compute strategy changes only if benchmark preserves useful quality | capture/transcription benchmark + direct consumers | PRS-0 measurement prep | READY | Wave 3 |
 | PRS-10 | Integrated product proves simpler decisions and lower resource cost on representative paths | contracts, E2E, resource evidence, current state | PRS-1..9 applicable | BLOCKED | Integration/release |
+
+## Wave 1 implementation checkpoint
+
+The first converged implementation currently contains:
+
+- UX contract `0.7.0`: Meeting is the primary product object; normal decision budgets and capability placement are explicit.
+- New Meeting: title/project remain optional; mic + computer audio is the normal default; visual/diarization controls are removed; source/device controls exist only as audio recovery when native automatic capture is unavailable.
+- Recording efficiency: canvas work is bounded to about 12.5 Hz while visible, React meter text to 4 Hz, timer to 1 Hz and overlay status to 2 Hz; hidden documents skip meter work.
+- ResourcePolicy: `RecordingStore.active_recording()` remains the canonical capture-state owner; the shared `HeavyWorkloadArbiter` checks policy both on submission and immediately before execution so queued work cannot begin after capture starts.
+- Managed local LLM: application startup no longer starts the sidecar speculatively; `ensure_llm_ready()` remains the on-demand start owner.
+- Settings: normal surfaces are storage, meeting preferences and privacy/processing summary; provider/model/quality controls are under Advanced processing; runtime/path/lifecycle/log controls are under Developer & diagnostics.
+
+The checkpoint is not considered integrated until selector-required deterministic validation passes on exact HEAD. Resource/performance improvement percentages remain unclaimed until representative before/after evidence exists.
 
 ## Parallel execution rules
 
@@ -189,24 +203,27 @@ Iteration checks: focused frontend tests/contracts; capture lifecycle tests if t
 
 ### PRS-3 ResourcePolicy
 
-Introduce one canonical policy owner that consumes machine/resource/workload state and decides execution eligibility/profile. First version must at least enforce:
+`ResourcePolicy` is a decision layer, not a scheduler. `RecordingStore` owns capture state and `HeavyWorkloadArbiter` owns queue/concurrency.
 
-- capture active => reject/defer heavy AI;
-- one bounded heavy workload through the existing arbiter;
-- no speculative model preload under constrained/default policy;
-- phase completion triggers residency reclamation through canonical runtime owners.
+First version enforces:
 
-No second scheduler or duplicate mutual-exclusion owner.
+- capture active => heavy work is rejected before start;
+- queued work is checked again before execution, so capture starting while it waits still wins;
+- one bounded heavy workload remains owned by the existing arbiter;
+- no speculative managed LLM startup;
+- phase completion continues to trigger residency reclamation through canonical runtime owners.
+
+Future adaptive hardware/memory budgets extend this owner; they must not create another scheduler.
 
 Iteration checks: policy unit tests, arbiter/direct consumer tests. Integration risk expected STRONG.
 
 ### PRS-4 Simple Settings
 
-Normal sections: General, Storage, Language, Privacy/Processing, Performance.
+Normal sections: Storage, Meeting preferences, Privacy/Processing summary.
 
-Advanced: cloud/local trust boundary, provider/model/quality overrides.
+Advanced processing: cloud/local trust boundary, provider/model/quality and compatibility workflow overrides.
 
-Developer/Diagnostics: model paths, URLs, backend, ctx, reasoning/tokens/JSON, runtime lifecycle and logs.
+Developer/Diagnostics: model paths, URLs, reasoning/tokens/JSON, runtime lifecycle and logs.
 
 Backend configuration compatibility remains intact in this slice.
 
