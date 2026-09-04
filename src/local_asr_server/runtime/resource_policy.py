@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Callable
 
 
 class ResourcePolicyBlocked(RuntimeError):
@@ -27,15 +27,15 @@ class ResourcePolicySnapshot:
 class ResourcePolicy:
     """Outcome-level admission policy layered above the heavy-work scheduler.
 
-    This class does not own queues, workers, model residency or cancellation.
-    ``HeavyWorkloadArbiter`` remains the sole ClosedRoom heavy-work scheduler;
-    runtime/service owners remain responsible for model lifecycle. The policy
-    only answers whether starting a heavy phase is currently allowed.
+    This class does not own queues, workers, recording state, model residency or
+    cancellation. ``RecordingStore`` remains the canonical capture-state owner,
+    ``HeavyWorkloadArbiter`` remains the sole ClosedRoom heavy-work scheduler,
+    and runtime/service owners remain responsible for model lifecycle. The
+    policy only answers whether starting a heavy phase is currently allowed.
     """
 
     DEFAULT_PROFILE = "balanced"
     VALID_PROFILES = {"efficient", "balanced", "maximum"}
-    _CAPTURE_ACTIVE_STATUSES = ("recording", "finalizing")
 
     def __init__(
         self,
@@ -47,25 +47,6 @@ class ResourcePolicy:
             raise ValueError(f"unsupported resource profile: {profile}")
         self._capture_active = capture_active
         self.profile = profile
-
-    @classmethod
-    def from_catalog(cls, catalog: Any, *, profile: str = DEFAULT_PROFILE) -> "ResourcePolicy":
-        """Read capture activity from the canonical recording catalog.
-
-        This is a read-only adapter over the indexed recording status owned by
-        ``CatalogStore``. It intentionally does not mirror recording state in a
-        second in-memory owner.
-        """
-
-        def capture_active() -> bool:
-            with catalog.connection() as conn:
-                row = conn.execute(
-                    "SELECT 1 FROM recordings WHERE status IN (?, ?) LIMIT 1",
-                    cls._CAPTURE_ACTIVE_STATUSES,
-                ).fetchone()
-            return row is not None
-
-        return cls(capture_active=capture_active, profile=profile)
 
     def assert_heavy_work_admissible(self, workload_type: str) -> None:
         if not workload_type.strip():
