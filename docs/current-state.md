@@ -47,17 +47,20 @@ Still separate from automation: VoiceOver spoken-output/subjective usability, pr
 
 ## Current evidence status
 
-UX implementation and deterministic target-Mac tooling are integrated through the normal `dev` flow only after selector-required automated gates pass. `target-macos-real` remains pending until the command above passes with complete media on the actual Apple Silicon Mac.
+The previously integrated UX simplification and deterministic target-Mac tooling remain on `dev`; `target-macos-real` is still pending until the canonical command above passes with complete media on the actual Apple Silicon Mac.
 
-## Active workstream
+A new product/runtime simplification workstream is active on `feature/product-runtime-simplification`. Its first convergence wave now has implementation for the meeting-first New Meeting surface, bounded recording UI cadence, capture-priority heavy-work admission, cold/on-demand managed LLM startup and simplified Settings hierarchy. These changes are **not integrated truth yet**: selector-required deterministic validation and the complete integration diff review still have to pass on the exact feature HEAD before merge to `dev`. Representative before/after CPU/RSS evidence is also still pending, so no percentage performance improvement is claimed.
 
-- [`docs/workstreams/ux-simplification.md`](workstreams/ux-simplification.md): implementation and deterministic automation complete; UX-9 waits only for target-Mac evidence.
+## Active workstreams
+
+- [`docs/workstreams/ux-simplification.md`](workstreams/ux-simplification.md): integrated implementation and deterministic automation complete; UX-9 waits only for target-Mac evidence.
+- [`docs/workstreams/product-runtime-simplification.md`](workstreams/product-runtime-simplification.md): Wave 1 implementation checkpoint ready for integration validation; later waves own simple processing, visual on-demand, cold AI lifecycle, event-driven progress and evidence-led audio optimization.
 
 ## Next highest-value work
 
-1. Run `python3 scripts/real_environment_ui_evidence.py --build` from a clean current `dev` checkout on the target Mac; repeated runs reuse the exact same finalized app for that revision.
-2. If `checkout_clean` fails, preserve local changes and resolve the reported `source_dirty_entries`; do not bypass the exact-source gate.
-3. If `blocked_permission`, grant only the requested permission and rerun the same command without rebuilding the app.
-4. Require functional `status: pass` plus the complete screenshot/video manifest; do not accept `E2E_EVIDENCE_INCOMPLETE`.
-5. Review VoiceOver spoken output/usability separately.
-6. Move reproducible real-Mac failures into the cheapest sufficient automated environment where possible.
+1. Validate the exact Wave 1 `feature/product-runtime-simplification` head against current `dev` using the repository selector and all required deterministic integration gates; fix owning causes before merge.
+2. After Wave 1 automated evidence is confirmed, converge it to `dev` and begin PRS-5/6/7 plus the backend half of PRS-8 in parallel as defined by the workstream DAG.
+3. Capture representative before/after resource evidence before setting or claiming CPU/RSS improvement targets.
+4. Keep the independent target-Mac UX evidence lane moving through `python3 scripts/real_environment_ui_evidence.py --build`; repeated runs on one clean revision must reuse the same finalized app.
+5. If target-Mac evidence returns `blocked_permission`, grant only the requested permission and rerun the same command without rebuilding; require functional `status: pass` plus complete media.
+6. Keep VoiceOver spoken output/usability, production signing/notarization and representative production MLX/Metal performance as separate evidence classes.
