@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import tempfile
 import unittest
-from pathlib import Path
 
-from local_asr_server.catalog import CatalogStore
 from local_asr_server.runtime.resource_policy import ResourcePolicy, ResourcePolicyBlocked
 
 
@@ -27,29 +24,21 @@ class ResourcePolicyTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.reason, "capture_active")
 
-    def test_catalog_adapter_uses_canonical_recording_status(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            catalog = CatalogStore(Path(temp_dir) / "closedroom.db")
-            policy = ResourcePolicy.from_catalog(catalog)
-            self.assertFalse(policy.snapshot()["capture_active"])
+    def test_policy_reads_capture_state_lazily_from_canonical_owner(self) -> None:
+        active = False
+        policy = ResourcePolicy(capture_active=lambda: active)
 
-            catalog.upsert_recording({
-                "id": "rec-1",
-                "title": "Meeting",
-                "project_name": "",
-                "status": "recording",
-                "created_at": "2026-09-05T00:00:00+00:00",
-            })
-            self.assertTrue(policy.snapshot()["capture_active"])
+        self.assertFalse(policy.snapshot()["capture_active"])
+        active = True
+        self.assertTrue(policy.snapshot()["capture_active"])
+        with self.assertRaises(ResourcePolicyBlocked):
+            policy.assert_heavy_work_admissible("vision")
+        active = False
+        policy.assert_heavy_work_admissible("vision")
 
-            catalog.upsert_recording({
-                "id": "rec-1",
-                "title": "Meeting",
-                "project_name": "",
-                "status": "recorded",
-                "created_at": "2026-09-05T00:00:00+00:00",
-            })
-            self.assertFalse(policy.snapshot()["capture_active"])
+    def test_rejects_unknown_profile(self) -> None:
+        with self.assertRaises(ValueError):
+            ResourcePolicy(capture_active=lambda: False, profile="unbounded")
 
 
 if __name__ == "__main__":
