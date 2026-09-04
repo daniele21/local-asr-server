@@ -76,6 +76,8 @@ python3 scripts/real_environment_ui_evidence.py --build
 ```
 
 - `real_environment_ui_evidence.py` wraps `real_environment_smoke.py`; it does not duplicate functional ownership.
+- `--build` means ensure an exact-checkout finalized app exists: a successful clean artifact whose manifest `source.revision` matches HEAD is reused unchanged across permission reruns, and a new build is created only when that exact artifact is absent.
+- When the wrapper must build, it restores only Vite's generated `src/local_asr_server/static/` output and verifies the checkout returns clean before launching the smoke; it never resets unrelated local changes.
 - Functional smoke verifies packaged WKWebView accessibility/focus, `Cmd+K`/Escape, native TCC readiness, mic + system capture, Start/Stop, persisted dual-source audio and Stop -> meeting navigation.
 - UI interaction is driven by a bounded direct `AXUIElement`/`CGEvent` helper instead of AppleScript/System Events tree enumeration; action timeout and traversal limits make automation failure explicit and bounded.
 - A dirty checkout remains a hard preflight failure so evidence is attributable to one source revision; the report includes the offending `git status --porcelain` entries.
@@ -94,7 +96,7 @@ Validation routing:
 ## Real-environment result classes
 
 - `PASS` / exit `0`: functional target-Mac smoke passed and all required media exists.
-- `blocked_permission` / exit `2`: grant only the requested Accessibility/Microphone/Screen & System Audio Recording permission, then rerun unchanged.
+- `blocked_permission` / exit `2`: grant only the requested Accessibility/Microphone/Screen & System Audio Recording permission, then rerun the same command against the same exact finalized app.
 - `E2E_EVIDENCE_INCOMPLETE` / exit `1`: functional smoke passed but screenshot/video evidence is incomplete; fix the media evidence path rather than accepting the run.
 - `checkout_clean` fail / exit `1`: preserve local edits, resolve the reported dirty entries, then rerun from the same clean revision.
 - other `fail` / exit `1`: product/test/environment invariant failed and must be diagnosed.
@@ -119,6 +121,7 @@ The underlying smoke emits a short local phrase via macOS `say` while recording 
 - UX implementation passed exact-head SCOPED remote preflight before integration.
 - Functional real-environment smoke and UI-media wrapper were integrated after deterministic validation.
 - A real-Mac run exposed unbounded System Events accessibility traversal as runner infrastructure rather than a product regression; the automation owner was hardened with direct bounded AX APIs and deterministic macOS compile tests.
+- A subsequent target-Mac run exposed a TCC convergence problem: rebuilding an ad-hoc-signed app on every retry changed its identity. The canonical wrapper now reuses the exact finalized artifact for the revision and cleans only generated Vite output after the one build that may be required.
 - Target completion exists only after the canonical UI-evidence command produces functional `status: pass` plus a complete media manifest on the real Mac. `blocked_permission` and dirty-checkout failures are preparation/attribution states, not completion.
 
 ## Durable owners
@@ -127,9 +130,10 @@ The underlying smoke emits a short local phrase via macOS `say` while recording 
 - `.engineering/e2e.json`: environment fidelity, UI media requirements and canonical target runner.
 - `scripts/macos_ax_helper.swift` + `scripts/macos_ui_driver.py`: bounded target-Mac Accessibility/keyboard automation.
 - `scripts/real_environment_smoke.py`: functional target-Mac evidence.
-- `scripts/real_environment_ui_evidence.py`: UI screenshot/video evidence and canonical target-Mac entrypoint.
+- `scripts/real_environment_ui_evidence.py`: exact-artifact selection/reuse plus UI screenshot/video evidence and canonical target-Mac entrypoint.
 - `test/test_macos_ui_driver.py`: driver timeout/permission/bounds/Swift-compile coverage.
 - `test/test_real_environment_smoke.py`: functional runner helper/cleanup/source-attribution safety checks.
+- `test/test_real_environment_ui_evidence.py`: exact-artifact reuse and generated-output cleanup coverage.
 
 ## Completion
 

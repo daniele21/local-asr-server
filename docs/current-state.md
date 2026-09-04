@@ -20,7 +20,8 @@ ClosedRoom follows `daniele21/repo-template-sw` **0.9.1** at maturity **L2** wit
 - `scripts/real_environment_smoke.py` owns functional target-Mac evidence: packaged WKWebView/accessibility behavior, TCC/native mic + system-audio capture, persisted dual-source recording, Stop -> meeting navigation and isolated-HOME cleanup.
 - Target-Mac UI automation uses a bounded direct `AXUIElement`/`CGEvent` driver compiled from `scripts/macos_ax_helper.swift`, avoiding unbounded AppleScript/System Events tree enumeration. Per-action timeouts and bounded tree traversal keep runner failures classifiable.
 - A dirty target-Mac checkout remains a hard preflight failure so the built artifact is attributable to one revision; the report includes the exact `git status --porcelain` entries that caused the block.
-- `scripts/real_environment_ui_evidence.py` is the canonical target-Mac UI entrypoint. It wraps the functional smoke and retains required app-window screenshots plus a journey video under `dist/evidence/real-environment/.../ui-media/meeting-recording-ui/`.
+- `scripts/real_environment_ui_evidence.py` is the canonical target-Mac UI entrypoint. With `--build` it first looks for a successful clean finalized `.app` whose manifest `source.revision` matches the checkout and reuses that exact bundle across TCC permission reruns. It builds only when no exact artifact exists, then restores only Vite's generated `src/local_asr_server/static/` output and verifies the checkout is clean before starting the smoke.
+- The same UI wrapper retains required app-window screenshots plus a journey video under `dist/evidence/real-environment/.../ui-media/meeting-recording-ui/` and records whether the artifact was `reused_exact`, `built_exact` or explicit.
 - `.engineering/e2e.json` uses risk-based UI evidence and keeps the real meeting-recording journey at `FULL_MEDIA` fidelity.
 - Packaging uses the published `local-llm-server` artifact and precompiles Core Audio without mutating user audio routing.
 
@@ -40,7 +41,7 @@ Required media:
 - complete ClosedRoom app-window video;
 - `manifest.json` tied to the journey/source revision.
 
-Capture is restricted to the ClosedRoom window and uses synthetic/local test content inside a temporary `HOME`. A passing functional smoke with missing media returns `E2E_EVIDENCE_INCOMPLETE`, not success. Missing TCC/Accessibility grants return `blocked_permission`; grant only the requested permission and rerun unchanged. A dirty checkout fails before build and reports the offending status entries rather than producing non-attributable evidence.
+Capture is restricted to the ClosedRoom window and uses synthetic/local test content inside a temporary `HOME`. A passing functional smoke with missing media returns `E2E_EVIDENCE_INCOMPLETE`, not success. Missing TCC/Accessibility grants return `blocked_permission`; grant only the requested permission and rerun the same command. Because the exact finalized app is reused, an ad-hoc-signed target build keeps the same TCC identity across those reruns instead of forcing a fresh approval on every attempt. A dirty checkout still fails before build and reports the offending status entries rather than producing non-attributable evidence.
 
 Still separate from automation: VoiceOver spoken-output/subjective usability, production signing/notarization, and material production MLX/Metal compatibility/performance/quality claims.
 
@@ -54,9 +55,9 @@ UX implementation and deterministic target-Mac tooling are integrated through th
 
 ## Next highest-value work
 
-1. Run `python3 scripts/real_environment_ui_evidence.py --build` from a clean current `dev` checkout on the target Mac.
+1. Run `python3 scripts/real_environment_ui_evidence.py --build` from a clean current `dev` checkout on the target Mac; repeated runs reuse the exact same finalized app for that revision.
 2. If `checkout_clean` fails, preserve local changes and resolve the reported `source_dirty_entries`; do not bypass the exact-source gate.
-3. If `blocked_permission`, grant only the requested permission and rerun unchanged.
+3. If `blocked_permission`, grant only the requested permission and rerun the same command without rebuilding the app.
 4. Require functional `status: pass` plus the complete screenshot/video manifest; do not accept `E2E_EVIDENCE_INCOMPLETE`.
 5. Review VoiceOver spoken output/usability separately.
 6. Move reproducible real-Mac failures into the cheapest sufficient automated environment where possible.

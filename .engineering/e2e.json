@@ -54,9 +54,9 @@
       "automation": "real_environment",
       "platform": "macOS Apple Silicon",
       "command": "python3 scripts/real_environment_ui_evidence.py --build",
-      "artifact_surface": "fresh finalized ClosedRoom .app on the target Mac with isolated HOME, real WKWebView accessibility automation, TCC-backed capture, persistence, screenshots and journey recording",
+      "artifact_surface": "successful finalized ClosedRoom .app for the exact clean checkout; built only when absent and then reused unchanged across TCC permission reruns, with isolated HOME, real WKWebView accessibility automation, TCC-backed capture, persistence, screenshots and journey recording",
       "target_environment_refs": ["closedroom-macos-apple-silicon"],
-      "known_gaps": ["VoiceOver spoken-output quality and subjective usability still require human judgement", "production signing/notarization is outside this ad-hoc run", "production MLX/Metal inference quality and performance remain separate evidence"]
+      "known_gaps": ["VoiceOver spoken-output quality and subjective usability still require human judgement", "ad-hoc signing is stable only while the same finalized app is reused; production signing/notarization remains separate evidence", "production MLX/Metal inference quality and performance remain separate evidence"]
     }
   ],
   "critical_journeys": [
