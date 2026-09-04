@@ -147,12 +147,25 @@ def process_snapshot() -> list[tuple[int, str]]:
     return found
 
 
-def find_closedroom_pid() -> int | None:
-    candidates = [
+def closedroom_pids(snapshot: list[tuple[int, str]]) -> set[int]:
+    return {
         pid
-        for pid, command in process_snapshot()
+        for pid, command in snapshot
         if "/Contents/MacOS/" in command and "ClosedRoom" in command
-    ]
+    }
+
+
+def find_closedroom_pid(expected_executable: str | None = None, excluded: set[int] | None = None) -> int | None:
+    excluded = excluded or set()
+    exact: list[int] = []
+    generic: list[int] = []
+    for pid, command in process_snapshot():
+        if pid in excluded or "/Contents/MacOS/" not in command or "ClosedRoom" not in command:
+            continue
+        generic.append(pid)
+        if expected_executable and expected_executable in command:
+            exact.append(pid)
+    candidates = exact or generic
     return max(candidates) if candidates else None
 
 
@@ -245,6 +258,8 @@ def main() -> int:
     if args.keep_sandbox:
         command.append("--keep-sandbox")
 
+    existing_closedroom = closedroom_pids(process_snapshot())
+    expected_executable = str(selected_app / "Contents" / "MacOS" / "ClosedRoom") if selected_app is not None else None
     smoke = subprocess.Popen(command, cwd=root)
     app_pid: int | None = None
     rect: str | None = None
@@ -260,13 +275,14 @@ def main() -> int:
     try:
         while smoke.poll() is None and time.monotonic() < deadline:
             if app_pid is None:
-                app_pid = find_closedroom_pid()
+                app_pid = find_closedroom_pid(expected_executable, existing_closedroom)
             if app_pid is not None and rect is None:
                 try:
                     rect = window_rect(app_pid)
                     video = start_video(rect, video_path)
                 except UIAutomationError as exc:
-                    media_error(f"media_start_ui: {exc}")
+                    if str(exc) != "closedroom_window_missing":
+                        media_error(f"media_start_ui: {exc}")
                     rect = None
                 except Exception as exc:
                     media_error(f"media_start: {exc}")
