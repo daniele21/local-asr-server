@@ -18,11 +18,11 @@ API -> `server.py`, routers/schemas/services. Persistence -> recordings/catalog/
 
 ## Delivery model
 
-ClosedRoom follows repo-template-sw **0.9.1**.
+ClosedRoom follows repo-template-sw **0.9.2**.
 
 - `ITERATION`: default while implementation is changing. Use focused owner-local checks; durable docs/exact-head/preflight are not required after every edit.
-- `INTEGRATION`: a coherent observable outcome is ready to converge. Exact head, complete diff, affected durable docs and required risk gates must be current.
-- `RELEASE`: FULL validation plus release-critical artifact/E2E and residual environment evidence.
+- `INTEGRATION` (`PR -> dev`): prove the affected outcome with deterministic/source/package automation. Exact head, complete diff, affected durable docs and required risk gates must be current. Target-Mac/TCC evidence is explicit but does not block integration.
+- `RELEASE` (`dev -> main`): FULL validation plus release-critical artifact/E2E and every applicable required target-Mac confirmation.
 
 The selector maps **risk dimensions -> required gates -> LEAN/SCOPED/STRONG/FULL summary**. Profiles are shorthand, not the source of truth.
 
@@ -32,9 +32,11 @@ Parallel technical work should converge early around vertical outcomes. Stacked 
 
 `.github/workflows/preflight.yml` is the canonical remote validator. It always runs repository/governance guards, defers expensive macOS source/package jobs during draft iteration, and runs them at integration/release only when the selector requires them.
 
-Successful integration evidence is reusable. Before merge use exact-head identity. After a content-preserving merge to `dev`, the workflow may reuse evidence only when Git tree, prior target/base, gates and profile are equivalent. Direct pushes without trusted evidence validate normally. Release remains FULL and does not silently inherit integration proof.
+Successful integration evidence is reusable. Before merge use exact-head identity. After a content-preserving merge to `dev`, the workflow may reuse evidence only when Git tree, prior target/base, gates and profile are equivalent. Direct pushes without trusted evidence validate normally. Release remains FULL and does not silently inherit unresolved target-Mac evidence.
 
-E2E UI evidence is risk-based: `ASSERTIONS`, `SCREENSHOTS`, `FULL_MEDIA`. The real meeting-recording UI remains `FULL_MEDIA` because timing/lifecycle/native capture sequence is part of the claim. Hosted macOS does not prove real TCC, physical audio or interactive target-Mac behavior; `python3 scripts/real_environment_ui_evidence.py --build` owns that residual evidence.
+E2E UI evidence is risk-based: `ASSERTIONS`, `SCREENSHOTS`, `FULL_MEDIA`. The real meeting-recording UI remains `FULL_MEDIA` because timing/lifecycle/native capture sequence is part of the claim. Hosted/source/package automation must be green before `dev`; however it does not prove interactive WKWebView + TCC + physical audio. `python3 scripts/real_environment_ui_evidence.py --build` owns that residual target-Mac journey and is a RELEASE gate, not a normal feature-PR gate.
+
+The lack of a separate deterministic CI media journey for the meeting workspace remains an explicit automation capability gap; do not disguise it by treating hosted non-Cocoa smoke as UI evidence.
 
 ## Documentation
 
