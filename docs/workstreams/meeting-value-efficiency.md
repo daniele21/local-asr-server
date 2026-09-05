@@ -2,7 +2,6 @@
 
 Status: active — implementation in progress
 Owner: meeting product, canonical job/persistence owners and local runtime
-Read when: implementing increments after the integrated PRS baseline.
 Baseline: dev `c4a33b5`, 2026-09-05.
 
 ## Outcome and scope
@@ -45,7 +44,6 @@ Acceptance:
 - Local accessory error/retry; A -> B navigation cannot apply A responses to B.
 - Audio/transcript and existing visual actions remain reachable.
 Evidence: lint/typecheck, focused recovery tests and `browser-macos-arm64-ci` delayed/failing-route FULL_MEDIA. Synthetic browser evidence does not replace applicable release-time WKWebView/TCC evidence.
-One PR to dev; jobs/inference unchanged.
 
 ## PRS-12 — current executable slice: one recoverable preparation action
 
