@@ -173,6 +173,21 @@ jobs:
         env:
           UV_CACHE_DIR: .cache/uv
         run: uv run --frozen --python 3.12 python -m unittest discover -s test -v
+      - name: Saved Meeting browser FULL_MEDIA journey
+        if: contains(needs.select.outputs.required_gates, 'browser-e2e')
+        env:
+          E2E_SOURCE_REVISION: ${{ needs.select.outputs.head_sha }}
+        run: |
+          brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
+          node scripts/browser_meeting_ui_e2e.mjs
+      - name: Upload saved Meeting browser evidence
+        if: ${{ always() && contains(needs.select.outputs.required_gates, 'browser-e2e') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: closedroom-browser-meeting-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/evidence/browser-meeting-ui/**
+          if-no-files-found: error
+          retention-days: 7
 
   packaged-app:
     name: Packaged app / ${{ needs.select.outputs.stage }} / ${{ needs.select.outputs.profile }}
@@ -236,6 +251,7 @@ jobs:
           set -euo pipefail
           if [[ "$REUSED" == "true" ]]; then exit 0; fi
           if [[ "$GATES" == *source-tests* && "$TESTS" != "success" ]]; then echo "source-tests gate failed: $TESTS" >&2; exit 1; fi
+          if [[ "$GATES" == *browser-e2e* && "$TESTS" != "success" ]]; then echo "browser-e2e gate failed: $TESTS" >&2; exit 1; fi
           if [[ "$GATES" == *packaged-app* && "$PACKAGED" != "success" ]]; then echo "packaged-app gate failed: $PACKAGED" >&2; exit 1; fi
 
   evidence:
@@ -258,8 +274,10 @@ jobs:
         run: |
           set -euo pipefail
           gate_key=$(printf '%s' "$GATES" | sha256sum | cut -c1-16)
+          e2e_environment=none
+          if [[ "$GATES" == *browser-e2e* ]]; then e2e_environment=browser-macos-arm64-ci; fi
           mkdir -p validation-evidence
-          printf '{"head":"%s","source_tree":"%s","target_base":"%s","stage":"%s","profile":"%s","risk_dimensions":"%s","required_gates":"%s","e2e_environment":"none","run_id":"%s"}\n' "$HEAD_SHA" "$SOURCE_TREE" "$BASE_SHA" "$STAGE" "$PROFILE" "$RISKS" "$GATES" "$GITHUB_RUN_ID" > validation-evidence/evidence.json
+          printf '{"head":"%s","source_tree":"%s","target_base":"%s","stage":"%s","profile":"%s","risk_dimensions":"%s","required_gates":"%s","e2e_environment":"%s","run_id":"%s"}\n' "$HEAD_SHA" "$SOURCE_TREE" "$BASE_SHA" "$STAGE" "$PROFILE" "$RISKS" "$GATES" "$e2e_environment" "$GITHUB_RUN_ID" > validation-evidence/evidence.json
           echo "exact=validation-evidence-${HEAD_SHA}-${BASE_SHA}-${PROFILE}-${gate_key}" >> "$GITHUB_OUTPUT"
           echo "tree=validation-tree-evidence-${SOURCE_TREE}-${BASE_SHA}-${PROFILE}-${gate_key}" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
