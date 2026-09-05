@@ -267,6 +267,74 @@ class MeetingPreparationTests(unittest.TestCase):
         self.assertTrue(cancelled["cancel_requested"])
         self.assertEqual(self.store.list_children(parent["id"], stage="analysis"), [])
 
+    def test_cancel_during_transcription_admission_cancels_late_linked_child(self) -> None:
+        def racing_transcription(callback):
+            child = self.store.create(
+                job_id="trans-race",
+                job_type="transcription",
+                scope_type="recording",
+                scope_id="rec-1",
+            )
+            self.transcription_jobs.register(child["id"], callback)
+            parent = self.store.list_jobs(
+                job_type=MEETING_PREPARATION_JOB_TYPE,
+                scope_type="recording",
+                scope_id="rec-1",
+                limit=1,
+            )[0]
+            self.manager.cancel(parent["id"])
+            return child
+
+        parent = self.manager.create(
+            "rec-1",
+            start_transcription=racing_transcription,
+            start_pipeline=self._completed_pipeline_factory([]),
+        )
+
+        self.assertEqual(self.store.get(parent["id"])["status"], "cancelled")
+        self.assertEqual(self.store.get("trans-race")["status"], "cancelled")
+        self.assertEqual(self.transcription_jobs.cancelled, ["trans-race"])
+        self.assertEqual(self.store.list_children(parent["id"], stage="analysis"), [])
+
+    def test_cancel_during_analysis_admission_cancels_late_linked_children(self) -> None:
+        self.transcriptions.current = self._transcription()
+
+        def racing_pipeline(transcription_id, _callback):
+            jobs = []
+            for index in range(2):
+                job_id = f"analysis-race-{index}"
+                self.store.create(
+                    job_id=job_id,
+                    job_type="analysis",
+                    scope_type="transcription",
+                    scope_id=transcription_id,
+                )
+                jobs.append({"job_id": job_id, "status": "queued"})
+            parent = self.store.list_jobs(
+                job_type=MEETING_PREPARATION_JOB_TYPE,
+                scope_type="recording",
+                scope_id="rec-1",
+                limit=1,
+            )[0]
+            self.manager.cancel(parent["id"])
+            return {
+                "pipeline_run_id": "pipeline-race",
+                "pipeline_id": "meeting_default",
+                "status": "queued",
+                "jobs": jobs,
+            }
+
+        parent = self.manager.create(
+            "rec-1",
+            start_transcription=self._queued_transcription_factory([]),
+            start_pipeline=racing_pipeline,
+        )
+
+        self.assertEqual(self.store.get(parent["id"])["status"], "cancelled")
+        self.assertEqual(self.analysis_jobs.cancelled, ["analysis-race-0", "analysis-race-1"])
+        self.assertEqual(self.store.get("analysis-race-0")["status"], "cancelled")
+        self.assertEqual(self.store.get("analysis-race-1")["status"], "cancelled")
+
     def test_notes_failure_retry_reuses_successful_transcript(self) -> None:
         self.transcriptions.current = self._transcription()
         transcription_calls = []
