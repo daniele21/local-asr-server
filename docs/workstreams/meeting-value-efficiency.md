@@ -1,12 +1,12 @@
 # ClosedRoom: useful notes, simple journeys and efficient execution
 
-Status: active — implementation in progress
+Status: active — PRS-12 integration candidate
 Owner: meeting product, canonical job/persistence owners and local runtime
-Baseline: dev `c4a33b5`, 2026-09-05.
+Baseline: dev `0d5d3fa`, 2026-09-05.
 
 ## Outcome and scope
 
-Record, prepare useful notes, verify decisions and find them later while the Mac stays usable. PRS-11 is implemented; no measured runtime gains are claimed yet.
+Record, prepare useful notes, verify decisions and find them later while the Mac stays usable. PRS-11 is integrated; PRS-12 is implemented on its integration branch and no measured runtime gains are claimed.
 PRS-1..9 are integrated; [PRS-10](product-runtime-simplification.md) keeps its closure criteria. Current contracts apply until each increment updates them.
 Excluded: rewrite, new runtime/scheduler/index owner, implicit cloud, mandatory visuals, unproven audio strategy, all-at-once release.
 
@@ -25,7 +25,7 @@ Excluded: rewrite, new runtime/scheduler/index owner, implicit cloud, mandatory 
 | ID | Observable outcome | Owner paths/contracts | Depends on | State |
 | --- | --- | --- | --- | --- |
 | PRS-11 | Open a saved meeting without waiting for diagnostics | MeetingDetailPage, API client, visual hook | — | DONE |
-| PRS-12 | Prepare notes with one recoverable action | analysis/transcription services, jobs, schemas, Meeting UI | PRS-11 | READY |
+| PRS-12 | Prepare notes with one recoverable action | analysis/transcription services, jobs, schemas, Meeting UI | PRS-11 | INTEGRATION |
 | PRS-13 | Produce consistent notes with less repeated inference | analysis_templates, analysis_jobs, analysis service, catalog | PRS-12 | BLOCKED |
 | PRS-14 | Verify and correct actions/decisions without losing edits | notes schema/catalog, transcript and Meeting UI | PRS-13 | BLOCKED |
 | PRS-15 | Find content anywhere in the local archive | CatalogStore, workspace router/helpers, Dashboard/Projects/API | — | READY |
@@ -45,18 +45,18 @@ Acceptance:
 - Audio/transcript and existing visual actions remain reachable.
 Evidence: lint/typecheck, focused recovery tests and `browser-macos-arm64-ci` delayed/failing-route FULL_MEDIA. Synthetic browser evidence does not replace applicable release-time WKWebView/TCC evidence.
 
-## PRS-12 — current executable slice: one recoverable preparation action
+## PRS-12 — integration candidate: one recoverable preparation action
 
 Goal: coordinate existing transcription/analysis with "Prepare notes".
-Work: extend existing service/job orchestration; resolve durable stage relationships in JobStore before coding, retain API compatibility and expert actions. Keep the four analyses for now. Reuse `TranscriptionJobManager`, `AnalysisJobManager` and the shared `HeavyWorkloadArbiter`; no second scheduler.
-Acceptance:
+Implemented: `meeting_preparation` is a durable parent in `JobStore`; persisted stage links compose the existing `TranscriptionJobManager` and `AnalysisJobManager` child jobs while the shared `HeavyWorkloadArbiter` remains the only heavy-work scheduler. Admission dedupes the same durable identity, valid transcript reuse skips ASR, analysis output is tied to the current transcript identity, and existing expert endpoints remain compatible. The Meeting follows only the active parent SSE, reloads canonical state when the transcript becomes available and on terminal state, keeps `Transcript only` secondary, and opens ready notes first unless the user explicitly selected another tab.
+Acceptance implemented:
 - Duplicate clicks/reconnect do not duplicate preparation; current valid transcript skips ASR.
 - Reuse identity includes source/options/template; changed source marks derived output stale.
 - Transcript is readable before notes complete; phase labels/cancellation are honest.
 - Cancel prevents future stages and is acknowledged after worker observation.
-- Restart restores results/status; interrupted work offers explicit resume from the missing stage, without silently restarting AI.
-- Notes failure/retry preserves successful ASR and user corrections.
-Checks: job/service/API tests for duplicate admission, restart/cancel/partial failure; persisted preparation/reconnect/retry FULL_MEDIA journey. STRONG expected.
+- Restart restores persisted results/status; incomplete work becomes `interrupted` and resumes only through explicit user action from the first missing stage.
+- Notes failure/retry preserves successful ASR and transcript/user corrections.
+Evidence before merge: owner/service/API tests cover duplicate admission, migration, restart/cancel/partial failure/reuse; `browser-macos-arm64-ci` runs both the existing saved-Meeting FULL_MEDIA journey and `meeting-preparation-recovery` covering prepare → transcript-ready → reconnect same parent → notes failure → explicit resume without ASR rerun → notes-ready. Selector expectation remains STRONG; exact-head INTEGRATION evidence is blocking before merge. Production ASR/LLM quality/latency and packaged interactive WKWebView fidelity remain release deltas when material.
 
 ## PRS-13 — shared structured notes
 
