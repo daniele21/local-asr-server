@@ -350,6 +350,7 @@ async function renderVideo() {
       '-hide_banner', '-loglevel', 'error', '-y',
       '-framerate', String(VIDEO_FPS),
       '-i', path.join(evidenceRoot, 'frames', 'frame-%04d.png'),
+      '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2',
       '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
       videoPath,
     ],
