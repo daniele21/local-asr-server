@@ -142,7 +142,9 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
     [meeting],
   );
 
-  const isBusy = activeJobs.length > 0 || (meeting?.analysis_runs || []).some((run) => activeJobStatuses.has(run.status));
+  const isBusy = busyAction !== null
+    || activeJobs.length > 0
+    || (meeting?.analysis_runs || []).some((run) => activeJobStatuses.has(run.status));
 
   useEffect(() => {
     if (!meeting) return;
@@ -162,12 +164,28 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
     return () => window.cancelAnimationFrame(frame);
   }, [moreOpen]);
 
-  const openTranscriptionWorkflow = () => {
+  const openAdvancedTranscription = () => {
     if (!meeting || demoMode || isBusy) return;
     navigateTo(
       'transcription',
       recordingTranscriptionRoute(meeting.id, meeting.transcription ? 'retranscribe' : 'transcribe'),
     );
+  };
+
+  const startDefaultTranscription = async () => {
+    if (!meeting || demoMode || isBusy) return;
+    setBusyAction('transcription');
+    setError(null);
+    try {
+      await ApiClient.createTranscriptionJob(meeting.id, {
+        visual_intelligence_enabled: false,
+      });
+      await load();
+    } catch (err: any) {
+      setError(err?.message || (lang === 'it' ? 'Impossibile avviare la trascrizione' : 'Failed to start transcription'));
+    } finally {
+      setBusyAction(null);
+    }
   };
 
   const openAnalysisSetup = (pipelineId = 'meeting_default') => {
@@ -177,7 +195,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
 
   const startPipeline = async (pipelineId = 'meeting_default', selection: AnalysisSetupSelection = {}) => {
     if (!meeting) return;
-    if (demoMode) return;
+    if (demoMode || isBusy) return;
     setBusyAction(pipelineId);
     try {
       await ApiClient.createAnalysisPipeline({
@@ -458,14 +476,15 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
             <div className="flex items-start gap-2.5 min-w-0">
               <FileText className="h-5 w-5 text-warning shrink-0 mt-0.5" aria-hidden="true" />
               <div>
-                <h4 className="text-xs font-semibold text-text-primary">{lang === 'it' ? 'Passo successivo: Trascrizione' : 'Next Step: Transcription'}</h4>
+                <h4 className="text-xs font-semibold text-text-primary">{lang === 'it' ? 'Passo successivo: Trascrizione' : 'Next step: Transcript'}</h4>
                 <p className="text-[11px] text-text-secondary leading-relaxed mt-0.5">{t('meeting.transcribeDescription')}</p>
               </div>
             </div>
             <Button
               size="sm"
               disabled={demoMode}
-              onClick={openTranscriptionWorkflow}
+              onClick={startDefaultTranscription}
+              isLoading={busyAction === 'transcription'}
               className="shrink-0 w-full sm:w-auto shadow-cta"
             >
               <FileText className="h-4 w-4" aria-hidden="true" />
@@ -479,31 +498,19 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
             <div className="flex items-start gap-2.5 min-w-0">
               <Sparkles className="h-5 w-5 text-accent shrink-0 mt-0.5" aria-hidden="true" />
               <div>
-                <h4 className="text-xs font-semibold text-text-primary">{lang === 'it' ? 'Passo successivo: Analisi AI' : 'Next Step: AI Analysis'}</h4>
+                <h4 className="text-xs font-semibold text-text-primary">{lang === 'it' ? 'Passo successivo: Note' : 'Next step: Notes'}</h4>
                 <p className="text-[11px] text-text-secondary leading-relaxed mt-0.5">{t('meeting.analyzeDescription')}</p>
               </div>
             </div>
-            <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
-              <Button
-                size="sm"
-                onClick={() => openAnalysisSetup('meeting_default')}
-                isLoading={busyAction === 'meeting_default'}
-                className="flex-1 sm:flex-none shadow-cta"
-              >
-                <Sparkles className="h-4 w-4" aria-hidden="true" />
-                {t('meeting.btnAnalyze')}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => openAnalysisSetup('meeting_deep')}
-                isLoading={busyAction === 'meeting_deep'}
-                className="flex-1 sm:flex-none"
-              >
-                <ListChecks className="h-4 w-4" aria-hidden="true" />
-                {t('meeting.btnDeep')}
-              </Button>
-            </div>
+            <Button
+              size="sm"
+              onClick={() => startPipeline('meeting_default')}
+              isLoading={busyAction === 'meeting_default'}
+              className="shrink-0 w-full sm:w-auto shadow-cta"
+            >
+              <Sparkles className="h-4 w-4" aria-hidden="true" />
+              {lang === 'it' ? 'Genera note' : 'Generate notes'}
+            </Button>
           </div>
         )}
 
@@ -652,7 +659,8 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                       <Button
                         size="sm"
                         variant="secondary"
-                        onClick={openTranscriptionWorkflow}
+                        onClick={startDefaultTranscription}
+                        isLoading={busyAction === 'transcription'}
                         className="mt-4"
                       >
                         {t('meeting.btnTranscribe')}
@@ -690,7 +698,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                           className="h-7 text-xs text-text-muted hover:text-text-primary"
                         >
                           <Sparkles className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
-                          <span>{lang === 'it' ? 'Esegui Analisi' : 'Run Analysis'}</span>
+                          <span>{lang === 'it' ? 'Altre analisi' : 'More analysis'}</span>
                           <ChevronDown className="h-3 w-3" aria-hidden="true" />
                         </Button>
                         {moreOpen && (
@@ -708,12 +716,12 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                               disabled={demoMode || isBusy}
                               onClick={() => {
                                 setMoreOpen(false);
-                                openAnalysisSetup('meeting_default');
+                                startPipeline('meeting_default');
                               }}
                               className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-50"
                             >
                               <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-                              {t('meeting.analyzeDetail')}
+                              {lang === 'it' ? 'Genera note' : 'Generate notes'}
                             </button>
                             <button
                               type="button"
@@ -774,10 +782,11 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                         <Button
                           size="sm"
                           variant="secondary"
-                          onClick={() => openAnalysisSetup('meeting_default')}
+                          onClick={() => startPipeline('meeting_default')}
+                          isLoading={busyAction === 'meeting_default'}
                           className="mt-4"
                         >
-                          {lang === 'it' ? 'Avvia analisi ora' : 'Start analysis now'}
+                          {lang === 'it' ? 'Genera note' : 'Generate notes'}
                         </Button>
                       )}
                     </div>
@@ -887,18 +896,30 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                 {lang === 'it' ? 'Azioni Disponibili' : 'Available Actions'}
               </h4>
               <div className="flex flex-col gap-2">
+                {!meeting.transcription && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={demoMode || isBusy}
+                    onClick={startDefaultTranscription}
+                    className="w-full justify-start text-left text-xs"
+                  >
+                    <FileText className="h-3.5 w-3.5 mr-2 text-text-muted" aria-hidden="true" />
+                    {t('meeting.btnTranscribe')}
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="secondary"
                   disabled={demoMode || isBusy}
                   onClick={() => {
                     setDetailsOpen(false);
-                    openTranscriptionWorkflow();
+                    openAdvancedTranscription();
                   }}
                   className="w-full justify-start text-left text-xs"
                 >
                   <FileText className="h-3.5 w-3.5 mr-2 text-text-muted" aria-hidden="true" />
-                  {t('meeting.btnTranscribe')}
+                  {lang === 'it' ? 'Trascrizione avanzata' : 'Advanced transcription'}
                 </Button>
                 <Button
                   size="sm"
@@ -906,12 +927,12 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                   disabled={!canAnalyze || isBusy}
                   onClick={() => {
                     setDetailsOpen(false);
-                    openAnalysisSetup('meeting_default');
+                    startPipeline('meeting_default');
                   }}
                   className="w-full justify-start text-left text-xs"
                 >
                   <Sparkles className="h-3.5 w-3.5 mr-2 text-accent" aria-hidden="true" />
-                  {t('meeting.btnAnalyze')} (Pipeline rapida)
+                  {lang === 'it' ? 'Genera note' : 'Generate notes'}
                 </Button>
                 <Button
                   size="sm"
