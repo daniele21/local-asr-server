@@ -9,6 +9,7 @@ from local_asr_server.transcription_quality import dedupe_cross_track_segments
 from local_asr_server.asr_models import get_asr_backend
 from local_asr_server.asr_provider import ASR_PROVIDER_LOCAL, public_asr_metadata
 from local_asr_server.speaker_labels import apply_speaker_labels
+from local_asr_server.structured_notes_projection import expand_analysis_runs
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -158,7 +159,9 @@ def _build_projects(app: FastAPI) -> dict:
             scope_id=recording["id"],
             limit=50,
         )
-        canonical_runs = _exclude_incomplete_preparation_runs(current_runs, preparation_jobs)
+        canonical_runs = expand_analysis_runs(
+            _exclude_incomplete_preparation_runs(current_runs, preparation_jobs)
+        )
         latest_analysis = next((run for run in sorted(canonical_runs, key=lambda item: item.get("created_at") or 0, reverse=True) if run.get("status") == "completed"), None)
         legacy_analysis = (
             transcription.get("analysis")
@@ -169,7 +172,7 @@ def _build_projects(app: FastAPI) -> dict:
             "recording": recording,
             "transcription": transcription,
             "analysis": latest_analysis or legacy_analysis,
-            "analysis_runs": sorted(runs, key=lambda item: item.get("created_at") or 0, reverse=True),
+            "analysis_runs": sorted(expand_analysis_runs(runs), key=lambda item: item.get("created_at") or 0, reverse=True),
         })
     items = sorted(projects.values(), key=lambda item: (item["is_unassigned"], item["name"].lower()))
     return {"items": items}
@@ -271,6 +274,7 @@ def _build_meeting(app: FastAPI, recording: dict[str, Any], *, compact: bool = F
             )
         )
     canonical_runs = _exclude_incomplete_preparation_runs(current_runs, related_jobs)
+    expanded_canonical_runs = expand_analysis_runs(canonical_runs)
     jobs = [
         _compact_job(job)
         for job in sorted(
@@ -280,11 +284,11 @@ def _build_meeting(app: FastAPI, recording: dict[str, Any], *, compact: bool = F
         )
     ]
     latest_by_type: dict[str, dict[str, Any]] = {}
-    for run in sorted(canonical_runs, key=lambda item: item.get("created_at") or 0, reverse=True):
+    for run in sorted(expanded_canonical_runs, key=lambda item: item.get("created_at") or 0, reverse=True):
         analysis_type = run.get("analysis_type") or "meeting_brief"
         if analysis_type not in latest_by_type and run.get("status") == "completed":
             latest_by_type[analysis_type] = run
-    public_runs = sorted(runs, key=lambda item: item.get("created_at") or 0, reverse=True)
+    public_runs = sorted(expand_analysis_runs(runs), key=lambda item: item.get("created_at") or 0, reverse=True)
     public_latest = latest_by_type
     if compact:
         public_runs = [_compact_analysis_run(run) for run in public_runs]
