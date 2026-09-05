@@ -1148,7 +1148,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                       </div>
                       {run.error && <div className="mt-1 text-[10px] text-danger">{run.error}</div>}
                     </div>
-                  ))}
+                  ))
                 )}
               </div>
             </div>
