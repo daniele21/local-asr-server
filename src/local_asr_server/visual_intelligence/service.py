@@ -59,6 +59,10 @@ class VisualBackendUnavailable(RuntimeError):
     """Raised after repeated infrastructure failures make more frame attempts wasteful."""
 
 
+class VisualProcessingCancelled(RuntimeError):
+    """Raised between bounded visual work units when the owning job is cancelled."""
+
+
 def calculate_dhash(image_path: Path) -> int:
     """Calculate a 64-bit dHash of the image for similarity checks."""
     return calculate_signature(image_path).global_dhash
@@ -76,6 +80,7 @@ class PostMeetingVisualService:
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
         enabled: bool | None = None,
         routing_mode: str | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> dict[str, Any]:
         settings = load_settings()
         if enabled is not None:
@@ -155,8 +160,10 @@ class PostMeetingVisualService:
                     return self._process_v2(
                         services, recording_id, payload, frames, candidates, routing_summary,
                         model=model, progress_callback=progress_callback, routing_config=routing_config,
-                        routing_artifact=routing_artifact,
+                        routing_artifact=routing_artifact, cancel_requested=cancel_requested,
                     )
+            except VisualProcessingCancelled:
+                raise
             except Exception as exc:
                 routing_error = str(exc)
                 routing_mode = "v1"
@@ -186,6 +193,8 @@ class PostMeetingVisualService:
             last_hash = None
             last_parsed = None
             for i, frame in enumerate(frames):
+                if cancel_requested is not None and cancel_requested():
+                    raise VisualProcessingCancelled("visual_processing_cancelled")
                 is_duplicate = False
                 frame_hash = None
                 try:
@@ -312,6 +321,8 @@ class PostMeetingVisualService:
             )
             payload.setdefault("stats", {})["visual_intelligence"] = summary
             return payload
+        except VisualProcessingCancelled:
+            raise
         except VisualBackendUnavailable as exc:
             preserve_staging = True
             elapsed = time.perf_counter() - started
@@ -391,7 +402,7 @@ class PostMeetingVisualService:
 
     def _process_v2(
         self, services, recording_id, payload, frames, candidates, routing_summary, *, model,
-        progress_callback, routing_config, routing_artifact,
+        progress_callback, routing_config, routing_artifact, cancel_requested=None,
     ):
         settings = load_settings()
         generation_id = f"visual-run-{uuid.uuid4()}"
@@ -456,6 +467,8 @@ class PostMeetingVisualService:
             backend_error_message = "visual_backend_unavailable"
 
             for index, candidate in enumerate(candidates):
+                if cancel_requested is not None and cancel_requested():
+                    raise VisualProcessingCancelled("visual_processing_cancelled")
                 processed_candidates = index + 1
                 frame = frames_by_sequence[candidate.sequence]
                 observation_id = f"visual-{candidate.sequence}-{candidate.task.value}"
@@ -622,7 +635,6 @@ class PostMeetingVisualService:
                             candidate.sequence, candidate.task.value, exc,
                         )
 
-                # Preview generation if enabled
                 if settings.get("visual_debug_previews_enabled", False):
                     from local_asr_server.visual_intelligence.contracts import VISUAL_GENERATION_STAGING_DIR
                     staging_previews_dir = session_dir / VISUAL_GENERATION_STAGING_DIR / generation_id / "previews"
@@ -700,7 +712,6 @@ class PostMeetingVisualService:
                 "prompt_version": TASK_PROMPT_VERSION,
             }
 
-            # Setup inputs config metadata for run.json
             input_fingerprints = {}
             for c in candidates:
                 input_fingerprints[str(c.sequence)] = f"ts={c.timestamp},task={c.task.value}"
@@ -746,6 +757,9 @@ class PostMeetingVisualService:
 
             trace_store.log_event("run_completed", status=status)
             return payload
+        except VisualProcessingCancelled:
+            trace_store.log_event("run_cancelled", processed=processed_candidates, total=len(candidates))
+            raise
         except VisualBackendUnavailable as exc:
             trace_store.log_event("run_failed", error="visual_backend_unavailable", details=str(exc))
             logger.error(
