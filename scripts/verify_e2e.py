@@ -6,7 +6,7 @@ from pathlib import Path
 
 FIDELITY=["host_or_fake","simulated_or_emulated","representative_virtual","representative_physical","target_environment"]
 MODES=["assertions","screenshots","full_media"]
-TRIGGERS={"motion_or_animation","timing_or_progression","navigation_or_transition_sequence","lifecycle_visibility","release_acceptance"}
+TRIGGERS={"material_ui_integration_outcome","motion_or_animation","timing_or_progression","navigation_or_transition_sequence","lifecycle_visibility","release_acceptance"}
 
 def main()->int:
     p=argparse.ArgumentParser(); p.add_argument("--root",default="."); p.add_argument("--template-mode",action="store_true"); a=p.parse_args()
@@ -14,7 +14,7 @@ def main()->int:
     try: data=json.loads((root/".engineering/e2e.json").read_text())
     except Exception as exc: print(f"FAIL: invalid e2e.json: {exc}"); return 1
     if data.get("schema_version")!=1: errors.append("schema_version must be 1")
-    if data.get("contract_version")!="0.2.0": errors.append("contract_version must be 0.2.0")
+    if data.get("contract_version")!="0.2.1": errors.append("contract_version must be 0.2.1")
     app=data.get("applicability",{})
     if app.get("status") not in {"required","recommended","n/a"} or not str(app.get("reason","")).strip(): errors.append("invalid applicability")
     principles=data.get("principles",{})
