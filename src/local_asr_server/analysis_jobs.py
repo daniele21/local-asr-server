@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import threading
 import time
 import uuid
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import HTTPException
 
@@ -17,6 +18,7 @@ from local_asr_server.analysis_templates import (
     template_for_analysis_type,
 )
 from local_asr_server.jobs import JobStore
+from local_asr_server.jobs.models import TERMINAL_JOB_STATUSES
 from local_asr_server.schemas import ANALYSIS_LLM_REQUEST_FIELDS, AnalysisPipelineRequest, AnalysisRequest
 from local_asr_server.services.analysis_service import AnalysisService
 from local_asr_server.settings import load_settings
@@ -30,6 +32,8 @@ from local_asr_server.runtime.workload_arbiter import (
 )
 
 ANALYSIS_JOB_TYPE = "analysis"
+logger = logging.getLogger("uvicorn.error")
+AnalysisTerminalCallback = Callable[[dict[str, Any]], None]
 
 
 class AnalysisJobManager:
@@ -46,7 +50,12 @@ class AnalysisJobManager:
         self._store = store
         self._arbiter = arbiter
 
-    def create(self, body: AnalysisRequest) -> dict[str, Any]:
+    def create(
+        self,
+        body: AnalysisRequest,
+        *,
+        on_terminal: AnalysisTerminalCallback | None = None,
+    ) -> dict[str, Any]:
         body = self._with_recording_transcription(body)
         body = self._with_template_defaults(body)
         job_id = str(uuid.uuid4())
@@ -103,7 +112,11 @@ class AnalysisJobManager:
         )
 
         if self._arbiter is None:
-            threading.Thread(target=self._run, args=(job_id, run_id, body), daemon=True).start()
+            threading.Thread(
+                target=self._run,
+                args=(job_id, run_id, body, on_terminal),
+                daemon=True,
+            ).start()
             return {
                 "job_id": job_id,
                 "analysis_run_id": run_id,
@@ -114,13 +127,13 @@ class AnalysisJobManager:
             self._arbiter.submit(
                 task_id=job_id,
                 workload_type=ANALYSIS_JOB_TYPE,
-                run=lambda: self._run(job_id, run_id, body),
-                on_cancel=lambda _reason: self._mark_cancelled(job_id, run_id),
-                on_reject=lambda reason: self._mark_failed(job_id, run_id, reason),
+                run=lambda: self._run(job_id, run_id, body, on_terminal),
+                on_cancel=lambda _reason: self._cancel_before_start(job_id, run_id, on_terminal),
+                on_reject=lambda reason: self._reject_before_start(job_id, run_id, reason, on_terminal),
             )
             status = "queued"
         except (WorkloadQueueFull, WorkloadArbiterClosed, WorkloadAdmissionRejected) as exc:
-            self._mark_failed(job_id, run_id, str(exc))
+            self._reject_before_start(job_id, run_id, str(exc), on_terminal)
             status = "failed"
         return {
             "job_id": job_id,
@@ -128,7 +141,12 @@ class AnalysisJobManager:
             "status": status,
         }
 
-    def create_pipeline(self, body: AnalysisPipelineRequest) -> dict[str, Any]:
+    def create_pipeline(
+        self,
+        body: AnalysisPipelineRequest,
+        *,
+        on_terminal: AnalysisTerminalCallback | None = None,
+    ) -> dict[str, Any]:
         pipeline = get_pipeline(body.pipeline_id)
         pipeline_run_id = str(uuid.uuid4())
         if body.analysis_types:
@@ -152,7 +170,7 @@ class AnalysisJobManager:
                 period_start=body.period_start,
                 period_end=body.period_end,
             )
-            jobs.append(self.create(request_body))
+            jobs.append(self.create(request_body, on_terminal=on_terminal))
         return {
             "pipeline_run_id": pipeline_run_id,
             "pipeline_id": pipeline.id,
@@ -160,7 +178,47 @@ class AnalysisJobManager:
             "jobs": jobs,
         }
 
-    def _run(self, job_id: str, run_id: str, body: AnalysisRequest) -> None:
+    def cancel(self, job_id: str) -> dict[str, Any] | None:
+        existing = self._store.get(job_id)
+        if existing is None or existing["type"] != ANALYSIS_JOB_TYPE:
+            return existing
+        if existing["status"] in TERMINAL_JOB_STATUSES:
+            return existing
+        requested = self._store.request_cancel(job_id)
+        if self._arbiter is not None:
+            self._arbiter.cancel_pending(job_id)
+        return self._store.get(job_id) or requested
+
+    def pipeline_identity(self, body: AnalysisPipelineRequest) -> dict[str, Any]:
+        """Return the non-secret durable identity of an analysis pipeline request."""
+        pipeline = get_pipeline(body.pipeline_id)
+        if body.analysis_types:
+            templates = [template_for_analysis_type(value) for value in body.analysis_types]
+        else:
+            templates = [get_template(template_id) for template_id in pipeline.template_ids]
+        settings = AnalysisService.settings_with_request_overrides(load_settings(), body)
+        provider = settings.get("llm_provider", "mock")
+        effective_model = self._effective_model(provider, settings)
+        return {
+            "pipeline_id": pipeline.id,
+            "templates": [
+                {
+                    "id": template.id,
+                    "analysis_type": template.analysis_type,
+                    "version": template.version,
+                }
+                for template in templates
+            ],
+            "llm": self._llm_options(settings, provider=provider, model=effective_model),
+        }
+
+    def _run(
+        self,
+        job_id: str,
+        run_id: str,
+        body: AnalysisRequest,
+        on_terminal: AnalysisTerminalCallback | None = None,
+    ) -> None:
         try:
             if self._store.get(job_id) and self._store.get(job_id).get("cancel_requested"):
                 self._mark_cancelled(job_id, run_id)
@@ -188,8 +246,48 @@ class AnalysisJobManager:
             self._mark_failed(job_id, run_id, str(exc.detail))
         except Exception as exc:
             self._mark_failed(job_id, run_id, str(exc))
+        finally:
+            current = self._store.get(job_id)
+            if current and current["status"] in TERMINAL_JOB_STATUSES:
+                self._notify_terminal(job_id, on_terminal)
+
+    def _cancel_before_start(
+        self,
+        job_id: str,
+        run_id: str,
+        on_terminal: AnalysisTerminalCallback | None,
+    ) -> None:
+        self._mark_cancelled(job_id, run_id)
+        self._notify_terminal(job_id, on_terminal)
+
+    def _reject_before_start(
+        self,
+        job_id: str,
+        run_id: str,
+        reason: str,
+        on_terminal: AnalysisTerminalCallback | None,
+    ) -> None:
+        self._mark_failed(job_id, run_id, reason)
+        self._notify_terminal(job_id, on_terminal)
+
+    def _notify_terminal(
+        self,
+        job_id: str,
+        callback: AnalysisTerminalCallback | None,
+    ) -> None:
+        if callback is None:
+            return
+        try:
+            snapshot = self._store.get(job_id)
+            if snapshot is not None:
+                callback(snapshot)
+        except Exception:
+            logger.exception("Analysis terminal callback failed for job %s", job_id)
 
     def _mark_cancelled(self, job_id: str, run_id: str) -> None:
+        current = self._store.get(job_id)
+        if current and current["status"] in TERMINAL_JOB_STATUSES:
+            return
         self._services.catalog.update_analysis_run(
             run_id,
             status="cancelled",
@@ -198,6 +296,9 @@ class AnalysisJobManager:
         self._store.update(job_id, status="cancelled", current_step="cancelled")
 
     def _mark_failed(self, job_id: str, run_id: str, error: str) -> None:
+        current = self._store.get(job_id)
+        if current and current["status"] in TERMINAL_JOB_STATUSES:
+            return
         error = error[:2000]
         self._services.catalog.update_analysis_run(
             run_id,
