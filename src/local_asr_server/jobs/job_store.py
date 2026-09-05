@@ -118,7 +118,6 @@ class JobStore:
             CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
             CREATE INDEX IF NOT EXISTS idx_jobs_scope ON jobs(scope_type, scope_id);
             CREATE INDEX IF NOT EXISTS idx_jobs_type_created ON jobs(type, created_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_jobs_dedupe ON jobs(type, scope_type, scope_id, dedupe_key, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_job_events_job_sequence ON job_events(job_id, sequence);
             CREATE INDEX IF NOT EXISTS idx_job_links_parent_stage ON job_links(parent_job_id, stage, ordinal);
             CREATE INDEX IF NOT EXISTS idx_job_links_child ON job_links(child_job_id);
@@ -126,6 +125,10 @@ class JobStore:
         )
         self._ensure_column(conn, "jobs", "progress_detail_json", "TEXT")
         self._ensure_column(conn, "jobs", "dedupe_key", "TEXT")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_jobs_dedupe "
+            "ON jobs(type, scope_type, scope_id, dedupe_key, created_at DESC)"
+        )
 
     @staticmethod
     def _ensure_column(
