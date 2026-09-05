@@ -58,6 +58,16 @@ class MacOSUIDriverTest(unittest.TestCase):
         with self.assertRaises(self.driver_module.UIAutomationError):
             driver.window_rect(123)
 
+    def test_swift_helper_handles_main_window_and_recording_overlay(self) -> None:
+        source = SWIFT_HELPER.read_text(encoding="utf-8")
+        self.assertIn("private func orderedWindows", source)
+        self.assertIn("private func windowArea", source)
+        self.assertIn("print(windowRect(mainWindow(app)))", source)
+        self.assertIn("for window in orderedWindows(app)", source)
+        self.assertIn("findElementInWindow(window, wanted: wanted)", source)
+        self.assertIn("findElementInApp(app, wanted: wanted)", source)
+        self.assertNotIn("firstWindow", source)
+
     @unittest.skipUnless(platform.system() == "Darwin" and shutil.which("xcrun"), "requires macOS Swift toolchain")
     def test_swift_ax_helper_compiles_on_macos(self) -> None:
         driver = self.driver_module.MacOSUIDriver(source=SWIFT_HELPER)
