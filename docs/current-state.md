@@ -18,23 +18,22 @@ ClosedRoom follows `daniele21/repo-template-sw` **0.9.1** at maturity **L2** wit
 - Canonical target-Mac runner `python3 scripts/real_environment_ui_evidence.py --build`; production signing/notarization, subjective VoiceOver usability and representative MLX/Metal performance remain separate claims.
 - Product/runtime Wave 1 is integrated through PR #25 (`3fa29fb963b49f57cc4cbcce333d5f476f54659b`): Meeting-first setup, bounded recording UI cadence, capture-priority heavy-work admission, cold/on-demand managed LLM startup and simplified Settings.
 - PRS-5 is integrated through PR #26 (`c62882bb17c50288266094db8e64fa2e7067f681`): Meeting Transcribe and Generate Notes are one-action normal workflows; technical overrides remain advanced.
-- PRS-7 is integrated through PR #27 (`c7161a0055804e534f6b9b10169b183bc3c1ff16`): managed LLM/VLM residency releases after a phase and the owned cold sidecar stops after a bounded idle window with stale-timer race protection. Its exact feature HEAD passed INTEGRATION/STRONG including packaged-app smoke.
+- PRS-7 is integrated through PR #27 (`c7161a0055804e534f6b9b10169b183bc3c1ff16`): managed LLM/VLM residency releases after a phase and the owned cold sidecar stops after a bounded idle window with stale-timer race protection.
+- PRS-6 is integrated through PR #28 (`bf4e3596a8cf0a9bd7fc24746dcde258c91ac4df`): screen context is explicit/off-by-default, no VLM runs during recording, and post-meeting analysis enriches the existing transcript through one persisted/cancellable `visual_intelligence` job using bounded `v2` routing and a 2048-work-item ceiling. Exact feature HEAD `5a9013c01c467c8bf5427b337b4d214294b9f798` passed INTEGRATION/STRONG remote preflight run `33958256522`, including frontend checks, the full Python suite, finalized ARM64 `.app` build and packaged-app smoke.
 
 ## Current evidence status
 
 Representative before/after CPU/RSS evidence is still pending, so no performance percentage is claimed. The prior UX simplification still awaits its independent target-Mac evidence lane.
 
-PRS-6 is the active Wave 2 candidate in PR #28. Screen context is explicit/off-by-default in New Meeting; no VLM runs during recording. If frames exist, Meeting offers a secondary post-meeting action that runs one persisted/cancellable `visual_intelligence` job through the existing arbiter, enriches the same transcript in place, uses explicit bounded `v2` routing and caps post-dedupe candidate work at 2048 before VLM inference. Exact feature HEAD `b405b239554cbad73342be53d269f42944f7548d` passed INTEGRATION/STRONG remote preflight run `33953887968`, including repository guards, frontend lint/typecheck, the full Python suite, finalized ARM64 `.app` build and packaged-app lifecycle smoke. Final durable-doc corrections are docs-only and still require exact-head repository/preflight confirmation or valid reusable evidence before merge.
-
 ## Active workstreams
 
 - [`ux-simplification.md`](workstreams/ux-simplification.md): integrated implementation; UX-9 waits on target-Mac evidence.
-- [`product-runtime-simplification.md`](workstreams/product-runtime-simplification.md): PRS-5/7 integrated; PRS-6 executable evidence confirmed and in final documentation convergence; PRS-8/9/evidence remain.
+- [`product-runtime-simplification.md`](workstreams/product-runtime-simplification.md): PRS-5/6/7 integrated; PRS-8/9 and comparable evidence remain before final convergence.
 
 ## Next highest-value work
 
-1. Finish PRS-6 durable-doc alignment and exact-head preflight/reuse, then integrate only if the final PR head remains fully confirmed against current `dev`.
-2. Replace normal processing polling with bounded job events while retaining recovery/reconnect fallback.
-3. Run the audio strategy benchmark before changing dual-track capture/transcription ownership.
-4. Capture comparable resource evidence before setting CPU/RSS targets.
-5. Continue the independent target-Mac UX evidence lane using the canonical runner and exact-artifact reuse.
+1. Replace normal processing polling with bounded job events while retaining recovery/reconnect fallback (PRS-8).
+2. Run the audio strategy benchmark before changing dual-track capture/transcription ownership (PRS-9).
+3. Capture comparable resource evidence before setting CPU/RSS targets.
+4. Continue the independent target-Mac UX evidence lane using the canonical runner and exact-artifact reuse.
+5. Close PRS-10 only after product/runtime behavior, deterministic gates and required real-environment evidence agree.
