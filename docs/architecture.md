@@ -55,7 +55,7 @@ quando selezionati esplicitamente.
 
 | Container | Tecnologia | Responsabilità | Stato posseduto |
 | --- | --- | --- | --- |
-| Frontend | React, TypeScript, Vite | Navigazione, registrazione, configurazione, polling job e rendering workspace | Stato UI temporaneo; demo sintetica in memoria |
+| Frontend | React, TypeScript, Vite | Navigazione, registrazione, configurazione, consumo eventi job e rendering workspace | Stato UI temporaneo; demo sintetica in memoria |
 | API locale | FastAPI, Python | Composition root, autenticazione locale, contratti HTTP e orchestrazione applicativa | Registry dei servizi e token di sessione del processo |
 | Servizi di dominio | Python | Registrazioni, trascrizioni, analisi, settings, runtime, arricchimenti e resource admission | Lock e job attivi in memoria; stato durevole delegato agli store |
 | Catalogo | SQLite WAL | Query su meeting, transcript, run di analisi, job, eventi e cache | `closedroom.db` |
@@ -218,13 +218,15 @@ sequenceDiagram
         AS->>DB: salva cache e analysis_run
     end
     JM->>DB: aggiorna job/eventi
-    UI->>API: polling /v1/jobs/{id}
+    UI->>API: SSE /v1/jobs/{id}/events
 ```
 
 Le pipeline sono insiemi versionati di template. La cache include hash input,
 prompt, provider, modello e opzioni capaci di modificare l'output. Le credenziali
-cloud entrano nella chiave solo sotto forma di hash. Il polling frontend resta
-transitorio: la migrazione verso eventi è posseduta dal workstream PRS-8.
+cloud entrano nella chiave solo sotto forma di hash. Nel normale Meeting gli
+stati attivi sono seguiti tramite eventi persistiti; un GET snapshot viene usato
+solo dopo errore dello stream per riconciliare recovery/reconnect. Il wizard
+tecnico/import mantiene il proprio polling legacy ed è fuori dal golden path.
 
 ## 6. Modello dei dati ad alto livello
 
@@ -628,7 +630,7 @@ introduce un secondo mutex/scheduler.
 `JobStore` persiste:
 
 - stato corrente e progress in `jobs`;
-- timeline append-only in `job_events`;
+- timeline sequenziale bounded in `job_events`, con al massimo 512 eventi per job;
 - payload e risultato JSON;
 - richiesta di cancellazione;
 - timestamp di avvio e completamento.
@@ -636,8 +638,10 @@ introduce un secondo mutex/scheduler.
 Il transcription job pubblica esplicitamente anche `diarizing`,
 `visual_processing` e `audio_intelligence` per i workflow tecnici compatibili.
 Il job `visual_intelligence` on-demand usa lo stesso store e pubblica progress
-bounded del processing v2, così polling ed eventi persistiti descrivono il lavoro
-senza introdurre stato parallelo.
+bounded del processing v2. Quando esiste un `JobStore`, il manager non duplica
+gli eventi persistiti nella queue process-local; quella queue resta solo per il
+fallback senza store. Nel normale Meeting `useMeetingJobEvents` segue lo stream
+SSE persistito e ricarica lo stato canonico al terminale, senza interval polling.
 
 Stati terminali: `completed`, `failed`, `cancelled`, `interrupted`. Una rejection
 di resource policy termina il job prima del workload con reason
@@ -715,7 +719,7 @@ ha mostrato una regressione di ownership degli stream GPU nel worker PyInstaller
 - `analysis_runs`: esecuzioni tipizzate, template, pipeline, output e stato;
 - `analysis_cache`: risultati riutilizzabili per chiave;
 - `jobs`: stato durevole dei task lunghi, incluso `visual_intelligence`;
-- `job_events`: sequenza degli aggiornamenti di ciascun job.
+- `job_events`: sequenza bounded degli aggiornamenti di ciascun job, max 512 per job.
 
 Le modifiche additive allo schema usano `_ensure_column`; non esiste al momento
 un framework di migrazioni versionate separato.
@@ -759,10 +763,12 @@ health, lingua, demo e tour. Le pagine principali sono:
 - `SettingsPage`: preferenze, Advanced processing e Developer/Diagnostics.
 
 `frontend/src/api/apiClient.ts` è il contratto HTTP tipizzato generale;
-`frontend/src/api/visualJobs.ts` possiede start/cancel del job visuale on-demand.
-Le pagine non devono duplicare URL o serializzazione. `useRecorder` orchestra il
-complesso lifecycle di cattura; `useAudioDevices` possiede dispositivi, permission
-e routing. Il meter di recording conserva i valori high-frequency in ref e limita
+`frontend/src/api/visualJobs.ts` possiede start/cancel del job visuale on-demand;
+`frontend/src/api/jobEvents.ts` possiede il follower SSE e il recovery GET, mentre
+`hooks/useMeetingJobEvents.ts` collega i job attivi al normale Meeting. Le pagine
+non devono duplicare URL o serializzazione. `useRecorder` orchestra il complesso
+lifecycle di cattura; `useAudioDevices` possiede dispositivi, permission e routing.
+Il meter di recording conserva i valori high-frequency in ref e limita
 redraw/state updates a una cadenza umana; quando il documento è hidden evita il
 lavoro visuale del meter. I testi vivono in `i18n/locales/it.ts` e `en.ts`.
 
@@ -784,6 +790,7 @@ mano. `static_vanilla_backup/` è una copia legacy, non la superficie runtime.
 - diarizzazione, Qwen e audio intelligence salvano errore/stato ma non invalidano un transcript già valido;
 - il job visuale on-demand rifiuta l'avvio se mancano frame/transcript e un errore del router `v2` esplicito fallisce senza fallback al percorso legacy non bounded;
 - la cancellazione visuale viene osservata fra unità di lavoro bounded;
+- un errore dello stream job nel Meeting provoca una riconciliazione GET e un reconnect ritardato, non il ripristino del polling normale;
 - i checkpoint visuali terminali vengono chiusi senza eliminare i frame;
 - scritture settings e principali JSON di registrazione usano file temporaneo e
   `os.replace`.
@@ -816,7 +823,7 @@ L'osservabilità è locale e orientata al desktop:
 
 - `/health` espone identità, versione, PID e stato bundle;
 - API runtime espongono status, PID, porta, modello caricato ed errori sidecar;
-- `job_events` conserva progress e transizioni, inclusi i job visuali on-demand;
+- `job_events` conserva in modo bounded progress e transizioni, inclusi i job visuali on-demand;
 - `timeline.json`, quality report e warning registrano il lifecycle cattura;
 - log Uvicorn coprono backend e arricchimenti;
 - il sidecar LLM ha un file log dedicato consultabile dalla Settings UI;
@@ -873,7 +880,7 @@ Non sono presenti metriche remote, tracing distribuito o telemetry SaaS.
 - il frontend è una SPA hash-based senza router library dedicata;
 - audio intelligence produce ancora insight mock;
 - la ROI visuale generica resta sperimentale finché non viene validata su Meet, Zoom e Teams; la cadenza 0.5 fps resta soggetta al benchmark F0 prima di qualsiasi semplificazione evidence-led;
-- il progress dei job usa ancora polling frontend; PRS-8 possiede la migrazione a eventi;
+- il wizard tecnico/import `TranscriptionPage` usa ancora polling job; il normale Meeting usa eventi bounded e recovery GET;
 - gli arricchimenti, ASR/VAD, cattura nativa e overlay espongono fallback espliciti, verificati anche dalla `.app`; l'eseguibile congelato inoltra `inspect-meeting` alla CLI senza avviare la shell grafica;
 - la baseline test include casi storicamente non allineati per AudioRouter e directory recording, da distinguere dalle regressioni reali;
 - build, cattura nativa e diarizzazione sono intenzionalmente Apple Silicon/macOS.
@@ -888,6 +895,7 @@ Non sono presenti metriche remote, tracing distribuito o telemetry SaaS.
 | Resource admission / heavy concurrency | `runtime/resource_policy.py`, `runtime/workload_arbiter.py` |
 | Provider ASR | `asr_provider.py`, `asr_models.py` |
 | Workflow trascrizione | `services/transcription_service.py`, `transcription_jobs.py` |
+| Job progress/event history | `jobs/job_store.py`, `transcription_jobs.py`, `frontend/src/api/jobEvents.ts`, `frontend/src/hooks/useMeetingJobEvents.ts` |
 | Job visuale on-demand | `routers/visual_jobs.py`, `transcription_jobs.py`, `TranscriptionStore.replace_visual_intelligence()` |
 | Template/pipeline analisi | `analysis_templates.py`, `analysis_jobs.py` |
 | Provider LLM | `llm.py` |

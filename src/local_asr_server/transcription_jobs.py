@@ -98,7 +98,6 @@ class TranscriptionJobManager:
                 scope_id=job.scope_id,
                 payload=job.payload or {"recording_id": recording_id},
             )
-            job.events.put(job.public())
         else:
             self._emit(job, "queued", 0)
 
@@ -280,8 +279,9 @@ class TranscriptionJobManager:
         job.progress = progress
         job.progress_detail = event_payload
         job.updated_at = time.time()
-        job.events.put(job.public())
-        if self._store is not None:
+        if self._store is None:
+            job.events.put(job.public())
+        else:
             self._store.update(
                 job.id,
                 status=status,

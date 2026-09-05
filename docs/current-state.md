@@ -25,14 +25,16 @@ ClosedRoom follows `daniele21/repo-template-sw` **0.9.1** at maturity **L2** wit
 
 Representative before/after CPU/RSS evidence is still pending, so no performance percentage is claimed. The prior UX simplification still awaits its independent target-Mac evidence lane.
 
+PRS-8 is the active Wave 2 integration candidate in PR #30. Normal Meeting processing follows persisted SSE job events instead of the 2.5-second refresh loop; terminal events reload canonical Meeting state and a GET snapshot is used only after stream failure for recovery/reconnect. Persisted `job_events` are capped at 512 events per job, and persisted managers no longer duplicate those events into an undrained in-memory queue. The technical Advanced/import transcription wizard remains outside this slice. Exact-head source/package validation is still pending.
+
 ## Active workstreams
 
 - [`ux-simplification.md`](workstreams/ux-simplification.md): integrated implementation; UX-9 waits on target-Mac evidence.
-- [`product-runtime-simplification.md`](workstreams/product-runtime-simplification.md): PRS-5/6/7 integrated; PRS-8/9 and comparable evidence remain before final convergence.
+- [`product-runtime-simplification.md`](workstreams/product-runtime-simplification.md): PRS-5/6/7 integrated; PRS-8 is the active integration candidate; PRS-9 and comparable evidence remain before final convergence.
 
 ## Next highest-value work
 
-1. Replace normal processing polling with bounded job events while retaining recovery/reconnect fallback (PRS-8).
+1. Validate and integrate PRS-8 only if exact-head STRONG gates remain green against current `dev`.
 2. Run the audio strategy benchmark before changing dual-track capture/transcription ownership (PRS-9).
 3. Capture comparable resource evidence before setting CPU/RSS targets.
 4. Continue the independent target-Mac UX evidence lane using the canonical runner and exact-artifact reuse.

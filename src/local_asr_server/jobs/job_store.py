@@ -10,6 +10,9 @@ from typing import Any
 from local_asr_server.catalog import CatalogStore
 
 
+DEFAULT_JOB_EVENT_CAPACITY = 512
+
+
 def _json_dump(value: Any) -> str | None:
     if value is None:
         return None
@@ -26,10 +29,18 @@ def _json_load(value: str | None, default: Any) -> Any:
 
 
 class JobStore:
-    """SQLite-backed store for long-running ClosedRoom jobs and events."""
+    """SQLite-backed store for long-running ClosedRoom jobs and bounded events."""
 
-    def __init__(self, db_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        db_path: Path | None = None,
+        *,
+        event_capacity: int = DEFAULT_JOB_EVENT_CAPACITY,
+    ) -> None:
+        if event_capacity < 1:
+            raise ValueError("event_capacity must be >= 1")
         self.db_path = db_path or CatalogStore.default_db_path()
+        self.event_capacity = event_capacity
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self.connection() as conn:
             self._init_db(conn)
@@ -289,6 +300,7 @@ class JobStore:
             "SELECT COALESCE(MAX(sequence), 0) + 1 AS next_sequence FROM job_events WHERE job_id = ?",
             (job_id,),
         ).fetchone()
+        next_sequence = int(row["next_sequence"])
         conn.execute(
             """
             INSERT INTO job_events (
@@ -297,7 +309,7 @@ class JobStore:
             """,
             (
                 job_id,
-                int(row["next_sequence"]),
+                next_sequence,
                 status,
                 current_step,
                 progress,
@@ -305,6 +317,10 @@ class JobStore:
                 _json_dump(payload),
                 time.time(),
             ),
+        )
+        conn.execute(
+            "DELETE FROM job_events WHERE job_id = ? AND sequence <= ?",
+            (job_id, next_sequence - self.event_capacity),
         )
 
     def _row_to_job(self, row: sqlite3.Row) -> dict[str, Any]:
