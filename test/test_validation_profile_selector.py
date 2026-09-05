@@ -20,6 +20,22 @@ class ValidationProfileSelectorTests(unittest.TestCase):
     def test_ordinary_frontend_change_is_scoped(self):
         result = selector.select_profile(["frontend/src/pages/SettingsPage.tsx"])
         self.assertEqual(result["profile"], "scoped")
+        self.assertNotIn("browser-e2e", result["required_gates"])
+
+    def test_saved_meeting_ui_change_is_scoped_with_browser_e2e(self):
+        result = selector.select_profile(["frontend/src/pages/MeetingDetailPage.tsx"])
+        self.assertEqual(result["profile"], "scoped")
+        self.assertIn("meeting_ui_integration", result["risk_dimensions"])
+        self.assertIn("browser-e2e", result["required_gates"])
+
+    def test_saved_meeting_browser_harness_selects_its_own_gate(self):
+        result = selector.select_profile(["scripts/browser_meeting_ui_e2e.mjs"])
+        self.assertEqual(result["profile"], "scoped")
+        self.assertIn("browser-e2e", result["required_gates"])
+
+    def test_browser_e2e_is_deferred_during_iteration(self):
+        result = selector.select_profile(["frontend/src/pages/MeetingDetailPage.tsx"], stage="iteration")
+        self.assertEqual(result["required_gates"], ["governance"])
 
     def test_runtime_change_is_strong(self):
         result = selector.select_profile(["src/local_asr_server/runtime/service_manager.py"])

@@ -33,6 +33,12 @@ STRONG_PREFIXES = (
     "src/local_asr_server/services/", "src/local_asr_server/speaker_",
     "src/local_asr_server/visual_intelligence/",
 )
+MEETING_BROWSER_E2E_EXACT = {
+    "frontend/src/pages/MeetingDetailPage.tsx",
+    "frontend/src/hooks/useMeetingJobEvents.ts",
+    "frontend/src/hooks/useVisualIntelligence.ts",
+    "scripts/browser_meeting_ui_e2e.mjs",
+}
 LEAN_EXACT = {
     ".editorconfig", ".gitignore", ".github/pull_request_template.md",
     "AGENTS.md", "CONTRIBUTING.md", "LICENSE", "README.md", "SECURITY.md",
@@ -62,6 +68,8 @@ def classify_path(path: str) -> tuple[str, str, str]:
         return "full", "global_validation_build", "validation/build/dependency machinery changed"
     if normalized in STRONG_EXACT or normalized.startswith(STRONG_PREFIXES):
         return "strong", "runtime_native_persistence_e2e", "runtime/native/persistence/E2E boundary changed"
+    if normalized in MEETING_BROWSER_E2E_EXACT:
+        return "scoped", "meeting_ui_integration", "saved-Meeting browser journey behavior changed"
     if normalized in LEAN_EXACT or normalized.startswith(LEAN_PREFIXES):
         return "lean", "governance", "documentation/governance-only path"
     if normalized.startswith(SCOPED_PREFIXES):
@@ -75,6 +83,8 @@ def gates_for(profile: str, risks: list[str], stage: str) -> list[str]:
         return gates
     if profile != "lean":
         gates.append("source-tests")
+    if "meeting_ui_integration" in risks:
+        gates.append("browser-e2e")
     if profile in {"strong", "full"} or "runtime_native_persistence_e2e" in risks:
         gates.append("packaged-app")
     if stage == "release":

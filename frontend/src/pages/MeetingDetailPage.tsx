@@ -44,6 +44,7 @@ interface MeetingDetailPageProps {
 }
 
 type MeetingTab = 'transcript' | 'analysis' | 'speakers';
+type VisualFramesState = 'idle' | 'loading' | 'ready' | 'error';
 
 const activeJobStatuses = new Set(['queued', 'running', 'waiting_for_service', 'retrying', 'cancelling']);
 const meetingTabs: MeetingTab[] = ['transcript', 'analysis', 'speakers'];
@@ -72,7 +73,11 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
   const { t, lang } = useTranslation();
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [diagnosticReport, setDiagnosticReport] = useState<MeetingDiagnostics | null>(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
   const [visualFrameCount, setVisualFrameCount] = useState(0);
+  const [visualFramesState, setVisualFramesState] = useState<VisualFramesState>('idle');
+  const [visualFramesError, setVisualFramesError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [selectedAnalysisType, setSelectedAnalysisType] = useState('meeting_brief');
@@ -88,6 +93,11 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
   const tabListRef = useRef<HTMLDivElement | null>(null);
   const analysisMenuRef = useRef<HTMLDivElement | null>(null);
   const analysisMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const loadGenerationRef = useRef(0);
+  const loadInFlightRef = useRef<{ key: string; generation: number; promise: Promise<void> } | null>(null);
+  const loadQueuedRef = useRef(false);
+  const diagnosticsGenerationRef = useRef(0);
+  const visualFramesGenerationRef = useRef(0);
 
   const handleTimestampClick = (time: number) => {
     setShowAudioPlayer(true);
@@ -100,48 +110,133 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
   };
   const visualEnabled = meeting?.transcription?.stats?.visual_intelligence?.version === 2;
   const { data: visualData, loading: visualLoading, error: visualError } = useVisualIntelligence(
-    demoMode ? null : recordingId, visualEnabled,
+    demoMode ? null : recordingId, visualEnabled && activeTab === 'analysis',
   );
 
-  const load = async () => {
-    if (!recordingId) return;
-    try {
-      setError(null);
-      let data: Meeting;
-      if (demoMode) {
-        const demoMeetings = getDemoMeetings(lang);
-        const matched = demoMeetings.find((m) => m.id === recordingId);
-        if (!matched) {
-          throw new Error(t('meeting.errorNotFound'));
+  const load = () => {
+    if (!recordingId) return Promise.resolve();
+    const key = `${recordingId}:${demoMode ? 'demo' : 'live'}:${lang}`;
+    const activeLoad = loadInFlightRef.current;
+    if (activeLoad?.key === key) {
+      loadQueuedRef.current = true;
+      return activeLoad.promise;
+    }
+
+    const generation = ++loadGenerationRef.current;
+    loadQueuedRef.current = false;
+    const promise = (async () => {
+      try {
+        setError(null);
+        let data: Meeting;
+        if (demoMode) {
+          const demoMeetings = getDemoMeetings(lang);
+          const matched = demoMeetings.find((m) => m.id === recordingId);
+          if (!matched) {
+            throw new Error(t('meeting.errorNotFound'));
+          }
+          data = matched;
+        } else {
+          data = await ApiClient.getMeeting(recordingId);
         }
-        data = matched;
-        setDiagnosticReport(null);
-        setVisualFrameCount(0);
-      } else {
-        const [meetingData, diagnosticsData, visualFrames] = await Promise.all([
-          ApiClient.getMeeting(recordingId),
-          ApiClient.getMeetingDiagnostics(recordingId),
-          ApiClient.recordingVisualFrames(recordingId),
-        ]);
-        data = meetingData;
-        setDiagnosticReport(diagnosticsData);
-        setVisualFrameCount(visualFrames.total || 0);
+        if (generation !== loadGenerationRef.current) return;
+        setMeeting(data);
+        const availableTypes = Object.keys(data.latest_analysis || {});
+        if (availableTypes.length > 0 && !data.latest_analysis[selectedAnalysisType]) {
+          setSelectedAnalysisType(availableTypes[0]);
+        }
+      } catch (err: any) {
+        if (generation !== loadGenerationRef.current) return;
+        setError(err?.message || t('meeting.errorNotAvailable'));
+      } finally {
+        if (generation === loadGenerationRef.current) {
+          setLoading(false);
+        }
       }
-      setMeeting(data);
-      const availableTypes = Object.keys(data.latest_analysis || {});
-      if (availableTypes.length > 0 && !data.latest_analysis[selectedAnalysisType]) {
-        setSelectedAnalysisType(availableTypes[0]);
+    })().finally(() => {
+      if (loadInFlightRef.current?.generation !== generation) return;
+      loadInFlightRef.current = null;
+      if (loadQueuedRef.current) {
+        loadQueuedRef.current = false;
+        void load();
       }
+    });
+    loadInFlightRef.current = { key, generation, promise };
+    return promise;
+  };
+
+  const loadDiagnostics = async () => {
+    if (!recordingId || demoMode) return;
+    const generation = ++diagnosticsGenerationRef.current;
+    setDiagnosticsLoading(true);
+    setDiagnosticsError(null);
+    try {
+      const report = await ApiClient.getMeetingDiagnostics(recordingId);
+      if (generation !== diagnosticsGenerationRef.current) return;
+      setDiagnosticReport(report);
     } catch (err: any) {
-      setError(err?.message || t('meeting.errorNotAvailable'));
+      if (generation !== diagnosticsGenerationRef.current) return;
+      setDiagnosticsError(
+        err?.message || (lang === 'it' ? 'Diagnostica dettagliata non disponibile' : 'Detailed diagnostics unavailable'),
+      );
     } finally {
-      setLoading(false);
+      if (generation === diagnosticsGenerationRef.current) {
+        setDiagnosticsLoading(false);
+      }
+    }
+  };
+
+  const loadVisualFrames = async () => {
+    if (!recordingId || demoMode) return;
+    const generation = ++visualFramesGenerationRef.current;
+    setVisualFramesState('loading');
+    setVisualFramesError(null);
+    try {
+      const visualFrames = await ApiClient.recordingVisualFrames(recordingId);
+      if (generation !== visualFramesGenerationRef.current) return;
+      setVisualFrameCount(visualFrames.total || 0);
+      setVisualFramesState('ready');
+    } catch (err: any) {
+      if (generation !== visualFramesGenerationRef.current) return;
+      setVisualFramesError(
+        err?.message || (lang === 'it' ? 'Contesto schermo non disponibile' : 'Screen context unavailable'),
+      );
+      setVisualFramesState('error');
     }
   };
 
   useEffect(() => {
-    load();
+    setLoading(true);
+    setMeeting(null);
+    setDiagnosticReport(null);
+    setDiagnosticsLoading(false);
+    setDiagnosticsError(null);
+    setVisualFrameCount(0);
+    setVisualFramesState('idle');
+    setVisualFramesError(null);
+    void load();
+    return () => {
+      loadGenerationRef.current += 1;
+      diagnosticsGenerationRef.current += 1;
+      visualFramesGenerationRef.current += 1;
+    };
   }, [recordingId, demoMode, lang]);
+
+  useEffect(() => {
+    if (!detailsOpen || !recordingId || demoMode || diagnosticReport || diagnosticsLoading || diagnosticsError) return;
+    void loadDiagnostics();
+  }, [detailsOpen, recordingId, demoMode, diagnosticReport, diagnosticsLoading, diagnosticsError]);
+
+  useEffect(() => {
+    if (
+      activeTab !== 'analysis'
+      || !recordingId
+      || demoMode
+      || !meeting?.transcription
+      || visualEnabled
+      || visualFramesState !== 'idle'
+    ) return;
+    void loadVisualFrames();
+  }, [activeTab, recordingId, demoMode, meeting?.transcription?.id, visualEnabled, visualFramesState]);
 
   const activeJobs = useMemo(
     () => (meeting?.jobs || []).filter((job) => activeJobStatuses.has(job.status)),
@@ -532,7 +627,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
           </div>
         )}
 
-        {!isBusy && meeting.transcription && visualFrameCount > 0 && !visualEnabled && (
+        {activeTab === 'analysis' && !isBusy && meeting.transcription && visualFrameCount > 0 && !visualEnabled && (
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-4 py-3 rounded-xl border border-border-subtle bg-bg-surface/30">
             <div className="flex items-start gap-2.5 min-w-0">
               <Sparkles className="h-4 w-4 text-text-muted shrink-0 mt-0.5" aria-hidden="true" />
@@ -556,6 +651,20 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
             >
               <Sparkles className="h-4 w-4" aria-hidden="true" />
               {lang === 'it' ? 'Analizza contesto schermo' : 'Analyze screen context'}
+            </Button>
+          </div>
+        )}
+
+        {activeTab === 'analysis' && meeting.transcription && !visualEnabled && visualFramesState === 'error' && (
+          <div className="flex flex-col gap-2 rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-xs text-text-secondary sm:flex-row sm:items-center sm:justify-between" role="status">
+            <div>
+              <p className="font-semibold text-text-primary">
+                {lang === 'it' ? 'Contesto schermo non disponibile' : 'Screen context unavailable'}
+              </p>
+              <p className="mt-0.5 text-text-muted">{visualFramesError}</p>
+            </div>
+            <Button size="sm" variant="ghost" onClick={loadVisualFrames}>
+              {lang === 'it' ? 'Riprova' : 'Retry'}
             </Button>
           </div>
         )}
@@ -934,6 +1043,25 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                 ) : (
                   <p className="text-xs text-text-muted">{t('meeting.noSpeakerAttribution')}</p>
                 )}
+              </div>
+            )}
+
+            {diagnosticsLoading && (
+              <div className="flex items-center gap-2 rounded-xl border border-border-subtle bg-bg-surface px-4 py-3 text-xs text-text-muted" role="status">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                <span>{lang === 'it' ? 'Caricamento diagnostica dettagliata…' : 'Loading detailed diagnostics…'}</span>
+              </div>
+            )}
+
+            {diagnosticsError && (
+              <div className="rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-xs text-text-secondary" role="status">
+                <p className="font-semibold text-text-primary">
+                  {lang === 'it' ? 'Diagnostica dettagliata non disponibile' : 'Detailed diagnostics unavailable'}
+                </p>
+                <p className="mt-1 text-text-muted">{diagnosticsError}</p>
+                <Button size="sm" variant="ghost" onClick={loadDiagnostics} className="mt-2">
+                  {lang === 'it' ? 'Riprova' : 'Retry'}
+                </Button>
               </div>
             )}
 
