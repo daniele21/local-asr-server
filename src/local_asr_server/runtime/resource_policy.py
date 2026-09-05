@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Mapping
 
 
 class ResourcePolicyBlocked(RuntimeError):
@@ -10,6 +10,41 @@ class ResourcePolicyBlocked(RuntimeError):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
+
+
+def recording_has_active_capture(recording: Mapping[str, object] | None) -> bool:
+    """Distinguish an actual capture from a merely prepared recording.
+
+    ``RecordingStore.active_recording()`` intentionally powers UI/recovery and
+    therefore returns a recording as soon as its durable state is ``recording``.
+    Resource admission needs the narrower signal: native capture marks
+    ``capture_status=recording`` and browser capture proves activity once audio
+    chunks arrive. Older persisted metadata without ``capture_status`` remains
+    fail-safe and is treated as active while its recording state is active.
+    """
+    if recording is None:
+        return False
+
+    capture_status = recording.get("capture_status")
+    if capture_status == "recording":
+        return True
+
+    chunk_count = recording.get("chunk_count")
+    if isinstance(chunk_count, int) and chunk_count > 0:
+        return True
+
+    tracks = recording.get("audio_tracks")
+    if isinstance(tracks, list):
+        for track in tracks:
+            if not isinstance(track, Mapping):
+                continue
+            track_chunks = track.get("chunk_count")
+            if isinstance(track_chunks, int) and track_chunks > 0:
+                return True
+
+    if capture_status is None:
+        return recording.get("status") == "recording"
+    return False
 
 
 @dataclass(frozen=True, slots=True)
