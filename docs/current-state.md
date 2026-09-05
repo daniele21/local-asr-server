@@ -34,6 +34,7 @@ Dual-track audio remains canonical on `dev`. The PRS-9 target-Mac benchmark will
 
 ## Active workstreams
 
+- [`meeting-value-efficiency.md`](workstreams/meeting-value-efficiency.md): planned PRS-11..18 follow-up; begin with independent Meeting loading, then recoverable one-action notes. No new implementation or measured gains claimed; PRS-10 closure remains bounded.
 - [`product-runtime-simplification.md`](workstreams/product-runtime-simplification.md): PRS-5/6/7/8 and PRS-9 tooling integrated; PRS-10 automated convergence can proceed on `dev`. Residual target-Mac evidence is deferred to release.
 - [`ux-simplification.md`](workstreams/ux-simplification.md): implementation and deterministic automation are integrated; target-Mac FULL_MEDIA confirmation is a release gate rather than a development-branch blocker.
 
