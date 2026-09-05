@@ -31,6 +31,7 @@ import { cn } from '../utils/cn';
 import { formatJobProgress } from '../utils/jobs';
 import { VisualIntelligencePanel } from '../components/meeting/VisualIntelligencePanel';
 import { VisualDebugPanel } from '../components/meeting/VisualDebugPanel';
+import { useMeetingJobEvents } from '../hooks/useMeetingJobEvents';
 import { useVisualIntelligence } from '../hooks/useVisualIntelligence';
 import { recordingTranscriptionRoute } from '../utils/transcriptionRoute';
 import { SpeakerDiarizationEditor } from '../components/meeting/SpeakerDiarizationEditor';
@@ -151,13 +152,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
     || activeJobs.length > 0
     || (meeting?.analysis_runs || []).some((run) => activeJobStatuses.has(run.status));
 
-  useEffect(() => {
-    if (!meeting) return;
-    const hasActiveRun = meeting.analysis_runs.some((run) => activeJobStatuses.has(run.status));
-    if (!hasActiveRun && activeJobs.length === 0) return;
-    const timer = window.setInterval(load, 2500);
-    return () => window.clearInterval(timer);
-  }, [meeting?.id, activeJobs.length, meeting?.analysis_runs.length]);
+  useMeetingJobEvents(demoMode ? null : meeting, setMeeting, load);
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -1025,7 +1020,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                       </div>
                       {run.error && <div className="mt-1 text-[10px] text-danger">{run.error}</div>}
                     </div>
-                  ))
+                  ))}
                 )}
               </div>
             </div>
