@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from local_asr_server.runtime.resource_policy import ResourcePolicy, ResourcePolicyBlocked
+from local_asr_server.runtime.resource_policy import (
+    ResourcePolicy,
+    ResourcePolicyBlocked,
+    recording_has_active_capture,
+)
 
 
 class ResourcePolicyTests(unittest.TestCase):
@@ -35,6 +39,38 @@ class ResourcePolicyTests(unittest.TestCase):
             policy.assert_heavy_work_admissible("vision")
         active = False
         policy.assert_heavy_work_admissible("vision")
+
+    def test_prepared_recording_is_not_treated_as_active_capture(self) -> None:
+        self.assertFalse(recording_has_active_capture({
+            "status": "recording",
+            "capture_status": "idle",
+            "chunk_count": 0,
+            "audio_tracks": [{"id": "mic", "chunk_count": 0}],
+        }))
+
+    def test_native_and_browser_capture_signals_are_active(self) -> None:
+        self.assertTrue(recording_has_active_capture({
+            "status": "recording",
+            "capture_status": "recording",
+            "chunk_count": 0,
+        }))
+        self.assertTrue(recording_has_active_capture({
+            "status": "recording",
+            "capture_status": "idle",
+            "chunk_count": 1,
+        }))
+        self.assertTrue(recording_has_active_capture({
+            "status": "recording",
+            "capture_status": "idle",
+            "chunk_count": 0,
+            "audio_tracks": [{"id": "system", "chunk_count": 1}],
+        }))
+
+    def test_legacy_recording_metadata_remains_fail_safe(self) -> None:
+        self.assertTrue(recording_has_active_capture({
+            "status": "recording",
+            "chunk_count": 0,
+        }))
 
     def test_rejects_unknown_profile(self) -> None:
         with self.assertRaises(ValueError):
