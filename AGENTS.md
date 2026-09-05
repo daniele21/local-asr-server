@@ -18,11 +18,11 @@ API -> `server.py`, routers/schemas/services. Persistence -> recordings/catalog/
 
 ## Delivery model
 
-ClosedRoom follows repo-template-sw **0.9.1**.
+ClosedRoom follows repo-template-sw **0.9.2**.
 
 - `ITERATION`: default while implementation is changing. Use focused owner-local checks; durable docs/exact-head/preflight are not required after every edit.
-- `INTEGRATION`: a coherent observable outcome is ready to converge. Exact head, complete diff, affected durable docs and required risk gates must be current.
-- `RELEASE`: FULL validation plus release-critical artifact/E2E and residual environment evidence.
+- `INTEGRATION`: a coherent observable outcome is ready to converge into `dev`. Exact head, complete diff, affected durable docs and required automated risk/E2E gates must be current. Residual `REAL_ENVIRONMENT` evidence is declared and deferred; it does not block a PR into `dev`.
+- `RELEASE`: promotion is `dev -> main`. FULL validation plus release-critical artifact/E2E and every applicable blocking `REAL_ENVIRONMENT` confirmation are required before release readiness.
 
 The selector maps **risk dimensions -> required gates -> LEAN/SCOPED/STRONG/FULL summary**. Profiles are shorthand, not the source of truth.
 
@@ -34,7 +34,9 @@ Parallel technical work should converge early around vertical outcomes. Stacked 
 
 Successful integration evidence is reusable. Before merge use exact-head identity. After a content-preserving merge to `dev`, the workflow may reuse evidence only when Git tree, prior target/base, gates and profile are equivalent. Direct pushes without trusted evidence validate normally. Release remains FULL and does not silently inherit integration proof.
 
-E2E UI evidence is risk-based: `ASSERTIONS`, `SCREENSHOTS`, `FULL_MEDIA`. The real meeting-recording UI remains `FULL_MEDIA` because timing/lifecycle/native capture sequence is part of the claim. Hosted macOS does not prove real TCC, physical audio or interactive target-Mac behavior; `python3 scripts/real_environment_ui_evidence.py --build` owns that residual evidence.
+For PRs targeting `dev`, satisfy affected deterministic and automated E2E gates only. `target-macos-real` must not be introduced as an integration blocker. Any genuine TCC, physical-audio, representative MLX/Metal or interactive target-Mac gap is reported as `DEFERRED_TO_RELEASE`.
+
+For `dev -> main`, applicable target-environment evidence is blocking. E2E UI evidence remains risk-based: `ASSERTIONS`, `SCREENSHOTS`, `FULL_MEDIA`; material UI/UX integration journeys use `FULL_MEDIA`, while incidental UI may remain assertion-only. Hosted macOS does not prove real TCC, physical audio or interactive target-Mac behavior; `python3 scripts/real_environment_ui_evidence.py --build` owns that residual release evidence.
 
 ## Documentation
 
