@@ -134,11 +134,13 @@ def create_app(
         llm_status = runtime_services.llm_status()
         llm_mode = llm_status.get("mode", "disabled")
         
+        # Color formatting
         GREEN = "\033[92m"
         CYAN = "\033[96m"
         BOLD = "\033[1m"
         RESET = "\033[0m"
 
+        # Show ClosedRoom Web UI URL
         print(f"\n{BOLD}{GREEN}[★] ClosedRoom Web UI: {RESET}{BOLD}http://127.0.0.1:1236/{RESET}\n")
 
         if llm_mode == "auto":
@@ -173,8 +175,10 @@ def create_app(
     services.analysis_jobs = AnalysisJobManager(services, job_store, arbiter=heavy_workloads)
     install_compatibility_aliases(app, services)
 
+    # Clean up any orphan aggregate devices from previous runs/crashes
     AudioRouter.cleanup_orphans()
 
+    # Set up static files serving — resolves correctly in both dev and bundle.
     static_dir = get_static_dir()
     static_dir.mkdir(exist_ok=True)
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
@@ -208,6 +212,7 @@ def create_app(
             headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
         )
 
+    # Include routers
     app.include_router(analysis.router)
     app.include_router(demo.router)
     app.include_router(recordings.router)
@@ -217,6 +222,7 @@ def create_app(
     app.include_router(visual_jobs.router)
     app.include_router(workspace.router)
 
+    # Mount root static files at the end so it doesn't override API routes
     app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="root_static")
 
     @app.on_event("shutdown")
@@ -229,4 +235,5 @@ def create_app(
     return app
 
 
+# Exposed for uvicorn --reload import string loading
 app = create_app()
