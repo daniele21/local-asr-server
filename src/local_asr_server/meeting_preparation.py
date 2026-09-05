@@ -163,6 +163,7 @@ class MeetingPreparationManager:
                 parent["id"], child["id"], stage="transcription", ordinal=0,
             )
             self._merge_result(parent["id"], transcription_job_id=child["id"])
+            self._cancel_child_if_parent_cancelled(parent["id"], child)
         except Exception as exc:
             self._fail_parent(parent["id"], f"Unable to start transcription: {exc}")
         return self.services.jobs.get(parent["id"]) or parent
@@ -180,16 +181,7 @@ class MeetingPreparationManager:
             if child["status"] in TERMINAL_JOB_STATUSES:
                 continue
             active_children.append(child)
-            if child["type"] == "analysis":
-                self.services.analysis_jobs.cancel(child["id"])
-            elif child["type"] in {
-                TRANSCRIPTION_JOB_TYPE,
-                DIARIZATION_JOB_TYPE,
-                VISUAL_INTELLIGENCE_JOB_TYPE,
-            }:
-                self.services.transcription_jobs.cancel(child["id"])
-            else:
-                self.services.jobs.request_cancel(child["id"])
+            self._cancel_child(child)
 
         if not active_children:
             self.services.jobs.update(
@@ -200,6 +192,32 @@ class MeetingPreparationManager:
                 cancel_requested=True,
             )
         return self.services.jobs.get(parent_job_id)
+
+    def _cancel_child(self, child: dict[str, Any]) -> None:
+        if child["status"] in TERMINAL_JOB_STATUSES:
+            return
+        if child["type"] == "analysis":
+            self.services.analysis_jobs.cancel(child["id"])
+        elif child["type"] in {
+            TRANSCRIPTION_JOB_TYPE,
+            DIARIZATION_JOB_TYPE,
+            VISUAL_INTELLIGENCE_JOB_TYPE,
+        }:
+            self.services.transcription_jobs.cancel(child["id"])
+        else:
+            self.services.jobs.request_cancel(child["id"])
+
+    def _cancel_child_if_parent_cancelled(
+        self,
+        parent_job_id: str,
+        child: dict[str, Any],
+    ) -> None:
+        parent = self.services.jobs.get(parent_job_id)
+        if parent is None:
+            return
+        if parent.get("cancel_requested") or parent["status"] == "cancelled":
+            current_child = self.services.jobs.get(child["id"]) or child
+            self._cancel_child(current_child)
 
     def _on_transcription_terminal(
         self,
@@ -286,6 +304,12 @@ class MeetingPreparationManager:
                 self.services.jobs.link_child(
                     parent_job_id, child_id, stage="analysis", ordinal=index,
                 )
+                child_snapshot = self.services.jobs.get(child_id) or {
+                    "id": child_id,
+                    "type": "analysis",
+                    "status": child.get("status") or "queued",
+                }
+                self._cancel_child_if_parent_cancelled(parent_job_id, child_snapshot)
             self._merge_result(
                 parent_job_id,
                 pipeline_run_id=pipeline.get("pipeline_run_id"),
