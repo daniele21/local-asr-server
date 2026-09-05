@@ -18,6 +18,7 @@ from local_asr_server.runtime.workload_arbiter import (
 
 TRANSCRIPTION_JOB_TYPE = "transcription"
 DIARIZATION_JOB_TYPE = "diarization"
+VISUAL_INTELLIGENCE_JOB_TYPE = "visual_intelligence"
 
 
 @dataclass
