@@ -16,6 +16,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { ApiClient, AnalysisRun, Meeting, MeetingDiagnostics } from '../api/apiClient';
+import { createVisualIntelligenceJob, cancelVisualIntelligenceJob } from '../api/visualJobs';
 import { ANALYSIS_TYPE_LABELS, ANALYSIS_TYPE_ORDER } from '../api/config';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
@@ -70,6 +71,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
   const { t, lang } = useTranslation();
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [diagnosticReport, setDiagnosticReport] = useState<MeetingDiagnostics | null>(null);
+  const [visualFrameCount, setVisualFrameCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [selectedAnalysisType, setSelectedAnalysisType] = useState('meeting_brief');
@@ -113,13 +115,16 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
         }
         data = matched;
         setDiagnosticReport(null);
+        setVisualFrameCount(0);
       } else {
-        const [meetingData, diagnosticsData] = await Promise.all([
+        const [meetingData, diagnosticsData, visualFrames] = await Promise.all([
           ApiClient.getMeeting(recordingId),
           ApiClient.getMeetingDiagnostics(recordingId),
+          ApiClient.recordingVisualFrames(recordingId),
         ]);
         data = meetingData;
         setDiagnosticReport(diagnosticsData);
+        setVisualFrameCount(visualFrames.total || 0);
       }
       setMeeting(data);
       const availableTypes = Object.keys(data.latest_analysis || {});
@@ -188,6 +193,20 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
     }
   };
 
+  const startVisualContextAnalysis = async () => {
+    if (!meeting?.transcription || demoMode || isBusy || visualFrameCount <= 0) return;
+    setBusyAction('visual_intelligence');
+    setError(null);
+    try {
+      await createVisualIntelligenceJob(meeting.id);
+      await load();
+    } catch (err: any) {
+      setError(err?.message || (lang === 'it' ? 'Impossibile analizzare il contesto schermo' : 'Failed to analyze screen context'));
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
   const openAnalysisSetup = (pipelineId = 'meeting_default') => {
     setAnalysisPipelineTarget(pipelineId);
     setAnalysisSetupOpen(true);
@@ -212,10 +231,14 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
     }
   };
 
-  const handleCancelJob = async (jobId: string) => {
+  const handleCancelJob = async (jobId: string, jobType?: string) => {
     if (demoMode) return;
     try {
-      await ApiClient.cancelJob(jobId);
+      if (jobType === 'visual_intelligence') {
+        await cancelVisualIntelligenceJob(jobId);
+      } else {
+        await ApiClient.cancelJob(jobId);
+      }
       load();
     } catch (err: any) {
       setError(err?.message || (lang === 'it' ? 'Impossibile annullare il job' : 'Failed to cancel job'));
@@ -439,7 +462,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                   <span className="font-medium text-text-primary">{job.type}: {formatJobProgress(job, t)}</span>
                   <button
                     type="button"
-                    onClick={() => handleCancelJob(job.id)}
+                    onClick={() => handleCancelJob(job.id, job.type)}
                     className="text-danger hover:text-danger-hover transition-colors font-semibold text-[11px] flex items-center gap-1 cursor-pointer bg-danger/10 hover:bg-danger/20 px-2 py-0.5 rounded"
                   >
                     <XCircle className="w-3 h-3" aria-hidden="true" />
@@ -510,6 +533,34 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
             >
               <Sparkles className="h-4 w-4" aria-hidden="true" />
               {lang === 'it' ? 'Genera note' : 'Generate notes'}
+            </Button>
+          </div>
+        )}
+
+        {!isBusy && meeting.transcription && visualFrameCount > 0 && !visualEnabled && (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-4 py-3 rounded-xl border border-border-subtle bg-bg-surface/30">
+            <div className="flex items-start gap-2.5 min-w-0">
+              <Sparkles className="h-4 w-4 text-text-muted shrink-0 mt-0.5" aria-hidden="true" />
+              <div>
+                <h4 className="text-xs font-semibold text-text-primary">
+                  {lang === 'it' ? 'Contesto schermo disponibile' : 'Screen context available'}
+                </h4>
+                <p className="text-[11px] text-text-secondary leading-relaxed mt-0.5">
+                  {lang === 'it'
+                    ? 'Hai scelto di catturarlo durante il meeting. Analizzalo solo quando ti serve.'
+                    : 'You chose to capture it during the meeting. Analyze it only when you need it.'}
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={startVisualContextAnalysis}
+              isLoading={busyAction === 'visual_intelligence'}
+              className="shrink-0 w-full sm:w-auto"
+            >
+              <Sparkles className="h-4 w-4" aria-hidden="true" />
+              {lang === 'it' ? 'Analizza contesto schermo' : 'Analyze screen context'}
             </Button>
           </div>
         )}

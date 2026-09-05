@@ -34,7 +34,7 @@ from local_asr_server.routers.helpers import (
     _parse_allowed_origins,
     _extract_bearer_token,
 )
-from local_asr_server.routers import analysis, demo, recordings, settings, transcriptions, system, workspace
+from local_asr_server.routers import analysis, demo, recordings, settings, transcriptions, system, visual_jobs, workspace
 
 PUBLIC_AUTH_PATHS = {
     "/",
@@ -219,6 +219,7 @@ def create_app(
     app.include_router(settings.router)
     app.include_router(transcriptions.router)
     app.include_router(system.router)
+    app.include_router(visual_jobs.router)
     app.include_router(workspace.router)
 
     # Mount root static files at the end so it doesn't override API routes

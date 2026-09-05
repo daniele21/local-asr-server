@@ -13,7 +13,7 @@ import {
   Square,
   TriangleAlert,
 } from 'lucide-react';
-import { ApiClient, Recording } from '../api/apiClient';
+import { ApiClient, CaptureWindow, Recording } from '../api/apiClient';
 import { NEW_RECORDING_PROJECT_STORAGE_KEY } from '../api/config';
 import { useTranslation } from '../i18n/i18n';
 import { useToast } from '../context/ToastContext';
@@ -40,6 +40,11 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
   const [permissionLoading, setPermissionLoading] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [showAudioRecovery, setShowAudioRecovery] = useState(false);
+  const [showScreenContext, setShowScreenContext] = useState(false);
+  const [captureWindows, setCaptureWindows] = useState<CaptureWindow[]>([]);
+  const [visualWindowId, setVisualWindowId] = useState('');
+  const [visualSourcesLoading, setVisualSourcesLoading] = useState(false);
+  const [visualSourcesError, setVisualSourcesError] = useState<string | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [storageSaving, setStorageSaving] = useState(false);
 
@@ -74,6 +79,7 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
     : (!needsComputerAudio || Boolean(recorder.audioRouteStatus?.ready_to_record) || recorder.systemDevices.length > 0);
   const storageReady = storageConfigured && recordingsDir.trim().length > 0;
   const readyToRecord = micReady && computerReady && storageReady;
+  const selectedVisualWindow = captureWindows.find((window) => String(window.id) === visualWindowId);
 
   const captureModeOptions = [
     { value: 'both', label: t('recording.captureModeBoth') },
@@ -129,6 +135,27 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
     } finally {
       setPermissionLoading(false);
     }
+  };
+
+  const loadVisualSources = async () => {
+    if (!nativeCaptureReady || visualSourcesLoading) return;
+    setVisualSourcesLoading(true);
+    setVisualSourcesError(null);
+    try {
+      const result = await ApiClient.captureWindows();
+      setCaptureWindows(result.windows || []);
+    } catch (err) {
+      setCaptureWindows([]);
+      setVisualSourcesError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setVisualSourcesLoading(false);
+    }
+  };
+
+  const toggleScreenContext = () => {
+    const next = !showScreenContext;
+    setShowScreenContext(next);
+    if (next && captureWindows.length === 0) void loadVisualSources();
   };
 
   const persistStorageDir = async (path: string) => {
@@ -207,7 +234,16 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
     };
   })();
 
-  const start = () => recorder.startRecording(title, projectName, '', sourceMode);
+  const start = () => recorder.startRecording(
+    title,
+    projectName,
+    '',
+    sourceMode,
+    visualWindowId ? Number(visualWindowId) : undefined,
+    selectedVisualWindow
+      ? `${selectedVisualWindow.application_name}: ${selectedVisualWindow.title}`
+      : '',
+  );
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
@@ -377,6 +413,64 @@ export default function NewRecordingPage({ navigateTo }: NewRecordingPageProps) 
             </Button>
           )}
         </div>
+
+        {nativeCaptureReady && !recorder.isRecording && (
+          <section className="rounded-xl border border-border-subtle bg-bg-surface/20">
+            <button
+              type="button"
+              onClick={toggleScreenContext}
+              aria-expanded={showScreenContext}
+              aria-controls="new-meeting-screen-context"
+              className="flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left text-xs font-semibold text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus"
+            >
+              <span className="inline-flex min-w-0 items-center gap-2">
+                <Monitor className="h-4 w-4 shrink-0 text-text-muted" aria-hidden="true" />
+                <span>{lang === 'it' ? 'Contesto schermo (opzionale)' : 'Screen context (optional)'}</span>
+                {visualWindowId && (
+                  <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-bold text-accent">
+                    {lang === 'it' ? 'Attivo' : 'On'}
+                  </span>
+                )}
+              </span>
+              <ChevronDown className={`h-4 w-4 shrink-0 text-text-muted transition-transform ${showScreenContext ? 'rotate-180' : ''}`} aria-hidden="true" />
+            </button>
+
+            {showScreenContext && (
+              <div id="new-meeting-screen-context" className="flex flex-col gap-4 border-t border-border-subtle p-4">
+                <p className="text-xs leading-relaxed text-text-muted">
+                  {lang === 'it'
+                    ? 'Disattivato per default. Se scegli una finestra o uno schermo, ClosedRoom salva localmente frame a bassa frequenza. Nessuna AI visuale viene eseguita durante la registrazione.'
+                    : 'Off by default. If you choose a window or screen, ClosedRoom stores low-frequency frames locally. No visual AI runs while recording.'}
+                </p>
+                <Select
+                  label={lang === 'it' ? 'Finestra o schermo' : 'Window or screen'}
+                  value={visualWindowId}
+                  onChange={(event) => setVisualWindowId(event.target.value)}
+                  disabled={visualSourcesLoading}
+                >
+                  <option value="">{lang === 'it' ? 'Non acquisire contesto schermo' : 'Do not capture screen context'}</option>
+                  {captureWindows.map((window) => (
+                    <option key={window.id} value={window.id}>
+                      {window.application_name ? `${window.application_name} — ` : ''}{window.title || `#${window.id}`}
+                    </option>
+                  ))}
+                </Select>
+                {visualSourcesError && <p className="text-xs text-warning">{visualSourcesError}</p>}
+                <div className="flex items-center justify-between gap-3 text-[11px] text-text-muted">
+                  <span>
+                    {visualWindowId
+                      ? (lang === 'it' ? 'I frame verranno elaborati solo dopo il meeting, su tua richiesta.' : 'Frames are processed only after the meeting, when you ask for it.')
+                      : (lang === 'it' ? 'Nessun frame viene acquisito senza una selezione esplicita.' : 'No frames are captured without an explicit selection.')}
+                  </span>
+                  <Button type="button" size="sm" variant="ghost" onClick={loadVisualSources} isLoading={visualSourcesLoading}>
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    {lang === 'it' ? 'Aggiorna' : 'Refresh'}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
         {!nativeCaptureReady && nativeCaptureChecked && (
           <section className="rounded-xl border border-border-subtle bg-bg-surface/20">
