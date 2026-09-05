@@ -33,6 +33,18 @@ class ValidationProfileSelectorTests(unittest.TestCase):
         self.assertEqual(result["profile"], "scoped")
         self.assertIn("browser-e2e", result["required_gates"])
 
+    def test_preparation_backend_change_keeps_strong_profile_and_browser_e2e(self):
+        for path in (
+            "src/local_asr_server/meeting_preparation.py",
+            "src/local_asr_server/services/analysis_service.py",
+            "src/local_asr_server/structured_notes.py",
+        ):
+            with self.subTest(path=path):
+                result = selector.select_profile([path])
+                self.assertEqual(result["profile"], "strong")
+                self.assertIn("meeting_ui_integration", result["risk_dimensions"])
+                self.assertIn("browser-e2e", result["required_gates"])
+
     def test_browser_e2e_is_deferred_during_iteration(self):
         result = selector.select_profile(["frontend/src/pages/MeetingDetailPage.tsx"], stage="iteration")
         self.assertEqual(result["required_gates"], ["governance"])
