@@ -39,6 +39,14 @@ MEETING_BROWSER_E2E_EXACT = {
     "frontend/src/hooks/useVisualIntelligence.ts",
     "scripts/browser_meeting_ui_e2e.mjs",
 }
+MEETING_BROWSER_E2E_RELEVANT_EXACT = MEETING_BROWSER_E2E_EXACT | {
+    "src/local_asr_server/analysis_jobs.py",
+    "src/local_asr_server/meeting_preparation.py",
+    "src/local_asr_server/routers/helpers.py",
+    "src/local_asr_server/services/analysis_service.py",
+    "src/local_asr_server/structured_notes.py",
+    "src/local_asr_server/structured_notes_projection.py",
+}
 LEAN_EXACT = {
     ".editorconfig", ".gitignore", ".github/pull_request_template.md",
     "AGENTS.md", "CONTRIBUTING.md", "LICENSE", "README.md", "SECURITY.md",
@@ -104,10 +112,13 @@ def select_profile(paths: list[str], stage: str = "integration") -> dict[str, ob
     if not unique_paths:
         reasons = ["no changed paths detected; cheapest structural validation"]
     for path in unique_paths:
+        normalized = Path(path).as_posix()
         profile, risk, reason = classify_path(path)
         classifications.append({"path": path, "profile": profile, "risk": risk, "reason": reason})
         if risk not in risks:
             risks.append(risk)
+        if normalized in MEETING_BROWSER_E2E_RELEVANT_EXACT and "meeting_ui_integration" not in risks:
+            risks.append("meeting_ui_integration")
         if RANK[profile] > RANK[selected]:
             selected = profile
             reasons = [f"{path}: {reason}"]
