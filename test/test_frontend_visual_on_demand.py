@@ -24,14 +24,15 @@ class FrontendVisualOnDemandContractTests(unittest.TestCase):
         self.assertIn('variant="secondary"', self.meeting)
 
     def test_visual_job_client_uses_dedicated_on_demand_endpoints(self) -> None:
-        self.assertIn("/visual-intelligence-jobs`,", self.client)
+        self.assertIn("/visual-intelligence-jobs", self.client)
         self.assertIn("method: 'POST'", self.client)
         self.assertIn("cancelVisualIntelligenceJob", self.client)
 
     def test_new_meeting_keeps_visual_context_explicit_and_does_not_mutate_settings(self) -> None:
         self.assertIn("showScreenContext", self.new_meeting)
-        self.assertIn("captureWindows", self.new_meeting)
-        self.assertIn("selectedScreenContextId", self.new_meeting)
+        self.assertIn("ApiClient.captureWindows()", self.new_meeting)
+        self.assertIn("visualWindowId", self.new_meeting)
+        self.assertIn("Contesto schermo (opzionale)", self.new_meeting)
         self.assertNotIn("visual_intelligence_enabled", self.new_meeting)
         self.assertNotIn("updateSettings({ visual", self.new_meeting)
 
