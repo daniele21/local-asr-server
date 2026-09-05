@@ -42,6 +42,10 @@ class FakeTimer:
         if not self.cancelled:
             self.callback()
 
+    def fire_stale(self) -> None:
+        """Simulate a callback that already woke up before Timer.cancel()."""
+        self.callback()
+
 
 class RuntimeIdleShutdownTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -84,8 +88,29 @@ class RuntimeIdleShutdownTests(unittest.TestCase):
 
             self.assertTrue(timer.cancelled)
             sidecar.ensure_ready.assert_called_once()
-            timer.fire()
+            timer.fire_stale()
             sidecar.stop.assert_not_called()
+
+    def test_new_release_invalidates_already_woken_old_timer(self) -> None:
+        sidecar = Mock()
+        sidecar.release_resident_models.return_value = {"released": True, "cold": True}
+        manager = RuntimeServiceManager(llm_sidecar=sidecar)
+
+        with (
+            patch.object(manager, "_llm_settings", return_value=AUTO_SETTINGS),
+            patch("local_asr_server.runtime.service_manager.Timer", FakeTimer),
+        ):
+            manager.release_llm_residency()
+            first_timer = FakeTimer.instances[0]
+            manager.release_llm_residency()
+            second_timer = FakeTimer.instances[1]
+
+            self.assertTrue(first_timer.cancelled)
+            first_timer.fire_stale()
+            sidecar.stop.assert_not_called()
+
+            second_timer.fire()
+            sidecar.stop.assert_called_once_with()
 
     def test_external_release_never_schedules_or_mutates_sidecar(self) -> None:
         sidecar = Mock()
