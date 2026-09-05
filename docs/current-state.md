@@ -24,16 +24,16 @@ ClosedRoom follows `daniele21/repo-template-sw` **0.9.1** at maturity **L2** wit
 
 Representative before/after CPU/RSS evidence is still pending, so no performance percentage is claimed. The prior UX simplification still awaits its independent target-Mac evidence lane.
 
-PRS-6 is the active Wave 2 candidate in PR #28. Screen context is explicit/off-by-default in New Meeting; no VLM runs during recording. If frames exist, Meeting offers a secondary post-meeting action that runs one persisted/cancellable `visual_intelligence` job through the existing arbiter, enriches the same transcript in place, uses explicit bounded `v2` routing and caps post-dedupe candidate work at 2048 before VLM inference. Integration/STRONG exact-head evidence is still required before this becomes integrated truth.
+PRS-6 is the active Wave 2 candidate in PR #28. Screen context is explicit/off-by-default in New Meeting; no VLM runs during recording. If frames exist, Meeting offers a secondary post-meeting action that runs one persisted/cancellable `visual_intelligence` job through the existing arbiter, enriches the same transcript in place, uses explicit bounded `v2` routing and caps post-dedupe candidate work at 2048 before VLM inference. Exact feature HEAD `b405b239554cbad73342be53d269f42944f7548d` passed INTEGRATION/STRONG remote preflight run `33953887968`, including repository guards, frontend lint/typecheck, the full Python suite, finalized ARM64 `.app` build and packaged-app lifecycle smoke. Final durable-doc corrections are docs-only and still require exact-head repository/preflight confirmation or valid reusable evidence before merge.
 
 ## Active workstreams
 
 - [`ux-simplification.md`](workstreams/ux-simplification.md): integrated implementation; UX-9 waits on target-Mac evidence.
-- [`product-runtime-simplification.md`](workstreams/product-runtime-simplification.md): PRS-5/7 integrated; PRS-6 in integration convergence; PRS-8/9/evidence remain.
+- [`product-runtime-simplification.md`](workstreams/product-runtime-simplification.md): PRS-5/7 integrated; PRS-6 executable evidence confirmed and in final documentation convergence; PRS-8/9/evidence remain.
 
 ## Next highest-value work
 
-1. Finish PRS-6 full diff/docs review and exact-head INTEGRATION/STRONG automation, then integrate only if all deterministic gates pass.
+1. Finish PRS-6 durable-doc alignment and exact-head preflight/reuse, then integrate only if the final PR head remains fully confirmed against current `dev`.
 2. Replace normal processing polling with bounded job events while retaining recovery/reconnect fallback.
 3. Run the audio strategy benchmark before changing dual-track capture/transcription ownership.
 4. Capture comparable resource evidence before setting CPU/RSS targets.
