@@ -2,19 +2,19 @@
 
 Status: active — implementation in progress
 Owner: meeting product, canonical job/persistence owners and local runtime
-Read when: implementing the next product increments after the integrated PRS baseline.
+Read when: implementing increments after the integrated PRS baseline.
 Baseline: dev `c4a33b5`, 2026-09-05.
 
 ## Outcome and scope
 
-Record, prepare useful notes, verify decisions and find them later while the Mac stays usable. PRS-11 is the first implemented slice; no measured runtime gains are claimed by this workstream yet.
-PRS-1..9 are integrated; [PRS-10](product-runtime-simplification.md) keeps its existing closure criteria. Current contracts apply until each increment updates them.
+Record, prepare useful notes, verify decisions and find them later while the Mac stays usable. PRS-11 is implemented; no measured runtime gains are claimed yet.
+PRS-1..9 are integrated; [PRS-10](product-runtime-simplification.md) keeps its closure criteria. Current contracts apply until each increment updates them.
 Excluded: rewrite, new runtime/scheduler/index owner, implicit cloud, mandatory visuals, unproven audio strategy, all-at-once release.
 
 ## Product decisions and invariants
 
 - Meeting is primary; Today/Meetings/Projects and secondary Settings reuse the shell.
-- No technical choice before recording; optional title/project after initial permissions/storage setup.
+- No technical choice before recording; title/project stay optional after initial setup.
 - Explicit "Prepare notes", not automatic on Stop; secondary "Transcript only". Reuse valid transcript, then existing notes analysis.
 - Ready notes open first; preserve explicit tab selection. Audio/transcript survive enrichment failure/cancel.
 - Local-first, explicit cloud opt-in, no content in telemetry, visuals on demand, dual-track preserved pending evidence.
@@ -39,24 +39,24 @@ Default: 11 -> 12 -> 13 -> 14 -> 15 -> 16 -> 17. PRS-15/16 can advance earlier; 
 ## PRS-11 — completed slice: fast Meeting
 
 Goal: open saved content independently of slow/failed diagnostics and visual services.
-Implemented: the core Meeting request owns only saved Meeting content; detailed diagnostics load on Details disclosure; screen-frame availability and visual intelligence load only on Analysis disclosure. Accessory failures stay local with explicit retry, stale route responses are ignored and overlapping terminal reloads are coalesced.
+Implemented: core Meeting loads saved content only; diagnostics load on Details disclosure; frame availability and visual intelligence load on Analysis disclosure. Accessory failures stay local with retry, stale route responses are ignored and overlapping terminal reloads are coalesced.
 Acceptance:
 - Core content renders with accessory requests stalled/failed; no diagnostics or frame-list fetch on a normal audio meeting open.
 - Local accessory error/retry; A -> B navigation cannot apply A responses to B.
 - Audio/transcript and existing visual actions remain reachable.
-Evidence: frontend lint/typecheck and focused loading/recovery tests; `browser-macos-arm64-ci` exercises delayed/failing diagnostics and visual routes with ready/partial/error/recovery screenshots plus bounded MP4 evidence. The automated browser environment uses synthetic API fixtures and does not replace release-time packaged WKWebView/TCC evidence when applicable.
+Evidence: lint/typecheck, focused recovery tests and `browser-macos-arm64-ci` delayed/failing-route FULL_MEDIA. Synthetic browser evidence does not replace applicable release-time WKWebView/TCC evidence.
 One PR to dev; jobs/inference unchanged.
 
 ## PRS-12 — current executable slice: one recoverable preparation action
 
 Goal: coordinate existing transcription/analysis with "Prepare notes".
-Work: extend existing service/job orchestration; resolve durable stage relationships in JobStore before coding, retain API compatibility and expert actions. Keep the four analyses for now. Reuse the existing `TranscriptionJobManager`, `AnalysisJobManager` and shared `HeavyWorkloadArbiter`; do not add a second scheduler.
+Work: extend existing service/job orchestration; resolve durable stage relationships in JobStore before coding, retain API compatibility and expert actions. Keep the four analyses for now. Reuse `TranscriptionJobManager`, `AnalysisJobManager` and the shared `HeavyWorkloadArbiter`; no second scheduler.
 Acceptance:
 - Duplicate clicks/reconnect do not duplicate preparation; current valid transcript skips ASR.
 - Reuse identity includes source/options/template; changed source marks derived output stale.
 - Transcript is readable before notes complete; phase labels/cancellation are honest.
 - Cancel prevents future stages and is acknowledged after worker observation.
-- Restart restores results/status; interrupted work offers explicit resume from missing stage, without silently restarting AI.
+- Restart restores results/status; interrupted work offers explicit resume from the missing stage, without silently restarting AI.
 - Notes failure/retry preserves successful ASR and user corrections.
 Checks: job/service/API tests for duplicate admission, restart/cancel/partial failure; persisted preparation/reconnect/retry FULL_MEDIA journey. STRONG expected.
 
@@ -69,7 +69,7 @@ Acceptance:
 - Missing owner/deadline remains unknown; unsupported claims and malformed/partial output have explicit bounded recovery.
 - Reuse includes source revision, model/provider, prompt/schema/options; rendering never invokes AI.
 - Compare old/candidate on fixed short/long, multilingual, overlapping-speaker and ambiguous-action examples.
-Decision gate: fix rubric before comparison: factual support, action/decision recall, attribution, schema validity, latency, inference count/tokens and peak memory. Change default only with representative quality/cost evidence; otherwise keep old default. No assumed 4x saving.
+Decision gate: fix the rubric first: factual support, action/decision recall, attribution, schema validity, latency, inference count/tokens and peak memory. Change default only with representative quality/cost evidence; otherwise keep old default.
 Checks: schema/projection/cache/migration/long-input tests; partial-result UI FULL_MEDIA; STRONG expected. Candidate may integrate behind an internal switch pending release evidence.
 
 ## PRS-14 — verifiable, editable notes
@@ -121,13 +121,13 @@ Acceptance:
 - Explicit navigation survives async updates; native/browser recording overlay remains intact.
 - Supported compact/default/wide windows have no essential clipping; readable text, focus, keyboard, accessible names and reduced motion in both themes.
 Checks: component/state/routing, initial JS/payload comparison; complete journey FULL_MEDIA. SCOPED expected unless contracts expand.
-Update design/brand contracts for actual decisions. Each earlier increment already includes its own UI; no framework rewrite.
+Update design/brand contracts for actual decisions. Earlier increments already include their own UI; no framework rewrite.
 
 ## Evidence, release and completion
 
 ITERATION: focused owner tests. INTEGRATION: fresh dev base, reviewed diff/current contracts, selector auto and affected automated E2E; material UI uses FULL_MEDIA. Static assertions cannot prove interaction. Profiles above are provisional. Route unavailable deterministic gates to remote automation; missing automation is AUTOMATION_CAPABILITY_GAP.
 
-PRS-18: preserve baseline build/input/model/config identity before edits. At release compare same Mac/OS/model/input: idle, call recording, ASR/notes, cancel/recovery, repeated meetings, large archive. Measure phase latency, scoped CPU, RSS/footprint/Metal context without double-counting, pressure/swap, thermal/energy context, audio continuity and quality. Separate cold/warm; missing data is unknown. Derive numeric budgets from baseline; fix quality rubric before comparison.
+PRS-18: preserve baseline build/input/model/config identity. At release compare same Mac/OS/model/input: idle, call recording, ASR/notes, cancel/recovery, repeated meetings, large archive. Measure phase latency, scoped CPU, RSS/footprint/Metal without double-counting, pressure/swap, thermal/energy context, audio continuity and quality. Separate cold/warm; missing data is unknown. Derive numeric budgets from baseline; fix quality rubric before comparison.
 UX: time/actions/errors to record, find, correct and recover; count technical choices.
 RELEASE dev -> main: FULL automation plus applicable TCC/audio/WKWebView/VoiceOver, representative MLX/resources and PRS-9 evidence. Use `python3 scripts/real_environment_ui_evidence.py --build`; bounded media with exact source/build identity. These real-environment gates are DEFERRED_TO_RELEASE during dev integration.
 Durable owners: design/ux-contract.json, docs/features.md, docs/architecture.md, tests, docs/current-state.md. ADR only for material durable decisions. Complete slices when code/consumers/recovery/docs/evidence agree; transfer residual release evidence and delete this plan when coordination ends.
