@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from threading import Event, Thread
 from unittest.mock import Mock, patch
 
 from local_asr_server.runtime.service_manager import RuntimeServiceManager
@@ -86,6 +87,45 @@ class RuntimeIdleShutdownTests(unittest.TestCase):
             timer = FakeTimer.instances[0]
             manager.ensure_llm_ready()
 
+            self.assertTrue(timer.cancelled)
+            sidecar.ensure_ready.assert_called_once()
+            timer.fire_stale()
+            sidecar.stop.assert_not_called()
+
+    def test_reuse_cannot_interleave_between_release_and_idle_schedule(self) -> None:
+        release_entered = Event()
+        release_continue = Event()
+        sidecar = Mock()
+
+        def release_models():
+            release_entered.set()
+            self.assertTrue(release_continue.wait(timeout=2.0))
+            return {"released": True, "cold": True}
+
+        sidecar.release_resident_models.side_effect = release_models
+        sidecar.ensure_ready.return_value = {"base_url": "http://127.0.0.1:1235"}
+        manager = RuntimeServiceManager(llm_sidecar=sidecar)
+
+        with (
+            patch.object(manager, "_llm_settings", return_value=AUTO_SETTINGS),
+            patch("local_asr_server.runtime.service_manager.Timer", FakeTimer),
+        ):
+            release_thread = Thread(target=manager.release_llm_residency)
+            release_thread.start()
+            self.assertTrue(release_entered.wait(timeout=2.0))
+
+            ensure_thread = Thread(target=manager.ensure_llm_ready)
+            ensure_thread.start()
+            self.assertFalse(sidecar.ensure_ready.called)
+
+            release_continue.set()
+            release_thread.join(timeout=2.0)
+            ensure_thread.join(timeout=2.0)
+            self.assertFalse(release_thread.is_alive())
+            self.assertFalse(ensure_thread.is_alive())
+
+            self.assertEqual(len(FakeTimer.instances), 1)
+            timer = FakeTimer.instances[0]
             self.assertTrue(timer.cancelled)
             sidecar.ensure_ready.assert_called_once()
             timer.fire_stale()
