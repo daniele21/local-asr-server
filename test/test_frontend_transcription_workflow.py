@@ -34,11 +34,28 @@ class FrontendTranscriptionWorkflowTests(unittest.TestCase):
         self.assertIn("openAdvancedTranscription();", page)
         self.assertNotIn("TranscriptionModelModal", page)
 
-    def test_default_notes_pipeline_is_one_action_and_deep_options_remain_advanced(self) -> None:
+    def test_default_notes_preparation_is_one_action_and_deep_options_remain_advanced(self) -> None:
         page = (ROOT / "frontend/src/pages/MeetingDetailPage.tsx").read_text(encoding="utf-8")
 
-        self.assertIn("onClick={() => startPipeline('meeting_default')}", page)
-        self.assertIn("'Genera note' : 'Generate notes'", page)
+        self.assertIn("const startPreparation = async () =>", page)
+        self.assertIn("await prepareMeetingNotes(meeting.id)", page)
+        self.assertIn("onClick={startPreparation}", page)
+        self.assertIn("'Prepara note' : 'Prepare notes'", page)
+
+        default_action = page.split("const startPreparation = async () =>", 1)[1].split(
+            "const startVisualContextAnalysis", 1
+        )[0]
+        for technical_override in (
+            "pipeline_id:",
+            "model:",
+            "temperature:",
+            "reasoning:",
+            "max_output_tokens:",
+        ):
+            self.assertNotIn(technical_override, default_action)
+
+        self.assertIn("startPipeline('meeting_default');", page)
+        self.assertIn("'Rigenera solo analisi' : 'Regenerate analysis only'", page)
         self.assertIn("openAnalysisSetup('meeting_deep')", page)
         self.assertIn("<AnalysisSetupModal", page)
 
