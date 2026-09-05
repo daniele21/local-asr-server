@@ -15,26 +15,26 @@ ClosedRoom follows `daniele21/repo-template-sw` **0.9.1** at maturity **L2** wit
 
 - Exact-head/tree-equivalent remote preflight and immutable finalized artifacts.
 - Packaged `.app` lifecycle smoke plus risk-based E2E evidence.
-- Canonical target-Mac runner `python3 scripts/real_environment_ui_evidence.py --build`, with exact-artifact reuse across TCC retries, bounded AX automation, isolated HOME and ClosedRoom-window-only media.
-- `target-macos-real` remains separate from hosted evidence; production signing/notarization, subjective VoiceOver usability and representative MLX/Metal performance remain separate claims.
-- Product/runtime simplification Wave 1 is integrated on `dev` at `3fa29fb963b49f57cc4cbcce333d5f476f54659b`: Meeting-first setup, bounded recording UI cadence, capture-priority heavy-work admission, cold/on-demand managed LLM startup and simplified Settings hierarchy.
-- Wave 1 exact-head INTEGRATION/STRONG automation passed repository guards, frontend lint/typecheck, the Python suite, finalized ARM64 `.app` build and packaged-app lifecycle smoke before merge.
+- Canonical target-Mac runner `python3 scripts/real_environment_ui_evidence.py --build`; production signing/notarization, subjective VoiceOver usability and representative MLX/Metal performance remain separate claims.
+- Product/runtime Wave 1 is integrated through PR #25 (`3fa29fb963b49f57cc4cbcce333d5f476f54659b`): Meeting-first setup, bounded recording UI cadence, capture-priority heavy-work admission, cold/on-demand managed LLM startup and simplified Settings.
+- PRS-5 is integrated through PR #26 (`c62882bb17c50288266094db8e64fa2e7067f681`): Meeting Transcribe and Generate Notes are one-action normal workflows; technical overrides remain advanced.
+- PRS-7 is integrated through PR #27 (`c7161a0055804e534f6b9b10169b183bc3c1ff16`): managed LLM/VLM residency releases after a phase and the owned cold sidecar stops after a bounded idle window with stale-timer race protection. Its exact feature HEAD passed INTEGRATION/STRONG including packaged-app smoke.
 
 ## Current evidence status
 
-The prior UX simplification is integrated on `dev`; its final target-Mac evidence remains pending through the canonical command above.
+Representative before/after CPU/RSS evidence is still pending, so no performance percentage is claimed. The prior UX simplification still awaits its independent target-Mac evidence lane.
 
-Product/runtime Wave 1 is automated-preflight confirmed and integrated. Representative before/after CPU/RSS evidence is still pending, so no performance percentage is claimed. Wave 2 is active from fresh `dev` and owns one-action meeting processing, visual intelligence on demand, bounded cold AI shutdown and event-driven progress.
+PRS-6 is the active Wave 2 candidate in PR #28. Screen context is explicit/off-by-default in New Meeting; no VLM runs during recording. If frames exist, Meeting offers a secondary post-meeting action that runs one persisted/cancellable `visual_intelligence` job through the existing arbiter, enriches the same transcript in place, uses explicit bounded `v2` routing and caps post-dedupe candidate work at 2048 before VLM inference. Integration/STRONG exact-head evidence is still required before this becomes integrated truth.
 
 ## Active workstreams
 
 - [`ux-simplification.md`](workstreams/ux-simplification.md): integrated implementation; UX-9 waits on target-Mac evidence.
-- [`product-runtime-simplification.md`](workstreams/product-runtime-simplification.md): Wave 1 integrated; Wave 2 active, starting with simple Meeting processing before its frontend event-progress convergence.
+- [`product-runtime-simplification.md`](workstreams/product-runtime-simplification.md): PRS-5/7 integrated; PRS-6 in integration convergence; PRS-8/9/evidence remain.
 
 ## Next highest-value work
 
-1. Make Meeting `Transcribe` and `Generate Notes` one-action normal workflows using persisted defaults; keep technical transcription/analysis controls as Advanced/Import tools.
-2. Progress visual-on-demand and cold-AI lifecycle lanes independently where ownership does not overlap.
-3. Replace normal processing polling with bounded job events after the PRS-5 Meeting workflow converges; retain polling only for reconnect/recovery.
+1. Finish PRS-6 full diff/docs review and exact-head INTEGRATION/STRONG automation, then integrate only if all deterministic gates pass.
+2. Replace normal processing polling with bounded job events while retaining recovery/reconnect fallback.
+3. Run the audio strategy benchmark before changing dual-track capture/transcription ownership.
 4. Capture comparable resource evidence before setting CPU/RSS targets.
-5. Continue the independent target-Mac UX evidence lane; require functional PASS plus complete media, and reuse the exact artifact across permission retries.
+5. Continue the independent target-Mac UX evidence lane using the canonical runner and exact-artifact reuse.
