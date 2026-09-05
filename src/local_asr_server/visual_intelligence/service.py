@@ -82,6 +82,7 @@ class PostMeetingVisualService:
         routing_mode: str | None = None,
         cancel_requested: Callable[[], bool] | None = None,
     ) -> dict[str, Any]:
+        strict_v2_routing = routing_mode == "v2"
         settings = load_settings()
         if enabled is not None:
             settings = {**settings, "visual_intelligence_enabled": enabled}
@@ -165,6 +166,13 @@ class PostMeetingVisualService:
             except VisualProcessingCancelled:
                 raise
             except Exception as exc:
+                if strict_v2_routing:
+                    logger.error(
+                        "Explicit bounded visual routing failed for %s; legacy fallback disabled: %s",
+                        recording_id,
+                        exc,
+                    )
+                    raise RuntimeError("visual_v2_router_failed") from exc
                 routing_error = str(exc)
                 routing_mode = "v1"
                 routing_summary = {"schema_version": 1, "error": routing_error}
