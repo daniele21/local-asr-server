@@ -1,6 +1,6 @@
 # Product and runtime simplification
 
-Status: active — Wave 1 implementation complete; integration validation pending
+Status: active — Wave 1 integrated; Wave 2 active
 Owner: product experience + local runtime
 Read when: changing meeting UX, configuration, recording efficiency or AI resource policy
 
@@ -53,11 +53,11 @@ PRS-0 Contract + baseline
 | ID | Outcome | Primary owners | Depends on | State |
 | --- | --- | --- | --- | --- |
 | PRS-0 | Product contract + comparable resource baseline | UX contract, evidence | — | ACTIVE: contract done; baseline pending |
-| PRS-1 | Outcome-first New Meeting/Meeting | NewRecording, MeetingDetail, App | PRS-0 | ACTIVE: implementation done; validation pending |
-| PRS-2 | Bounded recording UI work | useRecorder, visualizer/overlay | PRS-0 | ACTIVE: implementation done; validation pending |
-| PRS-3 | Capture-priority ResourcePolicy | resource policy, arbiter/job consumers | PRS-0 | ACTIVE: implementation done; validation pending |
-| PRS-4 | Preferences separated from expert runtime controls | Settings | PRS-0 | ACTIVE: implementation done; validation pending |
-| PRS-5 | One-action Transcribe/Generate Notes | meeting/transcription/analysis | PRS-1 | READY |
+| PRS-1 | Outcome-first New Meeting/Meeting | NewRecording, MeetingDetail, App | PRS-0 | DONE: integrated in Wave 1 |
+| PRS-2 | Bounded recording UI work | useRecorder, visualizer/overlay | PRS-0 | DONE: integrated in Wave 1 |
+| PRS-3 | Capture-priority ResourcePolicy | resource policy, arbiter/job consumers | PRS-0 | DONE: integrated in Wave 1 |
+| PRS-4 | Preferences separated from expert runtime controls | Settings | PRS-0 | DONE: integrated in Wave 1 |
+| PRS-5 | One-action Transcribe/Generate Notes | meeting/transcription/analysis | PRS-1 | ACTIVE |
 | PRS-6 | Visual intelligence on-demand with budget | visual service/UI, policy | PRS-1,3 | READY |
 | PRS-7 | Bounded idle shutdown after phase-scoped residency | LLM runtime owners | PRS-3 | READY |
 | PRS-8 | Event-driven progress; polling fallback only | job events + frontend | PRS-0 | READY |
@@ -66,23 +66,23 @@ PRS-0 Contract + baseline
 
 ## Wave 1 checkpoint
 
-Implemented on `feature/product-runtime-simplification`:
+Integrated on `dev` through PR #25:
 
 - UX contract `0.7.0`: Meeting-first object model, decision budgets and capability placement.
 - New Meeting: optional title/project; automatic `both` capture; no visual/diarization controls; source/device UI only in Audio recovery.
 - Recording: canvas ~12.5 Hz while visible, React meter 4 Hz, timer 1 Hz, overlay 2 Hz; hidden document skips meter work.
-- ResourcePolicy: reads `RecordingStore.active_recording()` lazily; the shared arbiter checks admission at submit and again before execution, covering queued-work/capture races.
+- ResourcePolicy: reads canonical recording state lazily; the shared arbiter checks admission at submit and again before execution, covering queued-work/capture races without treating merely prepared recordings as active capture.
 - Managed local LLM stays cold at app startup and starts through existing `ensure_llm_ready()` when local AI is first required.
 - Settings: normal storage/meeting/privacy surfaces; provider/model/quality under Advanced; runtime/path/lifecycle/logs under Developer & diagnostics.
+- Integration/STRONG remote preflight passed on exact feature HEAD `18ee0dbf7ed1aa73bde344f7ecc0f4c92c9ac126`, including repository guards, frontend checks, Python suite, finalized `.app` build and packaged-app smoke. Merge commit on `dev`: `3fa29fb963b49f57cc4cbcce333d5f476f54659b`.
 
 No CPU/RSS percentage improvement is claimed until representative before/after evidence exists.
 
 ## Parallel execution
 
-**Wave 1:** PRS-1/2/3/4 plus PRS-9 benchmark preparation may run independently, then converge on:
-`Open -> New Meeting -> Start -> Record -> Stop -> Meeting`.
+**Wave 1:** PRS-1/2/3/4 converged and are integrated.
 
-**Wave 2 after Wave 1 integration:** PRS-5/6/7 in parallel. PRS-8 backend may run concurrently; its Transcription UI integration waits for PRS-5 convergence.
+**Wave 2:** PRS-5/6/7 may progress as independent implementation lanes. PRS-8 backend/event infrastructure may run concurrently; its Meeting/Transcription UI integration follows PRS-5 convergence so normal processing is not rewritten twice.
 
 **Wave 3:** finish PRS-9 evidence-led decision, then PRS-10 acceptance.
 
@@ -107,7 +107,7 @@ Set performance targets only after baseline measurement.
 - PRS-2 changes UI cadence only, not capture/finalization semantics.
 - PRS-3 is policy, not a scheduler; no duplicate queue/mutex owner.
 - PRS-4 preserves backend settings compatibility.
-- PRS-5 moves normal meeting processing away from the standalone technical wizard; Advanced overrides remain reachable.
+- PRS-5 moves normal meeting processing away from the standalone technical wizard; persisted settings/default owners resolve the normal execution plan, while Advanced overrides remain reachable.
 - PRS-6 uses candidate detection -> dedupe -> hard frame/work budget -> VLM and never starts VLM during recording.
 - PRS-7 releases managed residency after phases and adds bounded owned-sidecar idle shutdown; never mutates external endpoints.
 - PRS-8 keeps event history bounded/privacy-safe and polling only for reconnect/recovery.
