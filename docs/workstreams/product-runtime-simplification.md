@@ -58,7 +58,7 @@ PRS-0 Contract + baseline
 | PRS-3 | Capture-priority ResourcePolicy | resource policy, arbiter/job consumers | PRS-0 | DONE: integrated in Wave 1 |
 | PRS-4 | Preferences separated from expert runtime controls | Settings | PRS-0 | DONE: integrated in Wave 1 |
 | PRS-5 | One-action Transcribe/Generate Notes | meeting/transcription/analysis | PRS-1 | DONE: integrated through PR #26 |
-| PRS-6 | Visual intelligence on-demand with budget | visual service/UI, policy | PRS-1,3 | ACTIVE: implementation complete; integration validation pending |
+| PRS-6 | Visual intelligence on-demand with budget | visual service/UI, policy | PRS-1,3 | ACTIVE: executable INTEGRATION/STRONG confirmed; final docs exact-head pending |
 | PRS-7 | Bounded idle shutdown after phase-scoped residency | LLM runtime owners | PRS-3 | DONE: integrated through PR #27 |
 | PRS-8 | Event-driven progress; polling fallback only | job events + frontend | PRS-0 | READY |
 | PRS-9 | Simplify audio compute only if benchmark supports it | capture/transcription | PRS-0 | READY |
@@ -91,12 +91,13 @@ PR #28 keeps screen context outside the golden path:
 - The job enriches the existing transcription in place and requests task-aware `v2` routing without mutating Settings.
 - Candidate detection/dedupe precedes a hard 2048-work-item ceiling; over-budget candidates are sampled deterministically across the full timeline before VLM work.
 - Explicit `v2` routing fails closed if the bounded router fails; legacy/settings-driven compatibility paths retain their prior fallback behavior.
+- Exact executable HEAD `b405b239554cbad73342be53d269f42944f7548d` passed INTEGRATION/STRONG remote preflight run `33953887968`: repository guards, frontend lint/typecheck, full Python unit/integration suite, finalized ARM64 `.app` build and packaged-app lifecycle smoke all passed. Subsequent durable-doc-only commits must still receive exact-head repository/preflight confirmation or valid reusable evidence before merge.
 
 No CPU/RSS/storage percentage improvement is claimed until representative before/after evidence exists.
 
 ## Parallel execution
 
-PRS-5 and PRS-7 are integrated. PRS-6 is converging independently. PRS-8 may progress at its backend/event boundary; Meeting UI event integration follows the processing convergence so the normal path is not rewritten twice. PRS-9 remains evidence-led. PRS-10 closes only after product/runtime/evidence agreement.
+PRS-5 and PRS-7 are integrated. PRS-6 is in final documentation/preflight convergence. PRS-8 may progress at its backend/event boundary; Meeting UI event integration follows the processing convergence so the normal path is not rewritten twice. PRS-9 remains evidence-led. PRS-10 closes only after product/runtime/evidence agreement.
 
 ## Baseline / acceptance evidence
 
