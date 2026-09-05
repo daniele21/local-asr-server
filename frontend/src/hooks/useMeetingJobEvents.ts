@@ -39,11 +39,11 @@ export function useMeetingJobEvents(
   setMeetingRef.current = setMeeting;
   reloadRef.current = reload;
 
-  const jobIds = useMemo(() => activeMeetingJobIds(meeting), [meeting]);
-  const jobIdsKey = jobIds.join('|');
+  const jobIdsKey = useMemo(() => activeMeetingJobIds(meeting).join('|'), [meeting]);
 
   useEffect(() => {
     if (!jobIdsKey) return;
+    const jobIds = jobIdsKey.split('|');
     const cleanups = jobIds.map((jobId) => followJobEvents(jobId, {
       onUpdate: (job) => {
         setMeetingRef.current((current) => current ? applyJobUpdate(current, job) : current);
