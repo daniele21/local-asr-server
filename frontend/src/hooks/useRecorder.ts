@@ -9,6 +9,11 @@ import { BrowserUploadBacklog } from '../utils/browserUploadBacklog';
 
 export type { AudioDevice, AudioRouteStatus };
 
+const AUDIO_METER_RENDER_INTERVAL_MS = 80;
+const AUDIO_METER_REACT_INTERVAL_MS = 250;
+const RECORDING_TIMER_INTERVAL_MS = 1000;
+const OVERLAY_STATUS_INTERVAL_MS = 500;
+
 export const openBrowserPopup = () => {
   const width = 295;
   const height = 135;
@@ -96,6 +101,8 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
   const currentSysDbRef = useRef<number>(-120);
   const bcRef = useRef<BroadcastChannel | null>(null);
   const visualCaptureLabelRef = useRef('');
+  const lastMeterRenderAtRef = useRef(0);
+  const lastMeterReactAtRef = useRef(0);
 
   // Canvas Ref
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -143,6 +150,8 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
   const stopAudioMeter = useCallback((closeContext = true) => {
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     animationFrameRef.current = null;
+    lastMeterRenderAtRef.current = 0;
+    lastMeterReactAtRef.current = 0;
     analyserRef.current = null;
     micAnalyserRef.current = null;
     systemAnalyserRef.current = null;
@@ -156,14 +165,21 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
       const context = canvasRef.current.getContext('2d');
       context?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
     }
+    signalLevelRef.current = '-∞ dB';
+    signalLevelMicRef.current = '-∞ dB';
+    signalLevelSystemRef.current = '-∞ dB';
     setSignalLevel('-∞ dB');
     setSignalLevelMic('-∞ dB');
     setSignalLevelSystem('-∞ dB');
   }, []);
 
-  const drawAudioMeter = useCallback(() => {
+  const drawAudioMeter = useCallback((timestamp = performance.now()) => {
+    animationFrameRef.current = requestAnimationFrame(drawAudioMeter);
+    if (document.hidden || timestamp - lastMeterRenderAtRef.current < AUDIO_METER_RENDER_INTERVAL_MS) return;
+
     const canvas = canvasRef.current;
     if (!canvas) return;
+    lastMeterRenderAtRef.current = timestamp;
 
     const levels = drawAudioMeterOnCanvas(
       canvas,
@@ -174,16 +190,26 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
       currentSysDbRef.current
     );
 
+    if (timestamp - lastMeterReactAtRef.current < AUDIO_METER_REACT_INTERVAL_MS) return;
+    lastMeterReactAtRef.current = timestamp;
+
     const levelMic = levels.dbMic <= -47.5 ? '-∞ dB' : `${levels.dbMic.toFixed(1)} dB`;
-    setSignalLevelMic(levelMic);
+    if (levelMic !== signalLevelMicRef.current) {
+      signalLevelMicRef.current = levelMic;
+      setSignalLevelMic(levelMic);
+    }
 
     const levelSys = levels.dbSys <= -47.5 ? '-∞ dB' : `${levels.dbSys.toFixed(1)} dB`;
-    setSignalLevelSystem(levelSys);
+    if (levelSys !== signalLevelSystemRef.current) {
+      signalLevelSystemRef.current = levelSys;
+      setSignalLevelSystem(levelSys);
+    }
 
     const levelCombined = levels.dbCombined <= -47.5 ? '-∞ dB' : `${levels.dbCombined.toFixed(1)} dB`;
-    setSignalLevel(levelCombined);
-
-    animationFrameRef.current = requestAnimationFrame(drawAudioMeter);
+    if (levelCombined !== signalLevelRef.current) {
+      signalLevelRef.current = levelCombined;
+      setSignalLevel(levelCombined);
+    }
   }, []);
 
   const startAudioMeter = useCallback((streamOrNode: AudioNode | MediaStream) => {
@@ -502,9 +528,9 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
                 const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
                 const secs = (elapsed % 60).toString().padStart(2, '0');
                 setTimer(`${mins}:${secs}`);
-              }, 250);
+              }, RECORDING_TIMER_INTERVAL_MS);
 
-              // Start status broadcast interval for the overlay window (every 300ms)
+              // The overlay needs human-scale status updates, not display-rate telemetry.
               broadcastIntervalRef.current = setInterval(() => {
                 bcRef.current?.postMessage({
                   type: 'status',
@@ -516,7 +542,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
                   progressText: progressTextRef.current,
                   visualCaptureLabel: visualCaptureLabelRef.current
                 });
-              }, 300);
+              }, OVERLAY_STATUS_INTERVAL_MS);
 
               // Request showing the native overlay panel
               ApiClient.toggleOverlay(true).then((res) => {
@@ -815,9 +841,9 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
         const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
         const secs = (elapsed % 60).toString().padStart(2, '0');
         setTimer(`${mins}:${secs}`);
-      }, 250);
+      }, RECORDING_TIMER_INTERVAL_MS);
 
-      // Start status broadcast interval for the overlay window (every 300ms)
+      // The overlay needs human-scale status updates, not display-rate telemetry.
       broadcastIntervalRef.current = setInterval(() => {
         bcRef.current?.postMessage({
           type: 'status',
@@ -829,7 +855,7 @@ export function useRecorder(onSaved?: (recording: Recording) => void) {
           progressText: progressTextRef.current,
           visualCaptureLabel: visualCaptureLabelRef.current
         });
-      }, 300);
+      }, OVERLAY_STATUS_INTERVAL_MS);
 
       // Request showing the native overlay panel, fallback to browser window.open if unavailable
       ApiClient.toggleOverlay(true).then((res) => {

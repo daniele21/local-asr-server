@@ -1,6 +1,6 @@
 # Architettura di ClosedRoom
 
-Stato del documento: architettura implementata nel repository al 13 luglio 2026.
+Stato del documento: architettura implementata nel repository al 5 settembre 2026.
 
 Questo documento descrive ClosedRoom prima ad alto livello, per chiarire confini,
 responsabilità e flussi principali, e poi a basso livello, per rendere espliciti
@@ -19,6 +19,8 @@ I principi che guidano l'architettura sono:
 - persistenza progressiva per limitare la perdita di dati;
 - filesystem come fonte degli artefatti e SQLite come indice interrogabile;
 - servizi ML pesanti avviati solo quando necessari;
+- la cattura attiva impedisce l'avvio di nuovi workload AI pesanti;
+- un solo `HeavyWorkloadArbiter` possiede queue e concorrenza dei workload pesanti;
 - integrazioni cloud esclusivamente opt-in;
 - compatibilità esplicita tra sviluppo e bundle macOS;
 - fallimento controllato degli arricchimenti post-meeting: diarizzazione,
@@ -55,7 +57,7 @@ quando selezionati esplicitamente.
 | --- | --- | --- | --- |
 | Frontend | React, TypeScript, Vite | Navigazione, registrazione, configurazione, polling job e rendering workspace | Stato UI temporaneo; demo sintetica in memoria |
 | API locale | FastAPI, Python | Composition root, autenticazione locale, contratti HTTP e orchestrazione applicativa | Registry dei servizi e token di sessione del processo |
-| Servizi di dominio | Python | Registrazioni, trascrizioni, analisi, settings, runtime e arricchimenti | Lock e job attivi in memoria; stato durevole delegato agli store |
+| Servizi di dominio | Python | Registrazioni, trascrizioni, analisi, settings, runtime, arricchimenti e resource admission | Lock e job attivi in memoria; stato durevole delegato agli store |
 | Catalogo | SQLite WAL | Query su meeting, transcript, run di analisi, job, eventi e cache | `closedroom.db` |
 | Archivio artefatti | Filesystem | Audio, metadata, transcript esportabili, report e staging visuale | Directory registrazioni e trascrizioni |
 | Runtime ASR | MLX Whisper / `mlx-audio` | Trascrizione locale Apple Silicon | Cache modelli e cache risultati |
@@ -79,6 +81,8 @@ flowchart TB
 
     Stores --> FS["Filesystem"]
     Stores --> Catalog["CatalogStore"]
+    Managers --> Policy["ResourcePolicy"]
+    Policy --> Arbiter["HeavyWorkloadArbiter"]
     Managers --> JobStore["JobStore"]
     Catalog --> SQLite["closedroom.db"]
     JobStore --> SQLite
@@ -91,7 +95,8 @@ flowchart TB
 Le dipendenze devono scendere dai router verso servizi e store. `server.py`
 costruisce gli oggetti e non deve diventare un contenitore di logica di dominio.
 `AppServices` è il registry tipizzato condiviso; gli alias su `app.state` sono una
-compatibilità temporanea per test e integrazione nativa.
+compatibilità temporanea per test e integrazione nativa. `ResourcePolicy` decide
+solo l'ammissione: non possiede queue, worker, recording state o model lifecycle.
 
 ## 5. Flussi principali
 
@@ -101,6 +106,10 @@ ClosedRoom dispone di due backend di cattura:
 
 1. nativo macOS, preferito, tramite AVFoundation e ScreenCaptureKit;
 2. browser, con `MediaRecorder` e BlackHole per l'audio di sistema.
+
+Nel normale New Meeting il frontend prova automaticamente microfono + audio
+computer. Backend, source mode e device non fanno parte del golden path e vengono
+mostrati solo come recovery quando la cattura automatica non è disponibile.
 
 ```mermaid
 sequenceDiagram
@@ -140,7 +149,8 @@ le scritture dei metadata sono atomiche.
 
 ```mermaid
 flowchart TD
-    Start["Job trascrizione"] --> Validate["Validazione audio e selezione provider"]
+    Start["Job trascrizione"] --> Admission["ResourcePolicy / HeavyWorkloadArbiter"]
+    Admission --> Validate["Validazione audio e selezione provider"]
     Validate --> Tracks["Trascrizione delle tracce mic/system/mixed"]
     Tracks --> Diar["FluidAudio diarization<br/>se abilitata"]
     Diar --> Merge["Merge temporale dei transcript"]
@@ -149,6 +159,7 @@ flowchart TD
     Audio --> Save["Salvataggio transcript JSON/TXT + catalogo"]
     Save --> Done["Job completed"]
 
+    Admission -. "capture attiva" .-> Rejected["resource_admission failed"]
     Diar -. "errore non bloccante" .-> Merge
     Vision -. "errore non bloccante + cleanup" .-> Audio
     Audio -. "errore non bloccante" .-> Save
@@ -166,6 +177,7 @@ sequenceDiagram
     participant UI as Meeting/Analysis UI
     participant API as Analysis router
     participant JM as AnalysisJobManager
+    participant RP as ResourcePolicy/Arbiter
     participant AS as AnalysisService
     participant RM as RuntimeServiceManager
     participant LLM as local-llm-server o Gemini
@@ -173,6 +185,8 @@ sequenceDiagram
 
     UI->>API: POST /v1/analysis-jobs o /analysis-pipelines
     API->>JM: crea job persistente
+    JM->>RP: admission al submit + prima execution
+    RP-->>JM: ammesso oppure capture_active
     JM-->>UI: job_id
     JM->>AS: esegui template/pipeline
     AS->>RM: ensure_llm_ready (provider locale)
@@ -188,7 +202,8 @@ sequenceDiagram
 
 Le pipeline sono insiemi versionati di template. La cache include hash input,
 prompt, provider, modello e opzioni capaci di modificare l'output. Le credenziali
-cloud entrano nella chiave solo sotto forma di hash.
+cloud entrano nella chiave solo sotto forma di hash. Il polling frontend resta
+transitorio: la migrazione verso eventi è posseduta dal workstream PRS-8.
 
 ## 6. Modello dei dati ad alto livello
 
@@ -237,10 +252,10 @@ erDiagram
     }
 ```
 
-Una registrazione è l'aggregato che rappresenta il meeting. “Meeting” e
-“Project” sono viste derivate dal catalogo, non tabelle parallele. Il filesystem
-rimane necessario perché contiene audio e file esportabili; SQLite evita scansioni
-ripetute e supporta query cross-feature.
+Una registrazione è l'aggregato persistente che rappresenta il meeting. A livello
+prodotto `Meeting` è l'oggetto primario; “Meeting” e “Project” restano viste
+derivate dal catalogo, non tabelle parallele. Il filesystem contiene audio e file
+esportabili; SQLite evita scansioni ripetute e supporta query cross-feature.
 
 ## 7. Deployment e modalità di esecuzione
 
@@ -282,8 +297,8 @@ La funzione `create_app()` in `server.py` è la composition root:
 3. sceglie il path del catalogo, con isolamento speciale per i test temporanei;
 4. costruisce `CatalogStore` e `JobStore` sullo stesso database;
 5. marca come `interrupted` i job non terminali lasciati da un riavvio;
-6. costruisce recording/transcription store, manager di cattura, runtime e job;
-7. registra tutto in `AppServices`;
+6. costruisce `RecordingStore`, poi `ResourcePolicy` e l'unico `HeavyWorkloadArbiter` usando lo stato recording canonico;
+7. costruisce transcription/capture/runtime/job manager e registra i servizi in `AppServices`;
 8. pulisce dispositivi audio aggregati orfani;
 9. monta asset statici e router;
 10. installa il middleware di autenticazione.
@@ -300,8 +315,12 @@ La funzione `create_app()` in `server.py` è la composition root:
 - `recordings: RecordingStore`;
 - `transcriptions: TranscriptionStore`.
 
-Gli oggetti sono posseduti da una singola istanza FastAPI. Non va introdotto
-nuovo stato globale quando può essere espresso come servizio nel registry.
+`ResourcePolicy` e `HeavyWorkloadArbiter` sono process-wide state della composition
+root, ma non duplicano gli owner di dominio: la policy legge
+`RecordingStore.active_recording()` e l'arbiter possiede soltanto admission,
+queue e worker dei workload pesanti. Gli altri oggetti sono posseduti da una
+singola istanza FastAPI. Non va introdotto nuovo stato globale quando può essere
+espresso tramite gli owner esistenti.
 
 ## 9. Layer HTTP
 
@@ -337,7 +356,8 @@ CORS non è aperto implicitamente: le origin ammesse provengono da configurazion
 - sequenze chunk, hash, dimensioni e timestamp client;
 - finalizzazione, recovery, discard e sincronizzazione catalogo;
 - staging e cleanup dei frame visuali;
-- report qualità, intelligence e diarizzazione.
+- report qualità, intelligence e diarizzazione;
+- query canonica `active_recording()` usata anche dalla resource admission.
 
 ### Layout di sessione
 
@@ -382,10 +402,11 @@ L'helper nativo può acquisire:
 - audio di sistema con ScreenCaptureKit;
 - frame JPEG a bassa frequenza da una sola finestra esplicitamente scelta.
 
-La cattura visuale è uno stream separato da quella audio e non è attiva senza
-setting e selezione finestra. La schermata Registrazione espone nello stesso
-punto il toggle FluidAudio, il toggle Qwen e il selettore della finestra: una
-configurazione parziale è dichiarata prima dell'avvio.
+La capacità di cattura visuale resta tecnicamente separata da quella audio, ma
+il normale `NewRecordingPage` non espone più toggle Qwen o selezione finestra:
+visual intelligence è classificata on-demand e il nuovo ingresso esplicito è
+posseduto da PRS-6. I workflow tecnici/legacy che dispongono già di frame restano
+compatibili durante la migrazione.
 
 ### AudioRouter
 
@@ -544,8 +565,16 @@ marcati; non viene invocato un LLM.
 
 ## 14. Job, eventi e concorrenza
 
-Trascrizioni e analisi lunghe vengono eseguite in thread daemon del processo.
-Non esiste una coda distribuita esterna.
+Trascrizioni e analisi lunghe sono ammesse dal process-wide
+`HeavyWorkloadArbiter`, con default una sola esecuzione pesante attiva e queue
+bounded. Non esiste una coda distribuita esterna.
+
+`ResourcePolicy` è un guard read-only sopra l'arbiter: consulta lazily
+`RecordingStore.active_recording()` e rifiuta l'avvio di nuovi workload pesanti
+quando esiste una registrazione attiva. La policy viene verificata sia al submit
+sia immediatamente prima dell'esecuzione, quindi copre il race job-in-coda ->
+inizio registrazione -> worker libero. Non preempta workload già attivi e non
+introduce un secondo mutex/scheduler.
 
 `JobStore` persiste:
 
@@ -559,11 +588,12 @@ Il transcription job pubblica esplicitamente anche `diarizing`,
 `visual_processing` e `audio_intelligence`, così polling, eventi persistiti e UI
 non restano fermi durante gli arricchimenti locali più lunghi.
 
-Stati terminali: `completed`, `failed`, `cancelled`, `interrupted`. La
-cancellazione è cooperativa: passa prima a `cancelling`; il worker dichiara
-`cancelled` solo dopo avere osservato la richiesta ed essere uscito. Al riavvio
-del server, i job non terminali diventano `interrupted`, perché i thread non
-possono sopravvivere al processo.
+Stati terminali: `completed`, `failed`, `cancelled`, `interrupted`. Una rejection
+di resource policy termina il job prima del workload con reason
+`capture_active`; la cancellazione resta cooperativa: passa prima a
+`cancelling`, e il worker dichiara `cancelled` solo dopo avere osservato la
+richiesta ed essere uscito. Al riavvio del server, i job non terminali diventano
+`interrupted`, perché i thread non possono sopravvivere al processo.
 
 Questa scelta è adeguata a una singola app desktop locale. Un futuro execution
 backend multi-processo richiederebbe lease, heartbeat, coda durevole e worker
@@ -588,7 +618,8 @@ struttura che include Markdown.
 
 `RuntimeServiceManager` supporta tre modalità:
 
-- `auto`: possiede il processo `local-llm-server`;
+- `auto`: possiede il processo `local-llm-server`, che resta cold all'avvio app e
+  viene avviato on-demand da `ensure_llm_ready()`;
 - `external`: usa un endpoint configurato e ne interroga `/health`;
 - `disabled`: rifiuta l'analisi locale.
 
@@ -596,7 +627,9 @@ struttura che include Markdown.
 l'eseguibile, attende readiness, raccoglie log e riavvia il processo quando
 cambia la configurazione effettiva: modello, path, backend, mmproj, context size,
 timeout o binary llama-server. La capability audio disabilita il reasoning in
-modalità automatica; testo e immagine usano le policy risolte dal runtime.
+modalità automatica; testo e immagine usano le policy risolte dal runtime. Dopo
+le fasi locali gestite, la residency dei modelli registrati viene rilasciata;
+l'idle shutdown del processo cold è una successiva estensione posseduta da PRS-7.
 
 Nel bundle, l'eseguibile principale gestisce anche i dispatch interni
 `-m local_llm_server` e `-m mlx_vlm.server`, evitando di riaprire la shell UI nei
@@ -646,6 +679,12 @@ dall'API; il frontend riceve solo flag `*_configured`. Cataloghi di modelli,
 provider e preset devono restare centralizzati nei rispettivi moduli backend e
 in `frontend/src/api/config.ts` per la presentazione.
 
+La Settings UI separa la configurazione persistita dalla gerarchia prodotto:
+storage, preferenze meeting e sintesi privacy/processing sono normali; provider,
+modelli e qualità sono Advanced; endpoint, model path, parametri interni,
+lifecycle e log runtime sono Developer/Diagnostics. La disclosure non cambia il
+contratto backend né elimina gli override esperti.
+
 ## 18. Frontend
 
 ### Struttura
@@ -654,17 +693,21 @@ in `frontend/src/api/config.ts` per la presentazione.
 health, lingua, demo e tour. Le pagine principali sono:
 
 - `DashboardPage`: vista Oggi e digest;
-- `RecordingPage` e `RecordingOverlayPage`: cattura e controllo;
-- `TranscriptionPage`: sorgenti, job, risultati, merge e split;
+- `NewRecordingPage`: golden path dei nuovi meeting, con readiness e recovery audio;
+- `RecordingPage` e `RecordingOverlayPage`: dettaglio/compatibilità cattura e controllo;
+- `TranscriptionPage`: sorgenti, job, risultati, merge e split; resta ancora il
+  workflow tecnico/import finché PRS-5 sposta il processing normale nel Meeting;
 - `MeetingDetailPage`: workspace del singolo meeting;
 - `ProjectsPage`: proiezione per progetto;
 - `AnalysisPage`: analisi libera o su transcript;
-- `SettingsPage`: configurazione e runtime locale.
+- `SettingsPage`: preferenze, Advanced processing e Developer/Diagnostics.
 
 `frontend/src/api/apiClient.ts` è il contratto HTTP tipizzato. Le pagine non
 devono duplicare URL o serializzazione. `useRecorder` orchestra il complesso
 lifecycle di cattura; `useAudioDevices` possiede dispositivi, permission e
-routing. I testi vivono in `i18n/locales/it.ts` e `en.ts`.
+routing. Il meter di recording conserva i valori high-frequency in ref e limita
+redraw/state updates a una cadenza umana; quando il documento è hidden evita il
+lavoro visuale. I testi vivono in `i18n/locales/it.ts` e `en.ts`.
 
 ### Distribuzione
 
@@ -679,6 +722,7 @@ mano. `static_vanilla_backup/` è una copia legacy, non la superficie runtime.
 - ogni stop o errore di cattura deve ripristinare il routing audio;
 - file nativi vengono verificati con `ffprobe` prima di essere dichiarati validi;
 - job attivi al restart diventano `interrupted`;
+- un workload pesante non ammesso durante capture termina prima dell'esecuzione con reason `capture_active`;
 - cambio configurazione LLM provoca restart controllato del sidecar;
 - diarizzazione, Qwen e audio intelligence salvano errore/stato ma non bloccano
   il transcript;
@@ -696,7 +740,8 @@ mano. `static_vanilla_backup/` è una copia legacy, non la superficie runtime.
 - provider cloud disattivati per default;
 - secret rimossi dalle risposte e dai metadata;
 - hash delle credenziali, non credenziali, nelle cache key;
-- selezione esplicita della finestra per acquisizione visuale;
+- visual capture non è attiva nel normale New Meeting; ogni workflow che cattura
+  frame deve comunque usare una sorgente esplicita;
 - frame visuali persistenti nella directory privata della registrazione;
 - bundle helper con usage description macOS e code signing.
 
@@ -749,7 +794,9 @@ Non sono presenti metriche remote, tracing distribuito o telemetry SaaS.
 3. definire owner e formato persistito;
 4. evitare di duplicare metadata nel filesystem e nel catalogo senza una
    strategia di sincronizzazione;
-5. dichiarare cleanup, timeout e comportamento su cancel/restart.
+5. dichiarare cleanup, timeout e comportamento su cancel/restart;
+6. se è pesante, passare dall'arbiter/resource policy invece di creare worker o
+   concorrenza indipendenti.
 
 ### Nuovo helper nativo
 
@@ -771,6 +818,11 @@ Non sono presenti metriche remote, tracing distribuito o telemetry SaaS.
   può prevalere su un default iniettato;
 - il frontend è una SPA hash-based senza router library dedicata;
 - audio intelligence produce ancora insight mock;
+- visual intelligence è classificata on-demand ma il nuovo ingresso prodotto è
+  ancora da completare in PRS-6; i workflow tecnici esistenti restano compatibili;
+- il progress dei job usa ancora polling frontend; PRS-8 possiede la migrazione a eventi;
+- il sidecar gestito rilascia la model residency ma il bounded idle shutdown del
+  processo cold è ancora PRS-7;
 - gli arricchimenti, ASR/VAD, cattura nativa e overlay espongono fallback
   espliciti, verificati anche dalla `.app`; l'eseguibile congelato inoltra
   `inspect-meeting` alla CLI senza avviare la shell grafica;
@@ -785,6 +837,7 @@ Non sono presenti metriche remote, tracing distribuito o telemetry SaaS.
 | Composition e dipendenze | `src/local_asr_server/server.py`, `app_services.py` |
 | Contratti request/response | `schemas.py`, router, `frontend/src/api/apiClient.ts` |
 | Stati e tracce recording | `recordings.py` |
+| Resource admission / heavy concurrency | `runtime/resource_policy.py`, `runtime/workload_arbiter.py` |
 | Provider ASR | `asr_provider.py`, `asr_models.py` |
 | Workflow trascrizione | `services/transcription_service.py`, `transcription_jobs.py` |
 | Template/pipeline analisi | `analysis_templates.py`, `analysis_jobs.py` |
@@ -799,6 +852,7 @@ Non sono presenti metriche remote, tracing distribuito o telemetry SaaS.
 | Processor visuali | `visual_intelligence/processors.py` converte risposte legacy e task-aware in osservazioni persistibili; parsing e validazione restano in `inference.py`, mentre `service.py` coordina policy, routing e lifecycle. |
 | Fetch visuale React | `api/visualIntelligence.ts` possiede i contratti e `hooks/useVisualIntelligence.ts` loading/error/abort; `MeetingDetailPage` coordina il workspace senza attendere il documento v2. |
 | Frontend navigation | `frontend/src/App.tsx` |
+| Product experience contract | `design/ux-contract.json` |
 | Build e packaging | `build.sh`, `ClosedRoom.spec`, `pyproject.toml` |
 | Registro funzionale | `docs/features.md` |
 

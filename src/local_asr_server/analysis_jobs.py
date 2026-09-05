@@ -24,6 +24,7 @@ from local_asr_server.llm import DEFAULT_GEMINI_MODEL
 from local_asr_server.runtime.models import resolve_local_llm_model_path
 from local_asr_server.runtime.workload_arbiter import (
     HeavyWorkloadArbiter,
+    WorkloadAdmissionRejected,
     WorkloadArbiterClosed,
     WorkloadQueueFull,
 )
@@ -115,9 +116,10 @@ class AnalysisJobManager:
                 workload_type=ANALYSIS_JOB_TYPE,
                 run=lambda: self._run(job_id, run_id, body),
                 on_cancel=lambda _reason: self._mark_cancelled(job_id, run_id),
+                on_reject=lambda reason: self._mark_failed(job_id, run_id, reason),
             )
             status = "queued"
-        except (WorkloadQueueFull, WorkloadArbiterClosed) as exc:
+        except (WorkloadQueueFull, WorkloadArbiterClosed, WorkloadAdmissionRejected) as exc:
             self._mark_failed(job_id, run_id, str(exc))
             status = "failed"
         return {

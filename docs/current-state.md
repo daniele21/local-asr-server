@@ -2,62 +2,36 @@
 
 ## Engineering baseline
 
-ClosedRoom follows `daniele21/repo-template-sw` **0.9.1** at maturity **L2** with `python`, `typescript`, `macos`, `local-ai`, `product-ui`. Feature/fix/test work integrates through `dev` before promotion. Delivery is staged as `ITERATION -> INTEGRATION -> RELEASE`, with validation selected from risk dimensions and required gates rather than running the broadest suite after every edit.
+ClosedRoom follows `daniele21/repo-template-sw` **0.9.1** at maturity **L2** with `python`, `typescript`, `macos`, `local-ai`, `product-ui`. Work integrates through `dev` before stable promotion to `main`; delivery is `ITERATION -> INTEGRATION -> RELEASE` with selector-owned risk gates.
 
-## Strong evidence to preserve
+## Evidence to preserve
 
-- Broad Python unit/integration coverage plus explicit runtime/service/job/port ownership.
-- Focused native capture, diarization and visual-intelligence tests.
-- Version-aware macOS packaging and native-helper validation.
-- Semantic React UI tokens/components.
+- Broad Python unit/integration coverage and explicit runtime/job ownership.
+- Native capture, diarization and visual-intelligence tests.
+- Version-aware macOS packaging/native-helper validation.
+- Semantic React UI contracts.
 
-## Baseline capabilities now implemented
+## Integrated baseline
 
-- `scripts/select_validation_profile.py` selects risks, required gates and LEAN / SCOPED / STRONG / FULL shorthand; unknown executable/owner paths fail safe to FULL.
-- `.github/workflows/preflight.yml` provides exact-head remote validation at integration/release and may reuse equivalent evidence only when the 0.9.1 identity contract allows it.
-- `scripts/build_artifact.sh` creates immutable, uniquely identified finalized artifacts; finalization records manifest, SHA-256 evidence and build delta.
-- `scripts/smoke_packaged_app.py` verifies the finalized `.app`, bundled FastAPI/static frontend, readiness and cleanup.
-- `scripts/real_environment_smoke.py` owns functional target-Mac evidence: packaged WKWebView/accessibility behavior, TCC/native mic + system-audio capture, persisted dual-source recording, Stop -> meeting navigation and isolated-HOME cleanup.
-- Target-Mac UI automation uses a bounded direct `AXUIElement`/`CGEvent` driver compiled from `scripts/macos_ax_helper.swift`, avoiding unbounded AppleScript/System Events tree enumeration. Per-action timeouts and bounded tree traversal keep runner failures classifiable.
-- A dirty target-Mac checkout remains a hard preflight failure so the built artifact is attributable to one revision; the report includes the exact `git status --porcelain` entries that caused the block.
-- `scripts/real_environment_ui_evidence.py` is the canonical target-Mac UI entrypoint. With `--build` it first looks for a successful clean finalized `.app` whose manifest `source.revision` matches the checkout and reuses that exact bundle across TCC permission reruns. It builds only when no exact artifact exists, then restores only Vite's generated `src/local_asr_server/static/` output and verifies the checkout is clean before starting the smoke.
-- The same UI wrapper retains required app-window screenshots plus a journey video under `dist/evidence/real-environment/.../ui-media/meeting-recording-ui/` and records whether the artifact was `reused_exact`, `built_exact` or explicit.
-- `.engineering/e2e.json` uses risk-based UI evidence and keeps the real meeting-recording journey at `FULL_MEDIA` fidelity.
-- Packaging uses the published `local-llm-server` artifact and precompiles Core Audio without mutating user audio routing.
-
-## Residual target-environment evidence
-
-Hosted packaged-app smoke is `representative_virtual`, not target evidence. For the meeting-recording UI/native-capture claim, run on the real Apple Silicon Mac from a clean current `dev` checkout:
-
-```bash
-python3 scripts/real_environment_ui_evidence.py --build
-```
-
-Required media:
-
-- ready-to-record screenshot;
-- active-recording screenshot;
-- persisted-meeting / Transcribe screenshot;
-- complete ClosedRoom app-window video;
-- `manifest.json` tied to the journey/source revision.
-
-Capture is restricted to the ClosedRoom window and uses synthetic/local test content inside a temporary `HOME`. A passing functional smoke with missing media returns `E2E_EVIDENCE_INCOMPLETE`, not success. Missing TCC/Accessibility grants return `blocked_permission`; grant only the requested permission and rerun the same command. Because the exact finalized app is reused, an ad-hoc-signed target build keeps the same TCC identity across those reruns instead of forcing a fresh approval on every attempt. A dirty checkout still fails before build and reports the offending status entries rather than producing non-attributable evidence.
-
-Still separate from automation: VoiceOver spoken-output/subjective usability, production signing/notarization, and material production MLX/Metal compatibility/performance/quality claims.
+- Exact-head/tree-equivalent remote preflight and immutable finalized artifacts.
+- Packaged `.app` lifecycle smoke plus risk-based E2E evidence.
+- Canonical target-Mac runner `python3 scripts/real_environment_ui_evidence.py --build`, with exact-artifact reuse across TCC retries, bounded AX automation, isolated HOME and ClosedRoom-window-only media.
+- `target-macos-real` remains separate from hosted evidence; production signing/notarization, subjective VoiceOver usability and representative MLX/Metal performance remain separate claims.
 
 ## Current evidence status
 
-UX implementation and deterministic target-Mac tooling are integrated through the normal `dev` flow only after selector-required automated gates pass. `target-macos-real` remains pending until the command above passes with complete media on the actual Apple Silicon Mac.
+The prior UX simplification is integrated on `dev`; its final target-Mac evidence remains pending through the canonical command above.
 
-## Active workstream
+`feature/product-runtime-simplification` now contains the first new convergence wave: Meeting-first New Meeting, bounded recording UI cadence, capture-priority heavy-work admission, cold/on-demand managed LLM startup and simplified Settings hierarchy. This is **not integrated truth yet**: exact-head selector-required integration gates and final diff/doc review must pass before merge. Representative before/after CPU/RSS evidence is pending, so no performance percentage is claimed.
 
-- [`docs/workstreams/ux-simplification.md`](workstreams/ux-simplification.md): implementation and deterministic automation complete; UX-9 waits only for target-Mac evidence.
+## Active workstreams
+
+- [`ux-simplification.md`](workstreams/ux-simplification.md): integrated implementation; UX-9 waits on target-Mac evidence.
+- [`product-runtime-simplification.md`](workstreams/product-runtime-simplification.md): Wave 1 implementation checkpoint; later waves own simple processing, visual on-demand, cold AI lifecycle, event progress and evidence-led audio optimization.
 
 ## Next highest-value work
 
-1. Run `python3 scripts/real_environment_ui_evidence.py --build` from a clean current `dev` checkout on the target Mac; repeated runs reuse the exact same finalized app for that revision.
-2. If `checkout_clean` fails, preserve local changes and resolve the reported `source_dirty_entries`; do not bypass the exact-source gate.
-3. If `blocked_permission`, grant only the requested permission and rerun the same command without rebuilding the app.
-4. Require functional `status: pass` plus the complete screenshot/video manifest; do not accept `E2E_EVIDENCE_INCOMPLETE`.
-5. Review VoiceOver spoken output/usability separately.
-6. Move reproducible real-Mac failures into the cheapest sufficient automated environment where possible.
+1. Validate exact Wave 1 head against current `dev`; fix owning causes, then integrate.
+2. After Wave 1 convergence, run PRS-5/6/7 and backend PRS-8 in parallel per the workstream DAG.
+3. Capture comparable resource evidence before setting CPU/RSS targets.
+4. Continue the independent target-Mac UX evidence lane; require functional PASS plus complete media, and reuse the exact artifact across permission retries.

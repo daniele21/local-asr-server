@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "contract_version": "0.6.0",
+  "contract_version": "0.7.0",
   "applicable": true,
   "design_source_of_truth": {
     "type": "code-first",
@@ -13,16 +13,16 @@
     ],
     "primary_jobs": [
       "start and understand a reliable meeting recording",
-      "transcribe a recording and understand processing state",
+      "turn a recorded meeting into a useful transcript without technical setup",
       "review speaker-attributed meeting content",
-      "extract useful meeting/project insights",
+      "extract useful meeting/project notes and insights",
       "recover from permission, audio, model or processing failures without losing work"
     ],
     "primary_surfaces": [
-      "dashboard and meeting/project workspace",
-      "recording and compact recording overlay",
-      "transcription and meeting detail",
-      "analysis workflows",
+      "Today and meeting/project workspace",
+      "new meeting and compact recording overlay",
+      "meeting detail with transcript, notes, speakers and on-demand tools",
+      "secondary import and power-tool workflows",
       "settings and diagnostics"
     ]
   },
@@ -43,24 +43,95 @@
     "bounded_information_density": true,
     "actionable_error_recovery": true
   },
+  "product_object_model": {
+    "primary_user_object": "meeting",
+    "normal_user_concepts": [
+      "meeting",
+      "project",
+      "transcript",
+      "notes",
+      "actions",
+      "speakers",
+      "search"
+    ],
+    "implementation_concepts_hidden_by_default": [
+      "recording job",
+      "transcription job",
+      "analysis job",
+      "provider",
+      "model",
+      "runtime",
+      "backend",
+      "port",
+      "model path",
+      "audio routing"
+    ],
+    "rule": "Technical capability does not imply a user-facing decision or setting. Surface implementation concepts only when an explicit advanced choice or recovery action materially requires them."
+  },
+  "normal_decision_budget": {
+    "start_meeting_required_decisions_max": 1,
+    "golden_path_technical_concepts": 0,
+    "provider_model_decisions_before_recording": 0,
+    "provider_model_decisions_before_transcription": 0,
+    "provider_model_decisions_before_notes": 0,
+    "transcribe_primary_actions": 1,
+    "generate_notes_primary_actions": 1
+  },
+  "capability_placement": {
+    "core": [
+      "microphone and computer audio recording",
+      "meeting transcript",
+      "summary, decisions and actions",
+      "speaker attribution and naming",
+      "meeting search"
+    ],
+    "contextual": [
+      "project organization and filtering"
+    ],
+    "secondary": [
+      "file import"
+    ],
+    "on_demand": [
+      "visual intelligence",
+      "custom analysis and ask"
+    ],
+    "advanced": [
+      "cloud/local trust boundary override",
+      "provider, model and quality overrides"
+    ],
+    "developer": [
+      "custom model paths",
+      "custom runtime endpoints",
+      "backend and context overrides"
+    ],
+    "diagnostics": [
+      "runtime lifecycle controls",
+      "ports",
+      "logs",
+      "audio routing diagnostics"
+    ],
+    "power_tools": [
+      "merge, split and raw transcript tools"
+    ]
+  },
   "golden_path": {
     "steps": [
-      "home",
+      "today",
       "new_meeting",
       "record",
       "stop",
+      "meeting",
       "transcribe",
-      "analyze",
-      "review"
+      "notes_review"
     ],
-    "normal_path_rule": "A configured user can complete the golden path without understanding backend, helper, process, port, model-path or routing concepts.",
+    "normal_path_rule": "A configured user completes the golden path without choosing capture backend, source device, diarization, visual enrichment, provider, model, runtime, helper, process, port, model path or routing concepts.",
     "surface_hierarchy": {
-      "home": "understand what happened, what needs attention and what to open or do next",
-      "new_meeting": "confirm meeting context and start recording",
-      "record": "understand capture status and safely stop",
-      "transcribe": "start transcription, understand progress and recover from failure",
-      "analyze": "choose the trust/runtime boundary in user language and run analysis with strong defaults",
-      "review": "review transcript, speakers, actions, decisions, risks and derived insights"
+      "today": "understand what happened, what needs attention and what to open or do next",
+      "new_meeting": "optionally add meeting context, see readiness and start recording",
+      "record": "understand capture status and safely stop with minimal live UI work",
+      "meeting": "use the saved meeting as the canonical workspace for all follow-up actions",
+      "transcribe": "start transcription with one primary action, understand progress and recover from failure",
+      "notes_review": "generate and review transcript, speakers, actions, decisions, risks and derived notes without technical setup"
     }
   },
   "complexity_disclosure": {
@@ -70,12 +141,18 @@
       "advanced",
       "diagnostics"
     ],
-    "essential": "Information and actions required to complete the user's current task.",
-    "contextual": "Optional task-relevant choices such as project, capture source or enrichment that can change the outcome.",
-    "advanced": "Expert configuration such as model or quality overrides that normal use does not require.",
+    "essential": "Information and actions required to complete the user's current outcome.",
+    "contextual": "Optional outcome-level choices the user can understand without technical architecture knowledge, such as project organization. A capability is not contextual merely because it can change implementation behavior.",
+    "advanced": "Explicit expert trust, provider, model or quality overrides that normal use does not require.",
     "diagnostics": "Internal runtime, helper, process, port, log, routing and model-path details used for troubleshooting rather than normal operation.",
     "diagnostics_default_hidden": true,
     "recovery_exception": "A technical condition may surface outside diagnostics only when the user must act on it; present the user-facing consequence and recovery action before raw technical detail."
+  },
+  "resource_experience": {
+    "recording_priority": "While recording is active, ClosedRoom prioritizes capture and persistence and does not start heavy ASR, LLM or VLM work.",
+    "heavy_work_admission": "One canonical runtime policy and the existing bounded workload owner decide when heavy work may start.",
+    "model_residency": "Managed AI residency is phase-scoped and reclaimed after work; external runtimes remain caller-owned.",
+    "background_activity": "Stable UI state must not require display-rate React updates or avoidable polling loops."
   },
   "critical_states": [
     "loading",
@@ -141,10 +218,11 @@
     ]
   },
   "critical_journeys": [
-    {"id": "record-meeting", "name": "Start, monitor and safely stop a local meeting recording", "e2e": "required"},
-    {"id": "transcribe-meeting", "name": "Transcribe a recording and recover from processing failure", "e2e": "required"},
-    {"id": "review-meeting", "name": "Review transcript, speakers and derived meeting evidence", "e2e": "recommended"},
-    {"id": "analyze-meeting", "name": "Run meeting analysis with an explicit provider/runtime choice", "e2e": "recommended"}
+    {"id": "record-meeting", "name": "Start, monitor and safely stop a local meeting recording without technical setup", "e2e": "required"},
+    {"id": "transcribe-meeting", "name": "Transcribe a meeting with one primary action and recover from processing failure", "e2e": "required"},
+    {"id": "review-meeting", "name": "Review transcript, speakers, notes and derived meeting evidence", "e2e": "recommended"},
+    {"id": "analyze-meeting", "name": "Generate meeting notes with automatic defaults and optional advanced overrides", "e2e": "recommended"},
+    {"id": "visual-on-demand", "name": "Explicitly analyze shared visual content without making visual capture part of normal recording", "e2e": "recommended"}
   ],
   "reference_views": [
     "docs/assets/0.home.png",
