@@ -19,7 +19,7 @@ class ServerResourcePolicyContractTests(unittest.TestCase):
 
     def test_resource_policy_reads_canonical_recording_store_and_guards_shared_arbiter(self) -> None:
         self.assertIn(
-            "capture_active=lambda: recording_store.active_recording() is not None",
+            "recording_has_active_capture(recording_store.active_recording())",
             self.source,
         )
         self.assertIn(
