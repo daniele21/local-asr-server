@@ -29,7 +29,7 @@ e cambiata.
 | Trascrizione, cache e streaming | `src/local_asr_server/transcriber.py` |
 | Runtime locale e servizi gestiti | `src/local_asr_server/runtime/` |
 | Routing audio macOS | `src/local_asr_server/audio_router.py` e `src/local_asr_server/macos_audio_helper/` |
-| App menu bar e WKWebView | `src/local_asr_server/menubar.py` e `src/local_asr_server/window.py` |
+| App macOS menu bar e WKWebView | `src/local_asr_server/menubar.py` e `src/local_asr_server/window.py` |
 | Frontend React sorgente | `frontend/src/` |
 | Frontend statico servito | `src/local_asr_server/static/` |
 
@@ -98,3 +98,39 @@ metrica backend affidabile mostrano esplicitamente che la stima non è ancora
 disponibile; completate e future restano rispettivamente al 100% e 0%. Ogni
 transizione di step alimenta anche il log tecnico, indipendentemente dalla
 presenza di eventi ASR o visuali dettagliati.
+
+Nota nomi speaker: `speaker_labels.py` è la fonte centralizzata per trasformare
+i cluster `provider_speaker` in label visibili. La priorità è nome manuale,
+nome visuale Qwen accettato, quindi fallback stabile `Speaker N`. Il contratto
+`PATCH /v1/transcriptions/{id}/speakers` salva le correzioni, rigenera full
+text e segmenti e aggiorna JSON/TXT e catalogo SQLite. La pagina risultato
+espone un campo modificabile per ogni cluster anche quando Qwen VL non dispone
+di frame o si astiene. Anche le trascrizioni precedenti vengono normalizzate
+in lettura, senza richiedere una nuova inferenza ASR.
+
+Nota storage e immagini: l’avvio CLI e menu bar non congelano più un
+`recordings_dir` parallelo, ma seguono il valore persistito mostrato nelle
+impostazioni; `--recordings-dir` resta un override solo se esplicitamente
+fornito. `RecordingStore` mantiene lettura compatibile dal precedente default
+`~/Recordings/local-asr`, mentre le nuove registrazioni usano il path UI. La
+pagina risultato legge i JPEG preservati tramite API autenticata e mostra una
+galleria anche quando Qwen VL fallisce. Il sidecar assegna inoltre una porta
+libera al processo interno `mlx_vlm.server`, evitando collisioni con worker
+visuali orfani sulla precedente porta fissa. Il processo viene avviato in un
+process group dedicato e stop/restart terminano anche i figli; il preflight
+elimina esclusivamente processi il cui comando contiene `-m mlx_vlm.server`,
+così un arresto precedente non può lasciare un backend visuale stale.
+Le scritture atomiche di metadata, timeline e artefatti usano file temporanei
+univoci per operazione, evitando collisioni `*.tmp` quando stop cattura, retry
+trascrizione e pipeline visuale aggiornano contemporaneamente la stessa
+sessione.
+
+Nota lifecycle porte: `runtime/port_manager.py` è la fonte di verità per il
+preflight delle porte API. CLI e menu bar leggono
+`runtime-state.json`, verificano PID, comando processo e `/health`, terminano
+tutte le precedenti istanze API ClosedRoom, incluse quelle orfane non più
+registrate o avviate su un'altra porta, attendono il rilascio della socket e
+registrano atomicamente l'unica nuova ownership. Wrapper `uv`, worker ASR,
+helper nativi e processi estranei non vengono terminati. Server standard,
+reload e menu bar sono quindi mutuamente esclusivi. Verifica:
+`test/test_port_manager.py`, `test/test_cli.py` e `test/test_paths.py`.
