@@ -22,7 +22,7 @@ from local_asr_server.native_capture import NativeCaptureManager
 from local_asr_server.recordings import RecordingStore
 from local_asr_server.transcription_jobs import TranscriptionJobManager
 from local_asr_server.paths import get_static_dir
-from local_asr_server.runtime.resource_policy import ResourcePolicy
+from local_asr_server.runtime.resource_policy import ResourcePolicy, recording_has_active_capture
 from local_asr_server.runtime.service_manager import RuntimeServiceManager
 from local_asr_server.runtime.workload_arbiter import HeavyWorkloadArbiter
 from local_asr_server.services.transcription_service import TranscriptionService
@@ -114,9 +114,10 @@ def create_app(
     )
 
     # RecordingStore is the existing canonical capture-state owner. ResourcePolicy
-    # reads it lazily and HeavyWorkloadArbiter remains the only heavy-work scheduler.
+    # narrows its durable UI/recovery state to actual capture signals, while
+    # HeavyWorkloadArbiter remains the only heavy-work scheduler.
     resource_policy = ResourcePolicy(
-        capture_active=lambda: recording_store.active_recording() is not None,
+        capture_active=lambda: recording_has_active_capture(recording_store.active_recording()),
     )
     heavy_workloads = HeavyWorkloadArbiter.from_env(
         admission_guard=resource_policy.assert_heavy_work_admissible,
