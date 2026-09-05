@@ -20,22 +20,23 @@ ClosedRoom follows `daniele21/repo-template-sw` **0.9.1** at maturity **L2** wit
 - PRS-5 is integrated through PR #26 (`c62882bb17c50288266094db8e64fa2e7067f681`): Meeting Transcribe and Generate Notes are one-action normal workflows; technical overrides remain advanced.
 - PRS-7 is integrated through PR #27 (`c7161a0055804e534f6b9b10169b183bc3c1ff16`): managed LLM/VLM residency releases after a phase and the owned cold sidecar stops after a bounded idle window with stale-timer race protection.
 - PRS-6 is integrated through PR #28 (`bf4e3596a8cf0a9bd7fc24746dcde258c91ac4df`): screen context is explicit/off-by-default, no VLM runs during recording, and post-meeting analysis enriches the existing transcript through one persisted/cancellable `visual_intelligence` job using bounded `v2` routing and a 2048-work-item ceiling. Exact feature HEAD `5a9013c01c467c8bf5427b337b4d214294b9f798` passed INTEGRATION/STRONG remote preflight run `33958256522`, including frontend checks, the full Python suite, finalized ARM64 `.app` build and packaged-app smoke.
+- PRS-8 is integrated through PR #30 (`c3377ab4a1f68cd90b7153bb1ca63c07c3a969c9`): normal Meeting processing follows persisted SSE job events instead of interval polling; terminal events reload canonical Meeting state and GET snapshots are recovery/reconnect-only. Persisted `job_events` are capped at 512 per job and persisted managers do not duplicate them into an undrained process-local queue. Exact final feature HEAD `cb722c654bf842f90620679a90f883a87accafea` passed INTEGRATION/STRONG remote preflight run `33962722390`, including frontend lint/typecheck, the full Python suite, finalized ARM64 `.app` build and packaged-app lifecycle smoke.
 
 ## Current evidence status
 
 Representative before/after CPU/RSS evidence is still pending, so no performance percentage is claimed. The prior UX simplification still awaits its independent target-Mac evidence lane.
 
-PRS-8 is the active Wave 2 integration candidate in PR #30. Normal Meeting processing follows persisted SSE job events instead of the 2.5-second refresh loop; terminal events reload canonical Meeting state and a GET snapshot is used only after stream failure for recovery/reconnect. Persisted `job_events` are capped at 512 events per job, and persisted managers no longer duplicate those events into an undrained in-memory queue. The technical Advanced/import transcription wizard remains outside this slice. Exact-head source/package validation is still pending.
+PRS-9 is active on `feature/audio-strategy-benchmark`. The current `both` capture persists `mixed`, `mic` and `system`, while normal ASR transcribes the non-silent `mic` and `system` tracks separately before cross-track deduplication/merge. A privacy-safe benchmark harness now compares that current strategy with one mixed-track ASR run using ASR audio seconds, wall time, normalized transcript similarity, timeline overlap and source-attribution retention. The harness does not mutate recordings, does not use transcription cache, forces the local provider and does not emit transcript text. No capture/transcription ownership change is allowed until representative target-Mac evidence supports it.
 
 ## Active workstreams
 
 - [`ux-simplification.md`](workstreams/ux-simplification.md): integrated implementation; UX-9 waits on target-Mac evidence.
-- [`product-runtime-simplification.md`](workstreams/product-runtime-simplification.md): PRS-5/6/7 integrated; PRS-8 is the active integration candidate; PRS-9 and comparable evidence remain before final convergence.
+- [`product-runtime-simplification.md`](workstreams/product-runtime-simplification.md): PRS-5/6/7/8 integrated; PRS-9 benchmark evidence is active before any audio ownership decision and PRS-10 final convergence.
 
 ## Next highest-value work
 
-1. Validate and integrate PRS-8 only if exact-head STRONG gates remain green against current `dev`.
-2. Run the audio strategy benchmark before changing dual-track capture/transcription ownership (PRS-9).
+1. Validate the PRS-9 benchmark harness and collect representative dual-track vs mixed evidence before changing capture/transcription ownership.
+2. Use PRS-9 results to decide whether simpler audio ownership is justified; retain dual-track when quality or attribution evidence does not support simplification.
 3. Capture comparable resource evidence before setting CPU/RSS targets.
 4. Continue the independent target-Mac UX evidence lane using the canonical runner and exact-artifact reuse.
 5. Close PRS-10 only after product/runtime behavior, deterministic gates and required real-environment evidence agree.
