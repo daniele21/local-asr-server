@@ -6,6 +6,13 @@ const ACTIVE_JOB_STATUSES = new Set(['queued', 'running', 'waiting_for_service',
 
 function activeMeetingJobIds(meeting: Meeting | null): string[] {
   if (!meeting) return [];
+  const activePreparation = (meeting.jobs || []).find((job) => (
+    job.type === 'meeting_preparation' && ACTIVE_JOB_STATUSES.has(job.status)
+  ));
+  // A preparation parent is the user-facing owner of its child ASR/analysis work.
+  // Follow only that parent while it is active to avoid duplicate streams and UI churn.
+  if (activePreparation) return [activePreparation.id];
+
   const ids = new Set<string>();
   for (const job of meeting.jobs || []) {
     if (ACTIVE_JOB_STATUSES.has(job.status)) ids.add(job.id);
@@ -28,7 +35,7 @@ function applyJobUpdate(meeting: Meeting, job: TranscriptionJob): Meeting {
   };
 }
 
-/** Keep active Meeting processing event-driven; terminal events reload canonical persisted state. */
+/** Keep active Meeting processing event-driven; reload canonical state at durable milestones. */
 export function useMeetingJobEvents(
   meeting: Meeting | null,
   setMeeting: Dispatch<SetStateAction<Meeting | null>>,
@@ -36,6 +43,7 @@ export function useMeetingJobEvents(
 ): void {
   const setMeetingRef = useRef(setMeeting);
   const reloadRef = useRef(reload);
+  const milestoneReloadsRef = useRef(new Set<string>());
   setMeetingRef.current = setMeeting;
   reloadRef.current = reload;
 
@@ -47,6 +55,13 @@ export function useMeetingJobEvents(
     const cleanups = jobIds.map((jobId) => followJobEvents(jobId, {
       onUpdate: (job) => {
         setMeetingRef.current((current) => current ? applyJobUpdate(current, job) : current);
+        if (job.type === 'meeting_preparation' && job.current_step === 'preparing_notes') {
+          const milestoneKey = `${job.id}:transcript_ready`;
+          if (!milestoneReloadsRef.current.has(milestoneKey)) {
+            milestoneReloadsRef.current.add(milestoneKey);
+            void reloadRef.current();
+          }
+        }
       },
       onTerminal: () => {
         void reloadRef.current();

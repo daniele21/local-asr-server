@@ -59,7 +59,7 @@
       "automation": "automated",
       "platform": "GitHub-hosted macOS arm64 with headless Chrome",
       "command": "node scripts/browser_meeting_ui_e2e.mjs",
-      "artifact_surface": "real React source served by Vite, deterministic loopback API fixture, ChromeDriver browser interaction, bounded viewport screenshots and frame-assembled MP4 evidence",
+      "artifact_surface": "real React source served by Vite, deterministic loopback API fixtures for saved-Meeting and preparation-recovery journeys, ChromeDriver browser interaction, bounded viewport screenshots and frame-assembled MP4 evidence",
       "target_environment_refs": ["closedroom-macos-apple-silicon"],
       "known_gaps": ["does not exercise the packaged WKWebView process boundary", "deterministic API fixtures do not prove the assembled FastAPI persistence/runtime path", "does not prove TCC, native capture, physical audio devices or production MLX/Metal behavior"]
     },
@@ -146,6 +146,19 @@
       "real_environment_confirmation": "conditional",
       "real_environment_runner": "target-macos-real",
       "residual_gaps": ["packaged WKWebView rendering remains a release confirmation when the saved-Meeting interaction is release-critical", "TCC/native capture and model fidelity are outside this journey"],
+      "automation_gap_reason": ""
+    },
+    {
+      "id": "meeting-preparation-recovery",
+      "claim": "A user can prepare notes with one durable action, read the transcript before notes finish, reconnect to the same parent work, preserve the transcript through notes failure, resume without rerunning ASR, and land on ready notes when the retry completes.",
+      "ui_surface": true,
+      "minimum_ui_evidence_mode": "full_media",
+      "target_environment_refs": ["closedroom-macos-apple-silicon"],
+      "automated_environment_refs": ["browser-macos-arm64-ci"],
+      "minimum_automated_fidelity": "simulated_or_emulated",
+      "real_environment_confirmation": "conditional",
+      "real_environment_runner": "target-macos-real",
+      "residual_gaps": ["deterministic browser fixtures do not prove production ASR/LLM quality or latency", "packaged WKWebView rendering remains a release confirmation when this journey is release-critical"],
       "automation_gap_reason": ""
     },
     {

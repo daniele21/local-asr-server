@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { ApiClient, AnalysisRun, Meeting, MeetingDiagnostics } from '../api/apiClient';
 import { createVisualIntelligenceJob, cancelVisualIntelligenceJob } from '../api/visualJobs';
+import { prepareMeetingNotes, cancelMeetingPreparation } from '../api/meetingPreparation';
 import { ANALYSIS_TYPE_LABELS, ANALYSIS_TYPE_ORDER } from '../api/config';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
@@ -47,6 +48,7 @@ type MeetingTab = 'transcript' | 'analysis' | 'speakers';
 type VisualFramesState = 'idle' | 'loading' | 'ready' | 'error';
 
 const activeJobStatuses = new Set(['queued', 'running', 'waiting_for_service', 'retrying', 'cancelling']);
+const recoverablePreparationStatuses = new Set(['failed', 'interrupted']);
 const meetingTabs: MeetingTab[] = ['transcript', 'analysis', 'speakers'];
 
 function runMarkdown(run: AnalysisRun): string {
@@ -67,6 +69,19 @@ function meetingStatusLabel(status: string, lang: string): string {
     failed: { it: 'Errore', en: 'Failed' },
   };
   return labels[status]?.[lang === 'it' ? 'it' : 'en'] || status;
+}
+
+function preparationProgressLabel(step: string, lang: string): string {
+  if (step === 'preparing_transcript') {
+    return lang === 'it' ? 'Preparazione trascrizione' : 'Preparing transcript';
+  }
+  if (step === 'preparing_notes') {
+    return lang === 'it' ? 'Trascrizione pronta · preparazione note' : 'Transcript ready · preparing notes';
+  }
+  if (step === 'cancelling') {
+    return lang === 'it' ? 'Interruzione in corso' : 'Stopping preparation';
+  }
+  return lang === 'it' ? 'Preparazione meeting' : 'Preparing meeting';
 }
 
 export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = false }: MeetingDetailPageProps) {
@@ -98,6 +113,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
   const loadQueuedRef = useRef(false);
   const diagnosticsGenerationRef = useRef(0);
   const visualFramesGenerationRef = useRef(0);
+  const userSelectedTabRef = useRef(false);
 
   const handleTimestampClick = (time: number) => {
     setShowAudioPlayer(true);
@@ -141,8 +157,13 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
         if (generation !== loadGenerationRef.current) return;
         setMeeting(data);
         const availableTypes = Object.keys(data.latest_analysis || {});
-        if (availableTypes.length > 0 && !data.latest_analysis[selectedAnalysisType]) {
-          setSelectedAnalysisType(availableTypes[0]);
+        if (availableTypes.length > 0) {
+          if (!data.latest_analysis[selectedAnalysisType]) {
+            setSelectedAnalysisType(availableTypes[0]);
+          }
+          if (!userSelectedTabRef.current) {
+            setActiveTab('analysis');
+          }
         }
       } catch (err: any) {
         if (generation !== loadGenerationRef.current) return;
@@ -213,6 +234,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
     setVisualFrameCount(0);
     setVisualFramesState('idle');
     setVisualFramesError(null);
+    userSelectedTabRef.current = false;
     void load();
     return () => {
       loadGenerationRef.current += 1;
@@ -242,6 +264,15 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
     () => (meeting?.jobs || []).filter((job) => activeJobStatuses.has(job.status)),
     [meeting],
   );
+  const preparationJobs = useMemo(
+    () => (meeting?.jobs || []).filter((job) => job.type === 'meeting_preparation'),
+    [meeting],
+  );
+  const activePreparation = activeJobs.find((job) => job.type === 'meeting_preparation');
+  const latestPreparation = preparationJobs[0];
+  const displayedActiveJobs = activePreparation
+    ? [activePreparation]
+    : activeJobs;
 
   const isBusy = busyAction !== null
     || activeJobs.length > 0
@@ -278,6 +309,20 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
       await load();
     } catch (err: any) {
       setError(err?.message || (lang === 'it' ? 'Impossibile avviare la trascrizione' : 'Failed to start transcription'));
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const startPreparation = async () => {
+    if (!meeting || demoMode || isBusy) return;
+    setBusyAction('meeting_preparation');
+    setError(null);
+    try {
+      await prepareMeetingNotes(meeting.id);
+      await load();
+    } catch (err: any) {
+      setError(err?.message || (lang === 'it' ? 'Impossibile preparare le note' : 'Failed to prepare meeting notes'));
     } finally {
       setBusyAction(null);
     }
@@ -322,10 +367,12 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
   };
 
   const handleCancelJob = async (jobId: string, jobType?: string) => {
-    if (demoMode) return;
+    if (demoMode || !meeting) return;
     try {
       if (jobType === 'visual_intelligence') {
         await cancelVisualIntelligenceJob(jobId);
+      } else if (jobType === 'meeting_preparation') {
+        await cancelMeetingPreparation(meeting.id, jobId);
       } else {
         await ApiClient.cancelJob(jobId);
       }
@@ -336,10 +383,16 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
   };
 
   const focusTab = (tab: MeetingTab) => {
+    userSelectedTabRef.current = true;
     setActiveTab(tab);
     window.requestAnimationFrame(() => {
       document.getElementById(`meeting-tab-${tab}`)?.focus();
     });
+  };
+
+  const selectTab = (tab: MeetingTab) => {
+    userSelectedTabRef.current = true;
+    setActiveTab(tab);
   };
 
   const handleTabListKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -423,6 +476,10 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
   const acceptedSpeakerMappings = (meeting.transcription?.stats?.speaker_attribution?.mappings || [])
     .filter((mapping) => mapping.status === 'accepted' && mapping.display_name);
   const speakerMappings = meeting.transcription?.stats?.speaker_attribution?.mappings || [];
+  const hasCurrentNotes = Object.keys(meeting.latest_analysis || {}).length > 0;
+  const canResumePreparation = Boolean(
+    latestPreparation && recoverablePreparationStatuses.has(latestPreparation.status),
+  );
 
   const enrichmentBadge = (status?: string) => {
     if (status === 'completed') return <Badge variant="success">{t('meeting.enrichmentCompleted')}</Badge>;
@@ -544,12 +601,18 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0 flex-1">
             <div className="flex items-center gap-2 text-sm font-semibold text-text-primary shrink-0">
               <Clock3 className="w-4 h-4 text-warning" aria-hidden="true" />
-              <span>{t('meeting.processingTitle')}</span>
+              <span>{activePreparation
+                ? (lang === 'it' ? 'Preparazione note' : 'Preparing notes')
+                : t('meeting.processingTitle')}</span>
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-text-secondary">
-              {activeJobs.map((job) => (
+              {displayedActiveJobs.map((job) => (
                 <div key={job.id} className="flex items-center gap-2">
-                  <span className="font-medium text-text-primary">{job.type}: {formatJobProgress(job, t)}</span>
+                  <span className="font-medium text-text-primary">
+                    {job.type === 'meeting_preparation'
+                      ? preparationProgressLabel(job.current_step, lang)
+                      : `${job.type}: ${formatJobProgress(job, t)}`}
+                  </span>
                   <button
                     type="button"
                     onClick={() => handleCancelJob(job.id, job.type)}
@@ -560,7 +623,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                   </button>
                 </div>
               ))}
-              {meeting.analysis_runs.filter((run) => activeJobStatuses.has(run.status)).map((run) => (
+              {!activePreparation && meeting.analysis_runs.filter((run) => activeJobStatuses.has(run.status)).map((run) => (
                 <div key={run.id} className="flex items-center gap-2">
                   <span className="font-medium text-text-primary">{analysisLabel(run.analysis_type)}: {run.status}</span>
                   {run.job_id && (
@@ -584,46 +647,57 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
       )}
 
       <div className="flex flex-col gap-5 w-full">
-        {!isBusy && !meeting.transcription && (
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-4 py-3.5 rounded-xl border border-warning/25 bg-warning/5">
-            <div className="flex items-start gap-2.5 min-w-0">
-              <FileText className="h-5 w-5 text-warning shrink-0 mt-0.5" aria-hidden="true" />
-              <div>
-                <h4 className="text-xs font-semibold text-text-primary">{lang === 'it' ? 'Passo successivo: Trascrizione' : 'Next step: Transcript'}</h4>
-                <p className="text-[11px] text-text-secondary leading-relaxed mt-0.5">{t('meeting.transcribeDescription')}</p>
-              </div>
-            </div>
-            <Button
-              size="sm"
-              disabled={demoMode}
-              onClick={startDefaultTranscription}
-              isLoading={busyAction === 'transcription'}
-              className="shrink-0 w-full sm:w-auto shadow-cta"
-            >
-              <FileText className="h-4 w-4" aria-hidden="true" />
-              {t('meeting.btnTranscribe')}
-            </Button>
-          </div>
-        )}
-
-        {!isBusy && meeting.transcription && Object.keys(meeting.latest_analysis || {}).length === 0 && (
+        {!isBusy && !hasCurrentNotes && (
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-4 py-3.5 rounded-xl border border-accent/25 bg-accent-soft">
             <div className="flex items-start gap-2.5 min-w-0">
               <Sparkles className="h-5 w-5 text-accent shrink-0 mt-0.5" aria-hidden="true" />
               <div>
-                <h4 className="text-xs font-semibold text-text-primary">{lang === 'it' ? 'Passo successivo: Note' : 'Next step: Notes'}</h4>
-                <p className="text-[11px] text-text-secondary leading-relaxed mt-0.5">{t('meeting.analyzeDescription')}</p>
+                <h4 className="text-xs font-semibold text-text-primary">
+                  {canResumePreparation
+                    ? (lang === 'it' ? 'Riprendi la preparazione' : 'Resume preparation')
+                    : (lang === 'it' ? 'Prepara le note del meeting' : 'Prepare meeting notes')}
+                </h4>
+                <p className="text-[11px] text-text-secondary leading-relaxed mt-0.5">
+                  {meeting.transcription
+                    ? (lang === 'it'
+                      ? 'La trascrizione è pronta. ClosedRoom prepara sintesi, azioni, decisioni e rischi.'
+                      : 'The transcript is ready. ClosedRoom will prepare summary, actions, decisions and risks.')
+                    : (lang === 'it'
+                      ? 'Un’unica azione prepara prima la trascrizione e poi le note, usando le impostazioni correnti.'
+                      : 'One action prepares the transcript first and then the notes using your current settings.')}
+                </p>
+                {latestPreparation?.error && canResumePreparation && (
+                  <p className="text-[10px] text-warning mt-1 line-clamp-2">{latestPreparation.error}</p>
+                )}
               </div>
             </div>
-            <Button
-              size="sm"
-              onClick={() => startPipeline('meeting_default')}
-              isLoading={busyAction === 'meeting_default'}
-              className="shrink-0 w-full sm:w-auto shadow-cta"
-            >
-              <Sparkles className="h-4 w-4" aria-hidden="true" />
-              {lang === 'it' ? 'Genera note' : 'Generate notes'}
-            </Button>
+            <div className="flex w-full sm:w-auto items-center gap-2">
+              {!meeting.transcription && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={demoMode}
+                  onClick={startDefaultTranscription}
+                  isLoading={busyAction === 'transcription'}
+                  className="flex-1 sm:flex-none"
+                >
+                  <FileText className="h-4 w-4" aria-hidden="true" />
+                  {lang === 'it' ? 'Solo trascrizione' : 'Transcript only'}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                disabled={demoMode}
+                onClick={startPreparation}
+                isLoading={busyAction === 'meeting_preparation'}
+                className="flex-1 sm:flex-none shadow-cta"
+              >
+                <Sparkles className="h-4 w-4" aria-hidden="true" />
+                {canResumePreparation
+                  ? (lang === 'it' ? 'Riprendi' : 'Resume')
+                  : (lang === 'it' ? 'Prepara note' : 'Prepare notes')}
+              </Button>
+            </div>
           </div>
         )}
 
@@ -691,7 +765,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               aria-selected={activeTab === 'transcript'}
               aria-controls={panelId('transcript')}
               tabIndex={activeTab === 'transcript' ? 0 : -1}
-              onClick={() => setActiveTab('transcript')}
+              onClick={() => selectTab('transcript')}
               className={cn(
                 'flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus',
                 activeTab === 'transcript'
@@ -717,7 +791,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               aria-selected={activeTab === 'analysis'}
               aria-controls={panelId('analysis')}
               tabIndex={activeTab === 'analysis' ? 0 : -1}
-              onClick={() => setActiveTab('analysis')}
+              onClick={() => selectTab('analysis')}
               className={cn(
                 'flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus',
                 activeTab === 'analysis'
@@ -743,7 +817,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
               aria-selected={activeTab === 'speakers'}
               aria-controls={panelId('speakers')}
               tabIndex={activeTab === 'speakers' ? 0 : -1}
-              onClick={() => setActiveTab('speakers')}
+              onClick={() => selectTab('speakers')}
               className={cn(
                 'flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus',
                 activeTab === 'speakers'
@@ -818,7 +892,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                         isLoading={busyAction === 'transcription'}
                         className="mt-4"
                       >
-                        {t('meeting.btnTranscribe')}
+                        {lang === 'it' ? 'Solo trascrizione' : 'Transcript only'}
                       </Button>
                     )}
                   </div>
@@ -871,12 +945,12 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                               disabled={demoMode || isBusy}
                               onClick={() => {
                                 setMoreOpen(false);
-                                startPipeline('meeting_default');
+                                startPreparation();
                               }}
                               className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-50"
                             >
                               <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-                              {lang === 'it' ? 'Genera note' : 'Generate notes'}
+                              {lang === 'it' ? 'Prepara note' : 'Prepare notes'}
                             </button>
                             <button
                               type="button"
@@ -933,15 +1007,15 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                     <div className="text-center py-12">
                       <Sparkles className="w-8 h-8 mx-auto text-text-muted mb-3" aria-hidden="true" />
                       <p className="text-sm text-text-secondary">{t('meeting.noAnalysisAvailable', { type: analysisLabel(selectedAnalysisType) })}</p>
-                      {!isBusy && meeting.transcription && (
+                      {!isBusy && (
                         <Button
                           size="sm"
                           variant="secondary"
-                          onClick={() => startPipeline('meeting_default')}
-                          isLoading={busyAction === 'meeting_default'}
+                          onClick={startPreparation}
+                          isLoading={busyAction === 'meeting_preparation'}
                           className="mt-4"
                         >
-                          {lang === 'it' ? 'Genera note' : 'Generate notes'}
+                          {lang === 'it' ? 'Prepara note' : 'Prepare notes'}
                         </Button>
                       )}
                     </div>
@@ -1011,8 +1085,8 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <span>{t('meeting.analysisLabel')}</span>
-                  <Badge variant={Object.keys(meeting.latest_analysis || {}).length > 0 ? 'success' : 'idle'}>
-                    {Object.keys(meeting.latest_analysis || {}).length > 0 ? t('meeting.statusReady') : t('meeting.statusMissing')}
+                  <Badge variant={hasCurrentNotes ? 'success' : 'idle'}>
+                    {hasCurrentNotes ? t('meeting.statusReady') : t('meeting.statusMissing')}
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between gap-3">
@@ -1070,6 +1144,21 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                 {lang === 'it' ? 'Azioni Disponibili' : 'Available Actions'}
               </h4>
               <div className="flex flex-col gap-2">
+                {!hasCurrentNotes && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={demoMode || isBusy}
+                    onClick={() => {
+                      setDetailsOpen(false);
+                      startPreparation();
+                    }}
+                    className="w-full justify-start text-left text-xs"
+                  >
+                    <Sparkles className="h-3.5 w-3.5 mr-2 text-accent" aria-hidden="true" />
+                    {lang === 'it' ? 'Prepara note' : 'Prepare notes'}
+                  </Button>
+                )}
                 {!meeting.transcription && (
                   <Button
                     size="sm"
@@ -1079,7 +1168,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                     className="w-full justify-start text-left text-xs"
                   >
                     <FileText className="h-3.5 w-3.5 mr-2 text-text-muted" aria-hidden="true" />
-                    {t('meeting.btnTranscribe')}
+                    {lang === 'it' ? 'Solo trascrizione' : 'Transcript only'}
                   </Button>
                 )}
                 <Button
@@ -1106,7 +1195,7 @@ export default function MeetingDetailPage({ recordingId, navigateTo, demoMode = 
                   className="w-full justify-start text-left text-xs"
                 >
                   <Sparkles className="h-3.5 w-3.5 mr-2 text-accent" aria-hidden="true" />
-                  {lang === 'it' ? 'Genera note' : 'Generate notes'}
+                  {lang === 'it' ? 'Rigenera solo analisi' : 'Regenerate analysis only'}
                 </Button>
                 <Button
                   size="sm"

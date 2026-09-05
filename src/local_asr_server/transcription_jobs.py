@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import queue
 import threading
 import time
@@ -19,6 +20,9 @@ from local_asr_server.runtime.workload_arbiter import (
 TRANSCRIPTION_JOB_TYPE = "transcription"
 DIARIZATION_JOB_TYPE = "diarization"
 VISUAL_INTELLIGENCE_JOB_TYPE = "visual_intelligence"
+
+logger = logging.getLogger("uvicorn.error")
+JobTerminalCallback = Callable[[dict[str, Any]], None]
 
 
 @dataclass
@@ -79,6 +83,7 @@ class TranscriptionJobManager:
         scope_type: str = "recording",
         scope_id: str | None = None,
         payload: dict[str, Any] | None = None,
+        on_terminal: JobTerminalCallback | None = None,
     ) -> dict[str, Any]:
         job = TranscriptionJob(
             id=str(uuid.uuid4()),
@@ -102,19 +107,23 @@ class TranscriptionJobManager:
             self._emit(job, "queued", 0)
 
         if self._arbiter is None:
-            threading.Thread(target=self._run, args=(job, runner), daemon=True).start()
+            threading.Thread(
+                target=self._run,
+                args=(job, runner, on_terminal),
+                daemon=True,
+            ).start()
             return job.public()
 
         try:
             self._arbiter.submit(
                 task_id=job.id,
                 workload_type=job.job_type,
-                run=lambda: self._run(job, runner),
-                on_cancel=lambda reason: self._cancel_before_start(job, reason),
-                on_reject=lambda reason: self._reject_before_start(job, reason),
+                run=lambda: self._run(job, runner, on_terminal),
+                on_cancel=lambda reason: self._cancel_before_start(job, reason, on_terminal),
+                on_reject=lambda reason: self._reject_before_start(job, reason, on_terminal),
             )
         except (WorkloadQueueFull, WorkloadArbiterClosed, WorkloadAdmissionRejected) as exc:
-            self._reject_before_start(job, str(exc))
+            self._reject_before_start(job, str(exc), on_terminal)
         return job.public()
 
     def get(self, job_id: str) -> dict[str, Any] | None:
@@ -170,7 +179,8 @@ class TranscriptionJobManager:
             self._store.request_cancel(job.id)
         if self._arbiter is not None:
             self._arbiter.cancel_pending(job.id)
-        self._emit(job, "cancelling", job.progress, "cancelling")
+        if job.status not in TERMINAL_JOB_STATUSES:
+            self._emit(job, "cancelling", job.progress, "cancelling")
         return job.public()
 
     def update_progress(
@@ -209,7 +219,12 @@ class TranscriptionJobManager:
         events = self.drain_events(job_id)
         return events
 
-    def _cancel_before_start(self, job: TranscriptionJob, reason: str) -> None:
+    def _cancel_before_start(
+        self,
+        job: TranscriptionJob,
+        reason: str,
+        on_terminal: JobTerminalCallback | None = None,
+    ) -> None:
         if job.status in TERMINAL_JOB_STATUSES:
             return
         job.cancel_requested = True
@@ -223,8 +238,14 @@ class TranscriptionJobManager:
             message=reason,
             event_payload={"reason": reason},
         )
+        self._notify_terminal(job, on_terminal)
 
-    def _reject_before_start(self, job: TranscriptionJob, reason: str) -> None:
+    def _reject_before_start(
+        self,
+        job: TranscriptionJob,
+        reason: str,
+        on_terminal: JobTerminalCallback | None = None,
+    ) -> None:
         if job.status in TERMINAL_JOB_STATUSES:
             return
         job.error = reason[:2000]
@@ -236,8 +257,14 @@ class TranscriptionJobManager:
             message="heavy_workload_not_admitted",
             event_payload={"reason": job.error},
         )
+        self._notify_terminal(job, on_terminal)
 
-    def _run(self, job: TranscriptionJob, runner: Callable[[TranscriptionJob], dict[str, Any]]) -> None:
+    def _run(
+        self,
+        job: TranscriptionJob,
+        runner: Callable[[TranscriptionJob], dict[str, Any]],
+        on_terminal: JobTerminalCallback | None = None,
+    ) -> None:
         try:
             if job.cancel_requested:
                 self._emit(job, "cancelled", job.progress)
@@ -263,6 +290,22 @@ class TranscriptionJobManager:
                 return
             job.error = str(exc)[:2000]
             self._emit(job, "failed", job.progress)
+        finally:
+            if job.status in TERMINAL_JOB_STATUSES:
+                self._notify_terminal(job, on_terminal)
+
+    def _notify_terminal(
+        self,
+        job: TranscriptionJob,
+        callback: JobTerminalCallback | None,
+    ) -> None:
+        if callback is None:
+            return
+        try:
+            snapshot = self.get(job.id) or job.public()
+            callback(snapshot)
+        except Exception:
+            logger.exception("Transcription terminal callback failed for job %s", job.id)
 
     def _emit(
         self,
