@@ -103,6 +103,17 @@ def _merge_track_transcriptions(
     })
 
 
+def _current_analysis_runs(
+    runs: list[dict[str, Any]],
+    transcription: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Keep derived Meeting state tied to the currently selected transcript."""
+    if transcription is None:
+        return [run for run in runs if not run.get("transcription_id")]
+    transcription_id = transcription.get("id")
+    return [run for run in runs if run.get("transcription_id") == transcription_id]
+
+
 def _build_projects(app: FastAPI) -> dict:
     recordings = get_services(app).recordings.list(limit=999)
     projects: dict[str, dict] = {}
@@ -120,7 +131,8 @@ def _build_projects(app: FastAPI) -> dict:
             transcription_runs = get_services(app).catalog.list_analysis_runs(transcription_id=transcription["id"], limit=50)
             existing = {run["id"] for run in runs}
             runs.extend(run for run in transcription_runs if run["id"] not in existing)
-        latest_analysis = next((run for run in sorted(runs, key=lambda item: item.get("created_at") or 0, reverse=True) if run.get("status") == "completed"), None)
+        current_runs = _current_analysis_runs(runs, transcription)
+        latest_analysis = next((run for run in sorted(current_runs, key=lambda item: item.get("created_at") or 0, reverse=True) if run.get("status") == "completed"), None)
         bucket["items"].append({
             "recording": recording,
             "transcription": transcription,
@@ -212,6 +224,7 @@ def _build_meeting(app: FastAPI, recording: dict[str, Any], *, compact: bool = F
         )
         existing = {run["id"] for run in runs}
         runs.extend(run for run in transcription_runs if run["id"] not in existing)
+    current_runs = _current_analysis_runs(runs, transcription)
     related_jobs = get_services(app).transcription_jobs.list(
         scope_type="recording",
         scope_id=recording["id"],
@@ -234,7 +247,7 @@ def _build_meeting(app: FastAPI, recording: dict[str, Any], *, compact: bool = F
         )
     ]
     latest_by_type: dict[str, dict[str, Any]] = {}
-    for run in sorted(runs, key=lambda item: item.get("created_at") or 0, reverse=True):
+    for run in sorted(current_runs, key=lambda item: item.get("created_at") or 0, reverse=True):
         analysis_type = run.get("analysis_type") or "meeting_brief"
         if analysis_type not in latest_by_type and run.get("status") == "completed":
             latest_by_type[analysis_type] = run
@@ -250,7 +263,7 @@ def _build_meeting(app: FastAPI, recording: dict[str, Any], *, compact: bool = F
         "analysis_runs": public_runs,
         "latest_analysis": public_latest,
         "jobs": jobs,
-        "status": _meeting_status(recording, transcription, runs),
+        "status": _meeting_status(recording, transcription, current_runs),
         "project_name": recording.get("project_name") or "",
         "created_at": recording.get("created_at"),
         "updated_at": recording.get("completed_at") or recording.get("stopped_at") or recording.get("created_at"),
