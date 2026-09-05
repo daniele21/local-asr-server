@@ -54,6 +54,16 @@
       "known_gaps": ["does not exercise the packaged .app or WKWebView process boundary", "does not prove real macOS TCC permissions or physical audio-device behavior", "does not prove production MLX/Metal model memory, latency or throughput"]
     },
     {
+      "id": "browser-macos-arm64-ci",
+      "fidelity_class": "simulated_or_emulated",
+      "automation": "automated",
+      "platform": "GitHub-hosted macOS arm64 with headless Chrome",
+      "command": "node scripts/browser_meeting_ui_e2e.mjs",
+      "artifact_surface": "real React source served by Vite, deterministic loopback API fixture, ChromeDriver browser interaction, bounded viewport screenshots and frame-assembled MP4 evidence",
+      "target_environment_refs": ["closedroom-macos-apple-silicon"],
+      "known_gaps": ["does not exercise the packaged WKWebView process boundary", "deterministic API fixtures do not prove the assembled FastAPI persistence/runtime path", "does not prove TCC, native capture, physical audio devices or production MLX/Metal behavior"]
+    },
+    {
       "id": "packaged-macos-arm64-ci",
       "fidelity_class": "representative_virtual",
       "automation": "automated",
@@ -123,6 +133,19 @@
       "real_environment_confirmation": "conditional",
       "real_environment_runner": "target-macos-real",
       "residual_gaps": ["interactive WKWebView/focus and TCC/native-audio behavior require target-macos-real when material", "production signing and MLX/Metal performance remain separate evidence"],
+      "automation_gap_reason": ""
+    },
+    {
+      "id": "saved-meeting-fast-open",
+      "claim": "A saved Meeting renders core transcript content without waiting for diagnostics or visual routes, keeps core content visible through accessory loading/failure, and recovers each accessory independently on retry.",
+      "ui_surface": true,
+      "minimum_ui_evidence_mode": "full_media",
+      "target_environment_refs": ["closedroom-macos-apple-silicon"],
+      "automated_environment_refs": ["browser-macos-arm64-ci"],
+      "minimum_automated_fidelity": "simulated_or_emulated",
+      "real_environment_confirmation": "conditional",
+      "real_environment_runner": "target-macos-real",
+      "residual_gaps": ["packaged WKWebView rendering remains a release confirmation when the saved-Meeting interaction is release-critical", "TCC/native capture and model fidelity are outside this journey"],
       "automation_gap_reason": ""
     },
     {
