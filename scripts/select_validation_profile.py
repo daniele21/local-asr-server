@@ -17,6 +17,7 @@ FULL_EXACT = {
     "ClosedRoom.spec", "build.sh", "create_dmg.sh", "pyproject.toml", "setup.sh", "uv.lock",
     "scripts/finalize_build_artifact.py", "scripts/select_validation_profile.py",
     "scripts/verify_operations.py", "scripts/verify_repository.py", "scripts/verify_e2e.py",
+    "scripts/verify_stage_environment_policy.py",
 }
 FULL_PREFIXES = (".github/workflows/", "build_assets/")
 STRONG_EXACT = {
