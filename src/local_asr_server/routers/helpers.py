@@ -160,10 +160,15 @@ def _build_projects(app: FastAPI) -> dict:
         )
         canonical_runs = _exclude_incomplete_preparation_runs(current_runs, preparation_jobs)
         latest_analysis = next((run for run in sorted(canonical_runs, key=lambda item: item.get("created_at") or 0, reverse=True) if run.get("status") == "completed"), None)
+        legacy_analysis = (
+            transcription.get("analysis")
+            if transcription and not preparation_jobs
+            else None
+        )
         bucket["items"].append({
             "recording": recording,
             "transcription": transcription,
-            "analysis": latest_analysis or (transcription.get("analysis") if transcription else None),
+            "analysis": latest_analysis or legacy_analysis,
             "analysis_runs": sorted(runs, key=lambda item: item.get("created_at") or 0, reverse=True),
         })
     items = sorted(projects.values(), key=lambda item: (item["is_unassigned"], item["name"].lower()))
