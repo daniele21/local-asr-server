@@ -12,7 +12,11 @@ from fastapi import HTTPException
 from local_asr_server.app_services import AppServices
 from local_asr_server.analysis_templates import (
     DEFAULT_ANALYSIS_TYPE,
+    DEFAULT_PIPELINE_ID,
     DEFAULT_TEMPLATE_VERSION,
+    SHARED_NOTES_TEMPLATE_ID,
+    AnalysisPipeline,
+    AnalysisTemplate,
     get_pipeline,
     get_template,
     template_for_analysis_type,
@@ -149,10 +153,7 @@ class AnalysisJobManager:
     ) -> dict[str, Any]:
         pipeline = get_pipeline(body.pipeline_id)
         pipeline_run_id = str(uuid.uuid4())
-        if body.analysis_types:
-            templates = [template_for_analysis_type(analysis_type) for analysis_type in body.analysis_types]
-        else:
-            templates = [get_template(template_id) for template_id in pipeline.template_ids]
+        templates = self._execution_templates(body, pipeline)
         jobs = []
         for template in templates:
             llm_options = self._request_llm_options(body)
@@ -192,10 +193,7 @@ class AnalysisJobManager:
     def pipeline_identity(self, body: AnalysisPipelineRequest) -> dict[str, Any]:
         """Return the non-secret durable identity of an analysis pipeline request."""
         pipeline = get_pipeline(body.pipeline_id)
-        if body.analysis_types:
-            templates = [template_for_analysis_type(value) for value in body.analysis_types]
-        else:
-            templates = [get_template(template_id) for template_id in pipeline.template_ids]
+        templates = self._execution_templates(body, pipeline)
         settings = AnalysisService.settings_with_request_overrides(load_settings(), body)
         provider = settings.get("llm_provider", "mock")
         effective_model = self._effective_model(provider, settings)
@@ -211,6 +209,17 @@ class AnalysisJobManager:
             ],
             "llm": self._llm_options(settings, provider=provider, model=effective_model),
         }
+
+    def _execution_templates(
+        self,
+        body: AnalysisPipelineRequest,
+        pipeline: AnalysisPipeline,
+    ) -> list[AnalysisTemplate]:
+        if body.analysis_types:
+            return [template_for_analysis_type(analysis_type) for analysis_type in body.analysis_types]
+        if pipeline.id == DEFAULT_PIPELINE_ID:
+            return [get_template(SHARED_NOTES_TEMPLATE_ID)]
+        return [get_template(template_id) for template_id in pipeline.template_ids]
 
     def _run(
         self,

@@ -1,18 +1,18 @@
 # ClosedRoom: useful notes, simple journeys and efficient execution
 
-Status: active — PRS-12 integration candidate
+Status: active — PRS-13 integration candidate
 Owner: meeting product, canonical job/persistence owners and local runtime
-Baseline: dev `0d5d3fa`, 2026-09-05.
+Baseline: dev `8075b366`, 2026-09-05.
 
 ## Outcome and invariants
 
-Record, prepare useful notes, verify decisions and find them later while the Mac stays usable. PRS-11 is integrated; PRS-12 is implemented on its integration branch. No runtime-performance gain is claimed.
+Record, prepare useful notes, verify decisions and find them later while the Mac stays usable. PRS-11 and PRS-12 are integrated; PRS-13 is the current integration candidate. No production-model performance or memory gain is claimed without representative evidence.
 
 - Meeting is primary; normal recording requires no technical choice.
 - `Prepare notes` is explicit after Stop; `Transcript only` is secondary.
 - Reuse valid transcript, then existing notes analysis. Ready notes open first; explicit tab selection wins.
 - Audio/transcript survive enrichment failure/cancel. Local-first and explicit cloud opt-in remain unchanged.
-- Canonical owners stay unchanged: RecordingStore capture, JobStore durable jobs, CatalogStore indexes, HeavyWorkloadArbiter heavy-work scheduling, runtime services managed cleanup.
+- Canonical owners stay unchanged: RecordingStore capture, JobStore durable jobs, CatalogStore persisted runs/indexes, HeavyWorkloadArbiter heavy-work scheduling, runtime services managed cleanup.
 - Excluded: rewrite, second scheduler/runtime/index owner, implicit cloud, mandatory visuals, unproven audio strategy.
 
 ## Work graph
@@ -20,8 +20,8 @@ Record, prepare useful notes, verify decisions and find them later while the Mac
 | ID | Observable outcome | Owner paths/contracts | Depends on | State |
 | --- | --- | --- | --- | --- |
 | PRS-11 | Fast saved Meeting open | MeetingDetailPage, API client, visual hook | — | DONE |
-| PRS-12 | One recoverable Prepare notes action | jobs, analysis/transcription services, Meeting UI | PRS-11 | INTEGRATION |
-| PRS-13 | Consistent notes with less repeated inference | analysis templates/jobs/service/catalog | PRS-12 | BLOCKED |
+| PRS-12 | One recoverable Prepare notes action | jobs, analysis/transcription services, Meeting UI | PRS-11 | DONE |
+| PRS-13 | Consistent notes with less repeated inference | analysis templates/jobs/service/catalog reads | PRS-12 | INTEGRATION |
 | PRS-14 | Verify/edit actions and decisions | notes schema/catalog, transcript, Meeting UI | PRS-13 | BLOCKED |
 | PRS-15 | Search complete local archive | CatalogStore, workspace/API/UI | — | READY |
 | PRS-16 | Record safely while AI is busy | RecordingStore, resource policy/arbiter/runtime | — | READY |
@@ -34,35 +34,34 @@ Default sequence: 11 -> 12 -> 13 -> 14 -> 15 -> 16 -> 17. PRS-15/16 may advance 
 
 Saved Meeting core content loads independently from diagnostics and visual services. Accessory errors/retries stay local, stale route responses are ignored and terminal reloads are coalesced. Evidence includes focused tests and `saved-meeting-fast-open` FULL_MEDIA. Target WKWebView/TCC fidelity remains release evidence when material.
 
-## PRS-12 — integration candidate
+## PRS-12 — integrated
 
-Goal: coordinate existing transcription and analysis behind one recoverable `Prepare notes` action.
+`Prepare notes` is a durable `meeting_preparation` JobStore parent that composes the existing transcription and analysis jobs. Durable identity covers recording source, effective ASR options and analysis/template identity; valid transcripts skip ASR. Cancel prevents future stages including admission races, restart interrupts incomplete work and explicit resume starts from the first missing stage. Meeting follows the parent SSE, exposes transcript before notes finish and does not promote output from failed/interrupted/cancelled preparation pipelines. Existing expert transcription/analysis APIs remain compatible. Integration evidence included owner/API/persistence tests plus `meeting-preparation-recovery` FULL_MEDIA and packaged-app smoke.
 
-Implemented:
-- `meeting_preparation` is a durable `JobStore` parent with atomic active dedupe and persisted parent->child stage links.
-- Existing `TranscriptionJobManager` and `AnalysisJobManager` still own child execution; `HeavyWorkloadArbiter` remains the sole heavy-work scheduler.
-- Durable identity includes recording source, effective ASR options and analysis/template identity. A matching valid transcript skips ASR.
-- Derived notes are tied to the current transcript; failed/interrupted/cancelled preparation pipelines are not promoted as canonical ready notes.
-- Cancel prevents future stages, including admission races where a child appears while cancellation is in progress.
-- Restart interrupts incomplete work; only explicit resume creates a new parent and continues from the first missing stage.
-- Meeting follows only the active parent SSE, reloads at transcript-ready and terminal milestones, exposes transcript before notes finish and preserves explicit tab selection.
-- Existing expert transcription/analysis APIs remain compatible.
+## PRS-13 — shared structured notes — integration candidate
+
+Goal: reduce overlapping default inference without degrading useful output. Version summary/actions/decisions/risks with source references, separate generated content from future edits and preserve legacy reads.
+
+Implementation candidate:
+- `meeting_default` with no explicit `analysis_types` executes one internal `meeting_notes_shared` v2 analysis job instead of four overlapping physical jobs; `meeting_deep`, explicit analysis types and expert single analyses remain unchanged.
+- The canonical result is `closedroom.meeting_notes` schema v2 with a `generated` boundary containing summary, actions, decisions and risks. Every non-empty generated claim requires a canonical transcript segment reference with timing/speaker metadata when available.
+- One real persisted v2 run is projected at read time into stable `meeting_brief`, `action_items`, `decisions` and `risks_blockers` views. No synthetic jobs or database rows are created; old persisted v1 runs continue to be read unchanged.
+- Structured cache identity includes transcript segment ids/timing/speaker/text so source-reference changes cannot reuse stale cached output.
+- Short inputs use one extraction. Long inputs use bounded source-aware chunks plus bounded aggregation. A source chunk can cite only segment ids supplied to that chunk; aggregation can cite only refs present in its partials. Inputs beyond the configured bound fail explicitly instead of truncating.
+- The internal shared template is hidden from the public template picker, and PRS-12 still composes whatever physical analysis jobs the existing `AnalysisJobManager` returns. `HeavyWorkloadArbiter` remains the only heavy-work scheduler.
+
+Decision gate: the deterministic rubric records schema validity, factual support, action/decision recall, attribution, latency, inference count/tokens and peak-memory status. Representative short/long fixtures must preserve expected facts and source attribution while the short default reduces physical inference count from four to one. Comparable production MLX peak-memory/resource data remains release evidence; missing comparable data stays explicitly `unknown`, never inferred.
 
 Acceptance before merge:
-- duplicate click/reconnect does not duplicate preparation;
-- transcript reuse skips ASR only for matching durable identity;
-- transcript is readable while notes continue;
-- cancel/restart/partial failure preserve completed artifacts and do not silently start new AI work;
-- notes retry reuses successful transcript and does not treat partial output as ready;
-- source/options/template changes invalidate reuse as defined by the current contracts.
+- default preparation creates one physical analysis child and still exposes all four logical default note views;
+- explicit deep/custom analysis behavior remains compatible;
+- source refs cannot cross source-chunk/aggregation boundaries;
+- cache keys invalidate when source-reference metadata changes even if transcript text is unchanged;
+- old v1 runs and virtual v2 projection reads coexist;
+- long input is bounded and never silently truncated;
+- existing preparation partial-failure/retry journey remains green in FULL_MEDIA.
 
-Automated evidence: owner/API/persistence tests cover dedupe, migration, cancel races, restart/resume, reuse and partial projections. The canonical browser command runs both PRS-11 and `meeting-preparation-recovery` FULL_MEDIA: prepare -> transcript ready -> reconnect same parent -> notes failure -> explicit resume without ASR rerun -> notes ready. Exact-head selector validation is blocking; STRONG is expected but selector output is authoritative. Production model quality/latency and packaged interactive WKWebView fidelity remain release deltas.
-
-## PRS-13 — shared structured notes
-
-Goal: reduce overlapping inference without degrading useful output. Version summary/actions/decisions/risks with source references, separate generated content from edits and preserve legacy reads.
-
-Decision gate: fix the rubric first — factual support, action/decision recall, attribution, schema validity, latency, inference count/tokens and peak memory. Short inputs may use one extraction; long inputs require bounded source-aware chunk/aggregation, never silent truncation. Change default only with representative quality/cost evidence. Checks: schema/projection/cache/migration/long-input tests and partial-result FULL_MEDIA; STRONG expected.
+Checks: schema/projection/cache/long-input/source-boundary tests, existing analysis/preparation suites, frontend deterministic checks, `meeting-preparation-recovery` FULL_MEDIA and selector-owned STRONG gates. Production model quality/latency/RSS and target WKWebView/TCC fidelity remain release deltas unless an integration-comparable baseline exists.
 
 ## PRS-14 — verifiable, editable notes
 
