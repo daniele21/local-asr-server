@@ -1,13 +1,13 @@
 # ClosedRoom: useful notes, simple journeys and efficient execution
 
-Status: active — planning only; implementation not started
+Status: active — implementation in progress
 Owner: meeting product, canonical job/persistence owners and local runtime
 Read when: implementing the next product increments after the integrated PRS baseline.
-Baseline: dev `f9597c1`, 2026-09-05.
+Baseline: dev `c4a33b5`, 2026-09-05.
 
 ## Outcome and scope
 
-Record, prepare useful notes, verify decisions and find them later while the Mac stays usable. Planning only: no implementation or measured gains claimed.
+Record, prepare useful notes, verify decisions and find them later while the Mac stays usable. PRS-11 is the first implemented slice; no measured runtime gains are claimed by this workstream yet.
 PRS-1..9 are integrated; [PRS-10](product-runtime-simplification.md) keeps its existing closure criteria. Current contracts apply until each increment updates them.
 Excluded: rewrite, new runtime/scheduler/index owner, implicit cloud, mandatory visuals, unproven audio strategy, all-at-once release.
 
@@ -23,11 +23,10 @@ Excluded: rewrite, new runtime/scheduler/index owner, implicit cloud, mandatory 
 
 ## Work graph
 
-
 | ID | Observable outcome | Owner paths/contracts | Depends on | State |
 | --- | --- | --- | --- | --- |
-| PRS-11 | Open a saved meeting without waiting for diagnostics | MeetingDetailPage, API client, visual hook | — | READY |
-| PRS-12 | Prepare notes with one recoverable action | analysis/transcription services, jobs, schemas, Meeting UI | PRS-11 | BLOCKED |
+| PRS-11 | Open a saved meeting without waiting for diagnostics | MeetingDetailPage, API client, visual hook | — | DONE |
+| PRS-12 | Prepare notes with one recoverable action | analysis/transcription services, jobs, schemas, Meeting UI | PRS-11 | READY |
 | PRS-13 | Produce consistent notes with less repeated inference | analysis_templates, analysis_jobs, analysis service, catalog | PRS-12 | BLOCKED |
 | PRS-14 | Verify and correct actions/decisions without losing edits | notes schema/catalog, transcript and Meeting UI | PRS-13 | BLOCKED |
 | PRS-15 | Find content anywhere in the local archive | CatalogStore, workspace router/helpers, Dashboard/Projects/API | — | READY |
@@ -37,21 +36,21 @@ Excluded: rewrite, new runtime/scheduler/index owner, implicit cloud, mandatory 
 
 Default: 11 -> 12 -> 13 -> 14 -> 15 -> 16 -> 17. PRS-15/16 can advance earlier; serialize shared catalog/schema/service/UI edits into each outcome PR. No stacked sync PRs or required parallel agents. PRS-18 releases a coherent subset.
 
-## PRS-11 — current executable slice: fast Meeting
+## PRS-11 — completed slice: fast Meeting
 
 Goal: open saved content independently of slow/failed diagnostics and visual services.
-Work: remove blocking Promise.all; fetch diagnostics on disclosure, visual detail on demand and only minimal availability metadata initially. Abort/ignore stale requests; coalesce overlapping terminal reloads.
+Implemented: the core Meeting request owns only saved Meeting content; detailed diagnostics load on Details disclosure; screen-frame availability and visual intelligence load only on Analysis disclosure. Accessory failures stay local with explicit retry, stale route responses are ignored and overlapping terminal reloads are coalesced.
 Acceptance:
 - Core content renders with accessory requests stalled/failed; no diagnostics or frame-list fetch on a normal audio meeting open.
 - Local accessory error/retry; A -> B navigation cannot apply A responses to B.
 - Audio/transcript and existing visual actions remain reachable.
-Checks: frontend lint/typecheck, focused loading/recovery tests; automated delayed/failing-route journey with ready/partial/error screenshots and recovery video. SCOPED expected.
+Evidence: frontend lint/typecheck and focused loading/recovery tests; `browser-macos-arm64-ci` exercises delayed/failing diagnostics and visual routes with ready/partial/error/recovery screenshots plus bounded MP4 evidence. The automated browser environment uses synthetic API fixtures and does not replace release-time packaged WKWebView/TCC evidence when applicable.
 One PR to dev; jobs/inference unchanged.
 
-## PRS-12 — one recoverable preparation action
+## PRS-12 — current executable slice: one recoverable preparation action
 
 Goal: coordinate existing transcription/analysis with "Prepare notes".
-Work: extend existing service/job orchestration; resolve durable stage relationships in JobStore before coding, retain API compatibility and expert actions. Keep the four analyses for now.
+Work: extend existing service/job orchestration; resolve durable stage relationships in JobStore before coding, retain API compatibility and expert actions. Keep the four analyses for now. Reuse the existing `TranscriptionJobManager`, `AnalysisJobManager` and shared `HeavyWorkloadArbiter`; do not add a second scheduler.
 Acceptance:
 - Duplicate clicks/reconnect do not duplicate preparation; current valid transcript skips ASR.
 - Reuse identity includes source/options/template; changed source marks derived output stale.
