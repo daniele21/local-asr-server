@@ -87,20 +87,31 @@ class RuntimeServiceManager:
             self._idle_shutdown_generation += 1
             self.llm_sidecar.stop()
 
+    def _schedule_managed_llm_idle_shutdown_locked(self) -> None:
+        self._cancel_managed_llm_idle_shutdown_locked()
+        if self._managed_llm_idle_shutdown_seconds == 0:
+            self.llm_sidecar.stop()
+            return
+        generation = self._idle_shutdown_generation
+        timer = Timer(
+            self._managed_llm_idle_shutdown_seconds,
+            lambda: self._stop_managed_llm_after_idle(generation),
+        )
+        timer.daemon = True
+        self._idle_shutdown_timer = timer
+        timer.start()
+
     def _schedule_managed_llm_idle_shutdown(self) -> None:
         with self._idle_shutdown_lock:
+            self._schedule_managed_llm_idle_shutdown_locked()
+
+    def _release_managed_llm_residency(self) -> dict[str, Any]:
+        """Unload resident models and establish the idle window atomically."""
+        with self._idle_shutdown_lock:
             self._cancel_managed_llm_idle_shutdown_locked()
-            if self._managed_llm_idle_shutdown_seconds == 0:
-                self.llm_sidecar.stop()
-                return
-            generation = self._idle_shutdown_generation
-            timer = Timer(
-                self._managed_llm_idle_shutdown_seconds,
-                lambda: self._stop_managed_llm_after_idle(generation),
-            )
-            timer.daemon = True
-            self._idle_shutdown_timer = timer
-            timer.start()
+            result = self.llm_sidecar.release_resident_models()
+            self._schedule_managed_llm_idle_shutdown_locked()
+            return result
 
     def _llm_settings(self, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
         settings = load_settings()
@@ -225,9 +236,7 @@ class RuntimeServiceManager:
         ModelRuntimeLeaseManager.release_lease("llm")
         if settings["mode"] != "auto":
             return {"released": False, "reason": "not_managed"}
-        result = self.llm_sidecar.release_resident_models()
-        self._schedule_managed_llm_idle_shutdown()
-        return result
+        return self._release_managed_llm_residency()
 
     def start_llm(self) -> dict[str, Any]:
         llm = self._llm_settings()
