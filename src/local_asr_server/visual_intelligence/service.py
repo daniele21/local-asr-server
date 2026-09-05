@@ -75,10 +75,13 @@ class PostMeetingVisualService:
         payload: dict[str, Any],
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
         enabled: bool | None = None,
+        routing_mode: str | None = None,
     ) -> dict[str, Any]:
         settings = load_settings()
         if enabled is not None:
             settings = {**settings, "visual_intelligence_enabled": enabled}
+        if routing_mode is not None:
+            settings = {**settings, "visual_routing_mode": routing_mode}
         requested_routing_mode = str(settings.get("visual_routing_mode") or "v1")
         frames = services.recordings.list_visual_frames(recording_id)
         if not frames:
