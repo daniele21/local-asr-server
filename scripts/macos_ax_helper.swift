@@ -30,11 +30,48 @@ private func stringValue(_ element: AXUIElement, _ name: CFString) -> String? {
     return nil
 }
 
-private func firstWindow(_ app: AXUIElement) -> AXUIElement {
-    guard let window = elementArray(app, kAXWindowsAttribute as CFString).first else {
+private func windowBounds(_ window: AXUIElement) -> (position: CGPoint, size: CGSize)? {
+    guard let positionValue = attribute(window, kAXPositionAttribute as CFString),
+          let sizeValue = attribute(window, kAXSizeAttribute as CFString),
+          CFGetTypeID(positionValue) == AXValueGetTypeID(),
+          CFGetTypeID(sizeValue) == AXValueGetTypeID() else {
+        return nil
+    }
+
+    var position = CGPoint.zero
+    var size = CGSize.zero
+    guard AXValueGetValue(positionValue as! AXValue, .cgPoint, &position),
+          AXValueGetValue(sizeValue as! AXValue, .cgSize, &size),
+          size.width > 0,
+          size.height > 0 else {
+        return nil
+    }
+    return (position, size)
+}
+
+private func windowArea(_ window: AXUIElement) -> CGFloat {
+    guard let bounds = windowBounds(window) else { return 0 }
+    return bounds.size.width * bounds.size.height
+}
+
+private func orderedWindows(_ app: AXUIElement) -> [AXUIElement] {
+    let windows = elementArray(app, kAXWindowsAttribute as CFString)
+    guard !windows.isEmpty else {
         fail("closedroom_window_missing", code: unavailableExit)
     }
-    return window
+    // ClosedRoom owns a large WKWebView application window and may also show a
+    // small native recording NSPanel. AX does not guarantee stable window order,
+    // so prefer the largest window while still retaining every window for search.
+    return windows.enumerated().sorted { left, right in
+        let leftArea = windowArea(left.element)
+        let rightArea = windowArea(right.element)
+        if leftArea == rightArea { return left.offset < right.offset }
+        return leftArea > rightArea
+    }.map { $0.element }
+}
+
+private func mainWindow(_ app: AXUIElement) -> AXUIElement {
+    return orderedWindows(app)[0]
 }
 
 private func labelsFor(_ element: AXUIElement) -> [String] {
@@ -48,7 +85,7 @@ private func labelsFor(_ element: AXUIElement) -> [String] {
     return attributes.compactMap { stringValue(element, $0) }
 }
 
-private func findElement(in window: AXUIElement, wanted: Set<String>) -> AXUIElement? {
+private func findElementInWindow(_ window: AXUIElement, wanted: Set<String>) -> AXUIElement? {
     var queue: [(AXUIElement, Int)] = [(window, 0)]
     var cursor = 0
     var visited = 0
@@ -73,24 +110,20 @@ private func findElement(in window: AXUIElement, wanted: Set<String>) -> AXUIEle
     return nil
 }
 
+private func findElementInApp(_ app: AXUIElement, wanted: Set<String>) -> AXUIElement? {
+    for window in orderedWindows(app) {
+        if let element = findElementInWindow(window, wanted: wanted) {
+            return element
+        }
+    }
+    return nil
+}
+
 private func windowRect(_ window: AXUIElement) -> String {
-    guard let positionValue = attribute(window, kAXPositionAttribute as CFString),
-          let sizeValue = attribute(window, kAXSizeAttribute as CFString),
-          CFGetTypeID(positionValue) == AXValueGetTypeID(),
-          CFGetTypeID(sizeValue) == AXValueGetTypeID() else {
+    guard let bounds = windowBounds(window) else {
         fail("closedroom_window_bounds_missing", code: unavailableExit)
     }
-
-    var position = CGPoint.zero
-    var size = CGSize.zero
-    guard AXValueGetValue(positionValue as! AXValue, .cgPoint, &position),
-          AXValueGetValue(sizeValue as! AXValue, .cgSize, &size),
-          size.width > 0,
-          size.height > 0 else {
-        fail("closedroom_window_bounds_invalid", code: unavailableExit)
-    }
-
-    return "\(Int(position.x)),\(Int(position.y)),\(Int(size.width)),\(Int(size.height))"
+    return "\(Int(bounds.position.x)),\(Int(bounds.position.y)),\(Int(bounds.size.width)),\(Int(bounds.size.height))"
 }
 
 private func focusedDescription(_ app: AXUIElement) -> String {
@@ -139,17 +172,17 @@ if let running = NSRunningApplication(processIdentifier: pid) {
 
 switch action {
 case "window":
-    _ = firstWindow(app)
+    _ = mainWindow(app)
     print("true")
 case "rect":
-    print(windowRect(firstWindow(app)))
+    print(windowRect(mainWindow(app)))
 case "focused":
     print(focusedDescription(app))
 case "exists", "press":
     if wanted.isEmpty {
         fail("labels_required", code: 64)
     }
-    guard let element = findElement(in: firstWindow(app), wanted: wanted) else {
+    guard let element = findElementInApp(app, wanted: wanted) else {
         if action == "exists" {
             print("false")
             exit(0)
@@ -166,15 +199,15 @@ case "exists", "press":
         print("pressed")
     }
 case "cmd-k":
-    _ = firstWindow(app)
+    _ = mainWindow(app)
     postKey(code: 40, command: true)
     print("sent")
 case "escape":
-    _ = firstWindow(app)
+    _ = mainWindow(app)
     postKey(code: 53)
     print("sent")
 case "cmd-q":
-    _ = firstWindow(app)
+    _ = mainWindow(app)
     postKey(code: 12, command: true)
     print("sent")
 default:
