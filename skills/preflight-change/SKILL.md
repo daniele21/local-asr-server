@@ -7,6 +7,10 @@ description: Establish exact-head readiness for an integration or release candid
 
 Use this only when a coherent ClosedRoom outcome is becoming `INTEGRATION`-ready or `RELEASE`-ready. Draft/private edits stay in `ITERATION` and use `validate-change`; do not perform full publication ceremony after every push.
 
+ClosedRoom stage routing is explicit:
+- ready PR -> `dev` = `INTEGRATION`;
+- `dev` -> `main` = `RELEASE`.
+
 At integration/release:
 1. state the observable outcome and stage;
 2. resolve material ambiguity;
@@ -19,6 +23,10 @@ At integration/release:
 9. reuse successful equivalent evidence before triggering anything;
 10. execute or route only missing/stale/insufficient deterministic gates.
 
+For `INTEGRATION`, affected deterministic gates and affected automated E2E are blocking. Any genuine `target-macos-real` requirement is reported as `DEFERRED_TO_RELEASE`; it must not prevent `AUTOMATED_PREFLIGHT_CONFIRMED` or a merge into `dev`.
+
+For `RELEASE`, FULL automated validation and every applicable blocking `REAL_ENVIRONMENT` confirmation must pass before `RELEASE_READY` and promotion from `dev` to `main`.
+
 Before merge, reusable automation evidence requires the exact head, relevant target/base, gates/profile and E2E claim. After a content-preserving merge, ClosedRoom may reuse integration evidence only when Git tree, prior target/base, gates/profile and relevant fidelity are equivalent. A direct push without trusted evidence validates normally. Release does not use tree-equivalent reuse unless policy explicitly enables it.
 
-`target-macos-real` remains required for TCC/native-audio/interactive-WKWebView claims and does not become optional because hosted CI is green.
+`target-macos-real` remains authoritative for TCC/native-audio/interactive-WKWebView and representative local-model claims; the change in 0.9.2 is when that evidence blocks delivery, not whether those fidelity gaps exist.
