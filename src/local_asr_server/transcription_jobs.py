@@ -179,7 +179,8 @@ class TranscriptionJobManager:
             self._store.request_cancel(job.id)
         if self._arbiter is not None:
             self._arbiter.cancel_pending(job.id)
-        self._emit(job, "cancelling", job.progress, "cancelling")
+        if job.status not in TERMINAL_JOB_STATUSES:
+            self._emit(job, "cancelling", job.progress, "cancelling")
         return job.public()
 
     def update_progress(
