@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from threading import Lock, Timer
 from typing import Any
 
 from local_asr_server.runtime.models import (
@@ -10,6 +11,9 @@ from local_asr_server.runtime.models import (
 )
 from local_asr_server.runtime.llm_sidecar import LocalLLMSidecar
 from local_asr_server.settings import load_settings
+
+
+MANAGED_LLM_IDLE_SHUTDOWN_SECONDS = 90.0
 
 
 @dataclass
@@ -41,8 +45,48 @@ def _query_external_health(url: str) -> dict[str, Any] | None:
 class RuntimeServiceManager:
     """Owns local runtime service status without owning product workflows."""
 
-    def __init__(self, llm_sidecar: LocalLLMSidecar | None = None) -> None:
+    def __init__(
+        self,
+        llm_sidecar: LocalLLMSidecar | None = None,
+        *,
+        managed_llm_idle_shutdown_seconds: float = MANAGED_LLM_IDLE_SHUTDOWN_SECONDS,
+    ) -> None:
+        if managed_llm_idle_shutdown_seconds < 0:
+            raise ValueError("managed_llm_idle_shutdown_seconds must be non-negative")
         self.llm_sidecar = llm_sidecar or LocalLLMSidecar()
+        self._managed_llm_idle_shutdown_seconds = managed_llm_idle_shutdown_seconds
+        self._idle_shutdown_lock = Lock()
+        self._idle_shutdown_timer: Timer | None = None
+
+    def _cancel_managed_llm_idle_shutdown(self) -> None:
+        with self._idle_shutdown_lock:
+            timer = self._idle_shutdown_timer
+            self._idle_shutdown_timer = None
+            if timer is not None:
+                timer.cancel()
+
+    def _stop_managed_llm_after_idle(self) -> None:
+        # Serialize with ensure/start/restart so a newly requested managed
+        # runtime cannot be stopped by a stale idle callback.
+        with self._idle_shutdown_lock:
+            self._idle_shutdown_timer = None
+            self.llm_sidecar.stop()
+
+    def _schedule_managed_llm_idle_shutdown(self) -> None:
+        with self._idle_shutdown_lock:
+            if self._idle_shutdown_timer is not None:
+                self._idle_shutdown_timer.cancel()
+                self._idle_shutdown_timer = None
+            if self._managed_llm_idle_shutdown_seconds == 0:
+                self.llm_sidecar.stop()
+                return
+            timer = Timer(
+                self._managed_llm_idle_shutdown_seconds,
+                self._stop_managed_llm_after_idle,
+            )
+            timer.daemon = True
+            self._idle_shutdown_timer = timer
+            timer.start()
 
     def _llm_settings(self, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
         settings = load_settings()
@@ -138,6 +182,7 @@ class RuntimeServiceManager:
                 "requested_reasoning": reasoning or llm["reasoning"],
                 "restart_required": False,
             }
+        self._cancel_managed_llm_idle_shutdown()
         return self.llm_sidecar.ensure_ready(
             model=llm["model"],
             model_path=llm["model_path"],
@@ -157,7 +202,8 @@ class RuntimeServiceManager:
         """Release heavy local LLM/VLM residency after one logical phase.
 
         Only the process owned by ClosedRoom in ``auto`` mode may be
-        mutated. External endpoints remain entirely caller-owned.
+        mutated. External endpoints remain entirely caller-owned. A managed
+        sidecar that is left cold is stopped after a bounded idle window.
         """
         from local_asr_server.runtime.leases import ModelRuntimeLeaseManager
 
@@ -166,21 +212,26 @@ class RuntimeServiceManager:
         ModelRuntimeLeaseManager.release_lease("llm")
         if settings["mode"] != "auto":
             return {"released": False, "reason": "not_managed"}
-        return self.llm_sidecar.release_resident_models()
+        result = self.llm_sidecar.release_resident_models()
+        self._schedule_managed_llm_idle_shutdown()
+        return result
 
     def start_llm(self) -> dict[str, Any]:
         llm = self._llm_settings()
         if llm["mode"] != "auto":
             return self.llm_status()
+        self._cancel_managed_llm_idle_shutdown()
         return self.llm_sidecar.start(model=llm["model"], model_path=llm["model_path"], backend=llm["backend"], mmproj_path=llm["mmproj_path"], ctx_size=llm["ctx_size"], startup_timeout=llm["startup_timeout"], llama_server_bin=llm["llama_server_bin"], dynamic_residency=llm["dynamic_residency"])
 
     def stop_llm(self) -> dict[str, Any]:
+        self._cancel_managed_llm_idle_shutdown()
         return self.llm_sidecar.stop()
 
     def restart_llm(self) -> dict[str, Any]:
         llm = self._llm_settings()
         if llm["mode"] != "auto":
             return self.llm_status()
+        self._cancel_managed_llm_idle_shutdown()
         return self.llm_sidecar.restart(model=llm["model"], model_path=llm["model_path"], backend=llm["backend"], mmproj_path=llm["mmproj_path"], ctx_size=llm["ctx_size"], startup_timeout=llm["startup_timeout"], llama_server_bin=llm["llama_server_bin"], dynamic_residency=llm["dynamic_residency"])
 
     def llm_logs(self, tail: int = 200) -> dict[str, Any]:
@@ -195,6 +246,7 @@ class RuntimeServiceManager:
 
     def shutdown(self) -> None:
         """Stop managed runtime sidecars owned by this API process."""
+        self._cancel_managed_llm_idle_shutdown()
         llm = self._llm_settings()
         if llm["mode"] == "auto":
             self.llm_sidecar.stop()
