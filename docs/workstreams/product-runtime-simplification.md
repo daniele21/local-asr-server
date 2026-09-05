@@ -1,6 +1,6 @@
 # Product and runtime simplification
 
-Status: active — Wave 1 integrated; Wave 2 integrated through PRS-6, PRS-8/9/evidence next
+Status: active — Wave 1 integrated; Wave 2 integrated through PRS-6, PRS-8 active
 Owner: product experience + local runtime
 Read when: changing meeting UX, configuration, recording efficiency or AI resource policy
 
@@ -60,7 +60,7 @@ PRS-0 Contract + baseline
 | PRS-5 | One-action Transcribe/Generate Notes | meeting/transcription/analysis | PRS-1 | DONE: integrated through PR #26 |
 | PRS-6 | Visual intelligence on-demand with budget | visual service/UI, policy | PRS-1,3 | DONE: integrated through PR #28 |
 | PRS-7 | Bounded idle shutdown after phase-scoped residency | LLM runtime owners | PRS-3 | DONE: integrated through PR #27 |
-| PRS-8 | Event-driven progress; polling fallback only | job events + frontend | PRS-0 | READY |
+| PRS-8 | Event-driven progress; polling fallback only | job events + frontend | PRS-0 | ACTIVE: PR #30 candidate; exact-head STRONG pending |
 | PRS-9 | Simplify audio compute only if benchmark supports it | capture/transcription | PRS-0 | READY |
 | PRS-10 | Product/runtime/evidence convergence | contracts/E2E/evidence | applicable slices | BLOCKED |
 
@@ -91,11 +91,23 @@ PRS-0 Contract + baseline
 - Candidate detection/dedupe precedes a hard 2048-work-item ceiling; over-budget candidates are sampled deterministically across the full timeline before VLM work.
 - Explicit `v2` routing fails closed if the bounded router fails; legacy/settings-driven compatibility paths retain their prior fallback behavior.
 
+## PRS-8 candidate
+
+PR #30 makes the normal Meeting processing path event-driven without introducing a second job owner:
+
+- active transcription, visual-intelligence and analysis job IDs are followed through the existing `/v1/jobs/{id}/events` SSE stream;
+- the Meeting 2.5-second interval refresh loop is removed;
+- terminal events reload canonical persisted Meeting state;
+- a GET job snapshot is used only after stream failure to reconcile recovery/reconnect before retrying the event stream;
+- persisted `job_events` retain at most 512 events per job with monotonic retained sequences;
+- when a `JobStore` exists, `TranscriptionJobManager` no longer duplicates persisted events into an undrained in-memory queue;
+- the Advanced/import transcription wizard is explicitly outside this slice and retains its technical polling workflow for now.
+
 No CPU/RSS/storage percentage improvement is claimed until representative before/after evidence exists.
 
 ## Parallel execution
 
-PRS-5, PRS-6 and PRS-7 are integrated. PRS-8 is the next implementation slice and may progress at its backend/event boundary before Meeting UI integration. PRS-9 remains evidence-led. PRS-10 closes only after product/runtime/evidence agreement.
+PRS-5, PRS-6 and PRS-7 are integrated. PRS-8 is the active integration candidate spanning the existing event ledger and normal Meeting consumer. PRS-9 may prepare benchmark evidence in parallel but must not change dual-track ownership before results. PRS-10 closes only after product/runtime/evidence agreement.
 
 ## Baseline / acceptance evidence
 
