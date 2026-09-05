@@ -89,3 +89,15 @@ def create_visual_intelligence_job(recording_id: str, request: Request):
             "routing_mode": "v2",
         },
     )
+
+
+@router.post("/v1/visual-intelligence-jobs/{job_id}/cancel")
+def cancel_visual_intelligence_job(job_id: str, request: Request):
+    services = get_services(request.app)
+    job = services.transcription_jobs.get(job_id)
+    if job is None or job.get("type") != VISUAL_INTELLIGENCE_JOB_TYPE:
+        raise HTTPException(status_code=404, detail="Visual intelligence job not found")
+    cancelled = services.transcription_jobs.cancel(job_id)
+    if cancelled is None:
+        raise HTTPException(status_code=404, detail="Visual intelligence job not found")
+    return cancelled
