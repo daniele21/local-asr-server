@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from threading import Lock, Timer
-from typing import Any
+from typing import Any, Callable
 
 from local_asr_server.runtime.models import (
     DEFAULT_LOCAL_LLM_URL,
@@ -58,12 +58,21 @@ class RuntimeServiceManager:
         self._idle_shutdown_lock = Lock()
         self._idle_shutdown_timer: Timer | None = None
 
+    def _cancel_managed_llm_idle_shutdown_locked(self) -> None:
+        timer = self._idle_shutdown_timer
+        self._idle_shutdown_timer = None
+        if timer is not None:
+            timer.cancel()
+
     def _cancel_managed_llm_idle_shutdown(self) -> None:
         with self._idle_shutdown_lock:
-            timer = self._idle_shutdown_timer
-            self._idle_shutdown_timer = None
-            if timer is not None:
-                timer.cancel()
+            self._cancel_managed_llm_idle_shutdown_locked()
+
+    def _run_managed_llm_action(self, action: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+        """Cancel stale idle work and mutate the owned sidecar atomically."""
+        with self._idle_shutdown_lock:
+            self._cancel_managed_llm_idle_shutdown_locked()
+            return action()
 
     def _stop_managed_llm_after_idle(self) -> None:
         # Serialize with ensure/start/restart so a newly requested managed
@@ -74,9 +83,7 @@ class RuntimeServiceManager:
 
     def _schedule_managed_llm_idle_shutdown(self) -> None:
         with self._idle_shutdown_lock:
-            if self._idle_shutdown_timer is not None:
-                self._idle_shutdown_timer.cancel()
-                self._idle_shutdown_timer = None
+            self._cancel_managed_llm_idle_shutdown_locked()
             if self._managed_llm_idle_shutdown_seconds == 0:
                 self.llm_sidecar.stop()
                 return
@@ -182,8 +189,7 @@ class RuntimeServiceManager:
                 "requested_reasoning": reasoning or llm["reasoning"],
                 "restart_required": False,
             }
-        self._cancel_managed_llm_idle_shutdown()
-        return self.llm_sidecar.ensure_ready(
+        return self._run_managed_llm_action(lambda: self.llm_sidecar.ensure_ready(
             model=llm["model"],
             model_path=llm["model_path"],
             backend=llm["backend"],
@@ -194,7 +200,7 @@ class RuntimeServiceManager:
             reasoning=reasoning or llm["reasoning"],
             capability=capability,
             dynamic_residency=llm["dynamic_residency"],
-        )
+        ))
 
     def release_llm_residency(
         self, *, overrides: dict[str, Any] | None = None,
@@ -220,19 +226,16 @@ class RuntimeServiceManager:
         llm = self._llm_settings()
         if llm["mode"] != "auto":
             return self.llm_status()
-        self._cancel_managed_llm_idle_shutdown()
-        return self.llm_sidecar.start(model=llm["model"], model_path=llm["model_path"], backend=llm["backend"], mmproj_path=llm["mmproj_path"], ctx_size=llm["ctx_size"], startup_timeout=llm["startup_timeout"], llama_server_bin=llm["llama_server_bin"], dynamic_residency=llm["dynamic_residency"])
+        return self._run_managed_llm_action(lambda: self.llm_sidecar.start(model=llm["model"], model_path=llm["model_path"], backend=llm["backend"], mmproj_path=llm["mmproj_path"], ctx_size=llm["ctx_size"], startup_timeout=llm["startup_timeout"], llama_server_bin=llm["llama_server_bin"], dynamic_residency=llm["dynamic_residency"]))
 
     def stop_llm(self) -> dict[str, Any]:
-        self._cancel_managed_llm_idle_shutdown()
-        return self.llm_sidecar.stop()
+        return self._run_managed_llm_action(self.llm_sidecar.stop)
 
     def restart_llm(self) -> dict[str, Any]:
         llm = self._llm_settings()
         if llm["mode"] != "auto":
             return self.llm_status()
-        self._cancel_managed_llm_idle_shutdown()
-        return self.llm_sidecar.restart(model=llm["model"], model_path=llm["model_path"], backend=llm["backend"], mmproj_path=llm["mmproj_path"], ctx_size=llm["ctx_size"], startup_timeout=llm["startup_timeout"], llama_server_bin=llm["llama_server_bin"], dynamic_residency=llm["dynamic_residency"])
+        return self._run_managed_llm_action(lambda: self.llm_sidecar.restart(model=llm["model"], model_path=llm["model_path"], backend=llm["backend"], mmproj_path=llm["mmproj_path"], ctx_size=llm["ctx_size"], startup_timeout=llm["startup_timeout"], llama_server_bin=llm["llama_server_bin"], dynamic_residency=llm["dynamic_residency"]))
 
     def llm_logs(self, tail: int = 200) -> dict[str, Any]:
         return {"service": "llm", "tail": tail, "text": self.llm_sidecar.tail_logs(tail)}
@@ -249,4 +252,4 @@ class RuntimeServiceManager:
         self._cancel_managed_llm_idle_shutdown()
         llm = self._llm_settings()
         if llm["mode"] == "auto":
-            self.llm_sidecar.stop()
+            self._run_managed_llm_action(self.llm_sidecar.stop)
