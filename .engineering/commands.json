@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "contract_version": "0.6.0",
+  "contract_version": "0.6.1",
   "commands": {
     "setup": {"status": "required", "run": "./setup.sh && (cd frontend && pnpm install --frozen-lockfile)"},
     "doctor": {"status": "recommended", "run": "UV_CACHE_DIR=.cache/uv uv run local-asr doctor"},
     "dev": {"status": "recommended", "run": "./run.sh"},
-    "check": {"status": "required", "run": "python3 scripts/verify_repository.py && python3 scripts/verify_operations.py && python3 scripts/verify_e2e.py && python3 scripts/verify_product_experience.py && python3 scripts/verify_docs.py && python3 scripts/verify_agent_context.py && python3 -m unittest test.test_validation_profile_selector test.test_build_artifact_metadata -v && (cd frontend && pnpm run lint && pnpm exec tsc --noEmit)"},
+    "check": {"status": "required", "run": "python3 scripts/verify_repository.py && python3 scripts/verify_operations.py && python3 scripts/verify_e2e.py && python3 scripts/verify_stage_environment_policy.py && python3 scripts/verify_product_experience.py && python3 scripts/verify_docs.py && python3 scripts/verify_agent_context.py && python3 -m unittest test.test_validation_profile_selector test.test_build_artifact_metadata -v && (cd frontend && pnpm run lint && pnpm exec tsc --noEmit)"},
     "test": {"status": "required", "run": "UV_CACHE_DIR=.cache/uv uv run python -m unittest discover -s test -v"},
     "e2e": {"status": "recommended", "run": "UV_CACHE_DIR=.cache/uv uv run python -m unittest test.test_frontend_transcription_workflow test.test_recording_api test.test_native_capture -v"},
     "build": {"status": "required", "run": "bash scripts/build_artifact.sh --no-dmg"},
@@ -31,14 +31,18 @@
       "full_diff_review_required": true,
       "durable_documentation_current_required": true,
       "remote_preflight_when_required_gates_unavailable_local": true,
-      "e2e_default": "affected_critical_journeys"
+      "e2e_default": "affected_critical_journeys",
+      "automated_e2e_required_when_affected": true,
+      "real_environment_blocking": false,
+      "real_environment_deferred_to_release": true
     },
     "release": {
       "exact_head_required": true,
       "full_diff_review_required": true,
       "durable_documentation_current_required": true,
       "full_validation_required": true,
-      "e2e_default": "release_critical_journeys"
+      "e2e_default": "release_critical_journeys",
+      "required_real_environment_blocking": true
     },
     "parallel_development_prefers_early_convergence": true,
     "stacked_publication_exception_only": true

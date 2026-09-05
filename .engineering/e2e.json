@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "contract_version": "0.2.0",
+  "contract_version": "0.2.1",
   "applicability": {
     "status": "recommended",
     "reason": "ClosedRoom crosses FastAPI, persisted meeting state, a React/WKWebView UI, macOS native capture helpers and local AI runtimes; lower-level tests alone cannot prove every critical assembled workflow."
@@ -14,11 +14,25 @@
     "residual_fidelity_gaps_explicit": true,
     "ui_evidence_risk_based": true
   },
+  "stage_policy": {
+    "integration": {
+      "automated_e2e_before_shared_integration": true,
+      "real_environment_blocking": false,
+      "real_environment_deferred_to_release": true,
+      "material_ui_journey_minimum_evidence_mode": "full_media",
+      "incidental_ui_may_use_assertions": true
+    },
+    "release": {
+      "full_validation_required": true,
+      "release_critical_e2e_required": true,
+      "required_real_environment_blocking": true
+    }
+  },
   "ui_evidence": {
     "modes": ["assertions", "screenshots", "full_media"],
-    "default_mode": "assertions",
+    "default_mode": "screenshots",
     "assertions_allowed_when_ui_incidental": true,
-    "full_media_triggers": ["motion_or_animation", "timing_or_progression", "navigation_or_transition_sequence", "lifecycle_visibility", "release_acceptance"]
+    "full_media_triggers": ["material_ui_integration_outcome", "motion_or_animation", "timing_or_progression", "navigation_or_transition_sequence", "lifecycle_visibility", "release_acceptance"]
   },
   "fidelity_order": ["host_or_fake", "simulated_or_emulated", "representative_virtual", "representative_physical", "target_environment"],
   "target_environments": [
@@ -122,7 +136,7 @@
       "real_environment_confirmation": "required",
       "real_environment_runner": "target-macos-real",
       "residual_gaps": ["VoiceOver spoken-output quality and subjective usability remain human evidence", "production signing/notarization and MLX/Metal inference quality remain outside this journey"],
-      "automation_gap_reason": "Interactive WKWebView plus TCC-backed microphone/system-audio capture requires the target Mac; the lifecycle sequence itself is material, so FULL_MEDIA remains required."
+      "automation_gap_reason": "Interactive WKWebView plus TCC-backed microphone/system-audio capture requires the target Mac; integration uses affected automated frontend/source/package evidence and carries this residual target-environment delta to release."
     }
   ]
 }

@@ -1,6 +1,6 @@
 # Product and runtime simplification
 
-Status: active — Wave 1 and Wave 2 integrated; PRS-9 benchmark evidence active
+Status: active — implementation slices through PRS-9 tooling integrated; PRS-10 automated convergence active
 Owner: product experience + local runtime
 Read when: changing meeting UX, configuration, recording efficiency or AI resource policy
 
@@ -22,18 +22,6 @@ Make ClosedRoom one focused meeting product while reducing normal-path CPU, memo
 - Stable UI state must not require display-rate React updates or avoidable polling.
 - No resource telemetry contains meeting/transcript/screenshot content.
 
-## Capability placement
-
-| Placement | Capabilities |
-| --- | --- |
-| CORE | recording, transcript, notes/actions, speakers, search |
-| CONTEXTUAL | projects |
-| SECONDARY | file import |
-| ON_DEMAND | visual intelligence, custom Ask/analysis |
-| ADVANCED | cloud/local trust choice, provider/model/quality overrides |
-| DEVELOPER/DIAGNOSTICS | model paths/endpoints, backend/runtime lifecycle/logs/ports |
-| POWER_TOOL | merge/split/raw transcript tools |
-
 ## Dependency DAG
 
 ```text
@@ -41,101 +29,77 @@ PRS-0 Contract + baseline
   ├─ PRS-1 Meeting-first ─┬─ PRS-5 Simple processing
   │                       └─ PRS-6 Visual on-demand ┐
   ├─ PRS-2 Lean recording                          │
-  ├─ PRS-3 ResourcePolicy ─┬─ PRS-6                ├─ PRS-10 Evidence
+  ├─ PRS-3 ResourcePolicy ─┬─ PRS-6                ├─ PRS-10 Automated convergence
   │                        └─ PRS-7 Cold AI         │
   ├─ PRS-4 Simple Settings                         │
   ├─ PRS-8 Event progress ─────────────────────────┤
-  └─ PRS-9 Audio benchmark/decision ───────────────┘
+  └─ PRS-9 Audio benchmark tooling ────────────────┘
+
+RELEASE: target-Mac UX/TCC/audio/resource evidence
 ```
 
 ## Work graph
 
-| ID | Outcome | Primary owners | Depends on | State |
-| --- | --- | --- | --- | --- |
-| PRS-0 | Product contract + comparable resource baseline | UX contract, evidence | — | ACTIVE: contract done; baseline pending |
-| PRS-1 | Outcome-first New Meeting/Meeting | NewRecording, MeetingDetail, App | PRS-0 | DONE: integrated in Wave 1 |
-| PRS-2 | Bounded recording UI work | useRecorder, visualizer/overlay | PRS-0 | DONE: integrated in Wave 1 |
-| PRS-3 | Capture-priority ResourcePolicy | resource policy, arbiter/job consumers | PRS-0 | DONE: integrated in Wave 1 |
-| PRS-4 | Preferences separated from expert runtime controls | Settings | PRS-0 | DONE: integrated in Wave 1 |
-| PRS-5 | One-action Transcribe/Generate Notes | meeting/transcription/analysis | PRS-1 | DONE: PR #26 |
-| PRS-6 | Visual intelligence on-demand with budget | visual service/UI, policy | PRS-1,3 | DONE: PR #28 |
-| PRS-7 | Bounded idle shutdown after phase-scoped residency | LLM runtime owners | PRS-3 | DONE: PR #27 |
-| PRS-8 | Event-driven progress; polling fallback only | job events + frontend | PRS-0 | DONE: PR #30 |
-| PRS-9 | Simplify audio compute only if benchmark supports it | capture/transcription | PRS-0 | ACTIVE: benchmark harness/evidence |
-| PRS-10 | Product/runtime/evidence convergence | contracts/E2E/evidence | applicable slices | BLOCKED |
+| ID | Outcome | State |
+| --- | --- | --- |
+| PRS-0 | Product contract + comparable resource baseline | Contract DONE; representative baseline DEFERRED_TO_RELEASE |
+| PRS-1 | Outcome-first New Meeting/Meeting | DONE: Wave 1 |
+| PRS-2 | Bounded recording UI work | DONE: Wave 1 |
+| PRS-3 | Capture-priority ResourcePolicy | DONE: Wave 1 |
+| PRS-4 | Preferences separated from expert runtime controls | DONE: Wave 1 |
+| PRS-5 | One-action Transcribe/Generate Notes | DONE: PR #26 |
+| PRS-6 | Visual intelligence on-demand with budget | DONE: PR #28 |
+| PRS-7 | Bounded idle shutdown after phase-scoped residency | DONE: PR #27 |
+| PRS-8 | Event-driven progress; polling fallback only | DONE: PR #30 |
+| PRS-9 | Privacy-safe dual-track vs mixed benchmark tooling | DONE: PR #31; representative decision evidence DEFERRED_TO_RELEASE |
+| PRS-10 | Product/runtime automated convergence on `dev` | ACTIVE |
 
 ## Integrated checkpoints
 
-**Wave 1 — PR #25, merge `3fa29fb963b49f57cc4cbcce333d5f476f54659b`**
+- **Wave 1 / PR #25** — merge `3fa29fb963b49f57cc4cbcce333d5f476f54659b`: Meeting-first contract, bounded recorder UI cadence, capture-priority ResourcePolicy, cold managed LLM startup and simplified Settings.
+- **PRS-5 / PR #26** — merge `c62882bb17c50288266094db8e64fa2e7067f681`: one-action Meeting Transcribe/Generate Notes; technical overrides remain advanced.
+- **PRS-7 / PR #27** — merge `c7161a0055804e534f6b9b10169b183bc3c1ff16`: phase-scoped managed LLM/VLM release plus bounded idle shutdown with stale-timer protection.
+- **PRS-6 / PR #28** — merge `bf4e3596a8cf0a9bd7fc24746dcde258c91ac4df`: explicit/off-by-default screen context, no VLM during recording, one persisted post-meeting job and bounded `v2` routing.
+- **PRS-8 / PR #30** — merge `c3377ab4a1f68cd90b7153bb1ca63c07c3a969c9`: persisted SSE normal-path job progress; GET snapshots recovery-only; bounded event history.
+- **PRS-9 tooling / PR #31** — merge `c4d02525ad6485b2c59ecf49997543be6ce1c2f5`: privacy-safe local benchmark comparing current dual-track ASR with one mixed-track pass. Exact feature HEAD `c66348dd592913e60b62767ace869c708a33fb90` passed INTEGRATION/SCOPED remote preflight run `33965247318` with frontend checks and 334 Python tests.
 
-- Meeting-first contract, decision budgets, automatic `both` capture, bounded recorder UI cadence, capture-priority ResourcePolicy, cold managed LLM startup and simplified Settings.
-- Exact feature HEAD `18ee0dbf7ed1aa73bde344f7ecc0f4c92c9ac126` passed INTEGRATION/STRONG including finalized `.app` smoke.
+## PRS-9 contract
 
-**Wave 2**
+Current `both` capture persists `mixed`, `mic` and `system`; normal ASR transcribes non-silent `mic` and `system` separately before cross-track dedupe/merge. This preserves `track_id`, source and speaker attribution, so changing to one mixed ASR pass is not a compute-only decision.
 
-- PRS-5 / PR #26, merge `c62882bb17c50288266094db8e64fa2e7067f681`: one-action Meeting Transcribe/Generate Notes; technical overrides remain advanced.
-- PRS-7 / PR #27, merge `c7161a0055804e534f6b9b10169b183bc3c1ff16`: phase-scoped managed LLM/VLM release plus bounded idle shutdown with stale-timer protection. Exact head `d5e6334d560c9083dd456bfd7dc0337f76eb96ea` passed INTEGRATION/STRONG.
-- PRS-6 / PR #28, merge `bf4e3596a8cf0a9bd7fc24746dcde258c91ac4df`: explicit/off-by-default screen context, no VLM during recording, one persisted post-meeting job and bounded `v2` routing capped at 2048 work items. Exact head `5a9013c01c467c8bf5427b337b4d214294b9f798` passed INTEGRATION/STRONG run `33958256522`.
-- PRS-8 / PR #30, merge `c3377ab4a1f68cd90b7153bb1ca63c07c3a969c9`: normal Meeting progress uses persisted SSE; GET snapshots are recovery-only; `job_events` cap at 512/job and are not duplicated into an undrained local queue. Exact head `cb722c654bf842f90620679a90f883a87accafea` passed INTEGRATION/STRONG run `33962722390`.
+`scripts/benchmark_audio_strategy.py`:
+- reads one finalized session without mutating it;
+- uses local ASR without transcript cache or persistence;
+- alternates dual-first/mixed-first order across repeats;
+- emits aggregate timing/quality/attribution metrics only, never transcript text/full paths;
+- makes no automatic recommendation.
 
-## PRS-9 benchmark contract
+Representative timing/audio-quality evidence is `REAL_ENVIRONMENT`. Under baseline 0.9.2 it is **not an INTEGRATION blocker**: the harness and all deterministic work may converge to `dev`; the representative benchmark is collected during `dev -> main` release acceptance. Until then dual-track ownership remains canonical. If release evidence supports an ownership change, that implementation returns through `dev` and its normal automated gates before promotion.
 
-Current normal `both` capture persists `mixed`, `mic` and `system`, while `RecordingStore.transcribable_tracks()` sends only non-silent `mic` and `system` through ASR. Their results are cross-track deduplicated and merged with `track_id`, `source` and speaker labels, so simplifying to one mixed ASR pass is not a compute-only decision.
+## PRS-10 automated convergence
 
-The benchmark slice changes evidence tooling, not runtime ownership:
+PRS-10 may close the development workstream when:
+- normal-path product contracts agree with implementation;
+- applicable runtime/resource/lifecycle invariants are covered;
+- affected durable docs are current;
+- exact-head selector-required deterministic gates pass;
+- affected automated E2E requirements for integration pass.
 
-- `scripts/benchmark_audio_strategy.py` reads one finalized session containing `recording`, `mic` and `system` audio;
-- local ASR is uncached/unpersisted and production near-silent skipping is reused;
-- repeats alternate dual-first/mixed-first order to reduce warm-cache/order bias;
-- output is aggregate-only: ASR audio seconds, wall time, word/segment counts, normalized transcript similarity, timeline Jaccard and source-attribution retention;
-- transcript text/full paths are not emitted and the recording is not mutated;
-- no automatic recommendation is produced.
+Do **not** keep PRS-10 blocked on target-Mac evidence. Carry the following explicitly to release instead:
+- representative CPU/RSS baseline and before/after evidence;
+- PRS-9 representative audio benchmark;
+- TCC/native physical-audio confirmation;
+- target-Mac material UX FULL_MEDIA evidence;
+- subjective VoiceOver/usability observations when applicable.
 
-Deterministic tests use synthetic payloads. Representative ASR timing and captured-audio quality remain REAL_ENVIRONMENT evidence on a target Mac. Until that evidence exists, dual-track ownership remains canonical.
+## Integration and release policy
 
-```bash
-UV_CACHE_DIR=.cache/uv uv run python scripts/benchmark_audio_strategy.py \
-  /path/to/recording/session --repeats 3 \
-  --output /tmp/closedroom-audio-strategy.json
-```
+During ITERATION use focused checks. Before a PR enters `dev`, refresh base/head, review the full diff, update affected durable docs, run the selector with `stage=integration`, and execute all required deterministic/automated E2E gates locally or through repository-owned remote automation.
 
-No CPU/RSS/storage percentage improvement is claimed until representative before/after evidence exists.
+At `INTEGRATION`, genuine `REAL_ENVIRONMENT` requirements are reported as `DEFERRED_TO_RELEASE` and do not block `AUTOMATED_PREFLIGHT_CONFIRMED`.
 
-## Parallel execution
-
-PRS-5/6/7/8 are integrated. PRS-9 is the active evidence slice and must not change dual-track ownership before representative results. PRS-0 comparable resource baseline and the independent target-Mac UX evidence lane can continue independently. PRS-10 closes only after product/runtime/evidence agreement.
-
-## Baseline / acceptance evidence
-
-Compare before/after for: app idle RSS/CPU; New Meeting idle; active recording RSS/CPU/update cadence; stop peak/time; ASR duration/memory; LLM duration/sidecar RSS/residency; visual duration/RSS/frame budget; post-job idle/residency.
-
-Product targets:
-- start meeting <=1 required decision;
-- golden-path technical concepts = 0;
-- provider/model choices before recording/transcription/notes = 0;
-- Transcribe = 1 primary action;
-- Generate Notes = 1 primary action.
-
-Set performance targets only after baseline measurement.
-
-## Slice constraints
-
-- PRS-1 preserves recovery/diagnostics and saved Meeting destination.
-- PRS-2 changes UI cadence only, not capture/finalization semantics.
-- PRS-3 is policy, not a scheduler; no duplicate queue/mutex owner.
-- PRS-4 preserves backend settings compatibility.
-- PRS-5 keeps normal execution policy in persisted defaults while Advanced overrides remain reachable.
-- PRS-6 uses candidate detection -> dedupe -> hard work budget -> VLM and never starts VLM during recording.
-- PRS-7 never mutates external endpoints and cancels stale managed-idle shutdown before new owned-runtime work.
-- PRS-8 keeps event history bounded/privacy-safe and polling only for reconnect/recovery.
-- PRS-9 preserves dual-track audio unless representative evidence supports a simpler owner.
-
-## Integration
-
-During ITERATION use focused checks. Before INTEGRATION: refresh base/head, review full diff, update affected durable docs, run selector with `stage=integration`, execute available local gates, and use repository-owned remote automation for deterministic gates unavailable locally. Do not delegate automatable gates to the user. REAL_ENVIRONMENT remains only for genuine target-Mac/human evidence.
-
-Expected shorthand is guidance only: PRS-1/4 SCOPED; PRS-2 SCOPED/STRONG; PRS-3/6/7 STRONG; PRS-5/8 SCOPED/STRONG; PRS-9 LEAN/SCOPED for evidence-only tooling unless selector escalates; selector is authoritative.
+Before `dev -> main`, run `stage=release` / FULL validation and complete every applicable blocking real-environment confirmation. Real-environment evidence cannot be replaced by hosted macOS when the claim genuinely requires target fidelity.
 
 ## Completion
 
-PRS-10 becomes DONE only when normal-path product targets, resource/lifecycle invariants, comparable evidence, exact-head deterministic gates and materially affected target-Mac evidence agree. Move durable truth to canonical docs, then delete this workstream.
+PRS-10 becomes DONE for development integration once the automated convergence criteria above agree on exact HEAD. Transfer any residual release evidence to `docs/current-state.md`, then close/delete this workstream per repository policy. Stable promotion remains separately blocked until RELEASE validation and applicable target-environment evidence pass.

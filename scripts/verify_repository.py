@@ -5,7 +5,7 @@ import argparse, json, sys
 from pathlib import Path
 
 CORE_SKILLS=("plan-workstream","structured-change","design-product-experience","validate-change","preflight-change","remote-preflight","finalize-workstream","review-reference-quality")
-REQUIRED=("README.md","AGENTS.md","CONTRIBUTING.md","SECURITY.md",".editorconfig",".gitignore",".engineering/baseline.json",".engineering/documentation-policy.json",".engineering/commands.json",".engineering/e2e.json",".github/pull_request_template.md",".github/workflows/repository-health.yml",".github/workflows/preflight.yml","docs/README.md","docs/architecture.md","docs/current-state.md","docs/features/README.md","docs/adr/README.md","docs/workstreams/README.md","scripts/build_artifact.sh","scripts/clean_build_state.py","scripts/finalize_build_artifact.py","scripts/select_validation_profile.py","scripts/smoke_packaged_app.py","scripts/verify_operations.py","scripts/verify_e2e.py","scripts/verify_product_experience.py")
+REQUIRED=("README.md","AGENTS.md","CONTRIBUTING.md","SECURITY.md",".editorconfig",".gitignore",".engineering/baseline.json",".engineering/documentation-policy.json",".engineering/commands.json",".engineering/e2e.json",".github/pull_request_template.md",".github/workflows/repository-health.yml",".github/workflows/preflight.yml","docs/README.md","docs/architecture.md","docs/current-state.md","docs/features/README.md","docs/adr/README.md","docs/workstreams/README.md","scripts/build_artifact.sh","scripts/clean_build_state.py","scripts/finalize_build_artifact.py","scripts/select_validation_profile.py","scripts/smoke_packaged_app.py","scripts/verify_operations.py","scripts/verify_e2e.py","scripts/verify_stage_environment_policy.py","scripts/verify_product_experience.py")
 MARKERS=("<PROJECT_NAME>","<REPLACE_WITH_","<DESCRIBE_","<LIST_")
 
 def main()->int:
@@ -19,8 +19,8 @@ def main()->int:
     standard=baseline.get("standard",{})
     if baseline.get("schema_version")!=1: errors.append("baseline schema_version must be 1")
     if standard.get("source")!="daniele21/repo-template-sw": errors.append("baseline source invalid")
-    if standard.get("version")!="0.9.1": errors.append("baseline standard.version must be 0.9.1")
-    if standard.get("revision")!="3c6f7aaf48c47595596d1aa4854af8727e9273a7": errors.append("baseline standard.revision must match canonical 0.9.1 main")
+    if standard.get("version")!="0.9.2": errors.append("baseline standard.version must be 0.9.2")
+    if standard.get("revision")!="8aa95d10254846e7d63f4bd5c60d61b18d21060c": errors.append("baseline standard.revision must match canonical 0.9.2 main")
     if baseline.get("target_level") not in {"L0","L1","L2"}: errors.append("target_level invalid")
     for name in CORE_SKILLS:
         entry=baseline.get("skills",{}).get(name)

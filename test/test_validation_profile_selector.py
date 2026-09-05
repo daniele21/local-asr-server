@@ -33,6 +33,10 @@ class ValidationProfileSelectorTests(unittest.TestCase):
         result = selector.select_profile([".github/workflows/preflight.yml"])
         self.assertEqual(result["profile"], "full")
 
+    def test_stage_environment_policy_verifier_is_full(self):
+        result = selector.select_profile(["scripts/verify_stage_environment_policy.py"])
+        self.assertEqual(result["profile"], "full")
+
     def test_exact_dotfile_keeps_its_profile(self):
         result = selector.select_profile([".editorconfig"])
         self.assertEqual(result["profile"], "lean")

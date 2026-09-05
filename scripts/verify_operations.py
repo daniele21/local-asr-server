@@ -16,7 +16,7 @@ def main()->int:
     try: data=json.loads(path.read_text())
     except Exception as exc: print(f"FAIL: invalid commands.json: {exc}"); return 1
     if data.get("schema_version")!=1: errors.append("schema_version must be 1")
-    if data.get("contract_version")!="0.6.0": errors.append("contract_version must be 0.6.0")
+    if data.get("contract_version")!="0.6.1": errors.append("contract_version must be 0.6.1")
     commands=data.get("commands",{})
     for name in COMMANDS:
         entry=commands.get(name)
