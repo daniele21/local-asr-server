@@ -66,6 +66,7 @@ def create_visual_intelligence_job(recording_id: str, request: Request):
         if status == "failed":
             raise RuntimeError(str(visual.get("error") or "visual_intelligence_failed"))
 
+        updated.pop("job_id", None)
         persisted = services.transcriptions.replace_visual_intelligence(
             transcription_id,
             updated,
