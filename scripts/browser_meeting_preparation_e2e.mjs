@@ -383,6 +383,10 @@ class Browser {
     await webdriver(this.port, 'POST', this.p('/url'), { url });
   }
 
+  async refresh() {
+    await webdriver(this.port, 'POST', this.p('/refresh'), {});
+  }
+
   async execute(script) {
     return await webdriver(this.port, 'POST', this.p('/execute/sync'), { script, args: [] });
   }
@@ -549,10 +553,10 @@ try {
   }
   await checkpoint(browser, '03-transcript-readable-notes-running');
 
-  // Re-open the same Meeting while the durable parent is still active. The new
-  // view must reconstruct progress from persisted Meeting/job state and attach
-  // to the same parent instead of starting new work.
-  await browser.navigate(meetingUrl);
+  // Reload the same Meeting while the durable parent is still active. The new
+  // document must reconstruct progress from persisted Meeting/job state and
+  // attach to the same parent instead of starting new work.
+  await browser.refresh();
   await waitText(browser, ['Transcript ready before notes.'], 5000, true);
   await waitText(browser, ['Transcript ready · preparing notes', 'Trascrizione pronta · preparazione note']);
   await waitCount('parent_events_first', 2);
