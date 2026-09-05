@@ -57,8 +57,10 @@ class RuntimeServiceManager:
         self._managed_llm_idle_shutdown_seconds = managed_llm_idle_shutdown_seconds
         self._idle_shutdown_lock = Lock()
         self._idle_shutdown_timer: Timer | None = None
+        self._idle_shutdown_generation = 0
 
     def _cancel_managed_llm_idle_shutdown_locked(self) -> None:
+        self._idle_shutdown_generation += 1
         timer = self._idle_shutdown_timer
         self._idle_shutdown_timer = None
         if timer is not None:
@@ -74,11 +76,15 @@ class RuntimeServiceManager:
             self._cancel_managed_llm_idle_shutdown_locked()
             return action()
 
-    def _stop_managed_llm_after_idle(self) -> None:
-        # Serialize with ensure/start/restart so a newly requested managed
-        # runtime cannot be stopped by a stale idle callback.
+    def _stop_managed_llm_after_idle(self, generation: int) -> None:
+        # Timer.cancel() cannot recall a callback that already woke up. The
+        # generation gate prevents such a stale callback from stopping a
+        # sidecar after a newer idle window or managed request superseded it.
         with self._idle_shutdown_lock:
+            if generation != self._idle_shutdown_generation:
+                return
             self._idle_shutdown_timer = None
+            self._idle_shutdown_generation += 1
             self.llm_sidecar.stop()
 
     def _schedule_managed_llm_idle_shutdown(self) -> None:
@@ -87,9 +93,10 @@ class RuntimeServiceManager:
             if self._managed_llm_idle_shutdown_seconds == 0:
                 self.llm_sidecar.stop()
                 return
+            generation = self._idle_shutdown_generation
             timer = Timer(
                 self._managed_llm_idle_shutdown_seconds,
-                self._stop_managed_llm_after_idle,
+                lambda: self._stop_managed_llm_after_idle(generation),
             )
             timer.daemon = True
             self._idle_shutdown_timer = timer
@@ -249,7 +256,8 @@ class RuntimeServiceManager:
 
     def shutdown(self) -> None:
         """Stop managed runtime sidecars owned by this API process."""
-        self._cancel_managed_llm_idle_shutdown()
         llm = self._llm_settings()
         if llm["mode"] == "auto":
             self._run_managed_llm_action(self.llm_sidecar.stop)
+        else:
+            self._cancel_managed_llm_idle_shutdown()
