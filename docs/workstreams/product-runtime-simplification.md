@@ -78,6 +78,8 @@ Representative timing/audio-quality evidence is `REAL_ENVIRONMENT`. Under baseli
 
 ## PRS-10 automated convergence
 
+Future PRS-11..18 increments are planned in [meeting-value-efficiency.md](meeting-value-efficiency.md). They do not expand these PRS-10 closure criteria.
+
 PRS-10 may close the development workstream when:
 - normal-path product contracts agree with implementation;
 - applicable runtime/resource/lifecycle invariants are covered;
